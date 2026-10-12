@@ -15,6 +15,8 @@ export interface Sprite9 {
 }
 
 export interface Atlas {
+  /** Dokusu pisirilmis birim turleri. */
+  kinds: Set<number>;
   /** [(kind*MAX_TEAMS + team)*POSES + poz] (0 bekleme, 1-2 yuruyus, 3 hazirlik, 4 vurus) */
   unitTex: Texture[];
   /** unitTex ile ayni indeks: dokunun yere bastigi nokta (0..1). */
@@ -228,7 +230,8 @@ function drawRubble(g: Graphics, style: number, th: HouseTheme = HOUSES.forest):
 }
 
 /** Birim, ok ve dekor dokularini tek bir atlas dokusunda pisirir (ParticleContainer tek doku ister). */
-export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: Biome = 'forest'): Atlas {
+export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: Biome = 'forest', kinds: Iterable<number> = [0, 1, 2, 3, 4]): Atlas {
+  const kindList = [...new Set([...kinds, ...Array.from({ length: LEGACY_COUNT }, (_, i) => i)])].sort((a, b) => a - b);
   const items: Item[] = [];
   const unitTex: Texture[] = [];
   const unitAnchor: Array<{ ax: number; ay: number }> = [];
@@ -239,7 +242,7 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
 
   // Birimler: (kind*MAX_TEAMS + team)*2 + poz. Tanklar 2x buyuk hucre kullanir.
   const teams = Math.min(MAX_TEAMS, Math.max(1, teamColors.length));
-  for (let kind = 0; kind < LEGACY_COUNT; kind++) {
+  for (const kind of kindList) {
     const k = STATS[kind].scale;
     const w = 64 * k;
     const h = 96 * k;
@@ -394,5 +397,5 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
   for (const { item, x: px, y: py } of placed) {
     item.done(new Texture({ source: atlas.source, frame: new Rectangle(px, py, item.w, item.h) }));
   }
-  return { unitTex, unitAnchor, arrowTex, pixelTex, decor, fx, dispose: () => atlas.destroy(true) };
+  return { kinds: new Set(kindList), unitTex, unitAnchor, arrowTex, pixelTex, decor, fx, dispose: () => atlas.destroy(true) };
 }

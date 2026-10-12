@@ -1,9 +1,12 @@
+import { RARITY_NAMES, TROOP_BY_ID, type Rarity } from '../sim/data/troops';
 import { DEFAULT_STATS, KIND_COUNT, LEGACY_COUNT, STATS, TUNABLE, isTank, type StatKey } from '../sim/units';
 import { saveState, type AppState } from './state';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
-/** Birim ayarlari penceresi: can, hiz, guc, bekleme, menzil, zirh, itme. */
+const RARITY_ORDER: Rarity[] = ['common', 'rare', 'epic', 'legendary'];
+
+/** Birim ayarlari penceresi: her satir bir birim; can, hiz, guc, bekleme, menzil, zirh, itme. */
 export class UnitSettings {
   private readonly dlg: HTMLDialogElement;
 
@@ -36,27 +39,47 @@ export class UnitSettings {
     return this.state.stats[k][key] ?? DEFAULT_STATS[k][key];
   }
 
+  /** Satir gruplari: klasik birimler, sonra nadirlige gore roster birimleri. */
+  private groups(): Array<{ title: string; kinds: number[] }> {
+    const out: Array<{ title: string; kinds: number[] }> = [{ title: 'Klasik', kinds: Array.from({ length: LEGACY_COUNT }, (_, k) => k) }];
+    for (const r of RARITY_ORDER) {
+      const kinds: number[] = [];
+      for (let k = LEGACY_COUNT; k < KIND_COUNT; k++) {
+        const t = TROOP_BY_ID[STATS[k].troop ?? ''];
+        if (t && t.rarity === r) kinds.push(k);
+      }
+      if (kinds.length) out.push({ title: RARITY_NAMES[r], kinds });
+    }
+    return out;
+  }
+
   private render(): void {
-    const head = Array.from({ length: LEGACY_COUNT }, (_, k) => `<th scope="col"><div>${esc(STATS[k].name)}</div><button type="button" class="mini" data-reset-kind="${k}" ${Object.keys(this.state.stats[k]).length ? '' : 'disabled'}>Sıfırla</button></th>`).join('');
-    const rows = TUNABLE.map((t) => {
-      const cells = Array.from({ length: LEGACY_COUNT }, (_, k) => {
-        if (t.tankOnly && !isTank(k)) return '<td class="na">–</td>';
-        const v = this.value(k, t.key);
-        const changed = this.state.stats[k][t.key] !== undefined;
-        return `<td><input type="number" data-k="${k}" data-key="${t.key}" value="${v}" min="${t.min}" max="${t.max}" step="${t.step}" aria-label="${esc(STATS[k].name)} ${esc(t.label)}" class="${changed ? 'changed' : ''}" /></td>`;
-      }).join('');
-      return `<tr><th scope="row" title="${esc(t.hint)}">${esc(t.label)}<small>${esc(t.hint)}</small></th>${cells}</tr>`;
-    }).join('');
-    const derived = (label: string, hint: string, fn: (k: number) => string): string =>
-      `<tr class="derived"><th scope="row" title="${esc(hint)}">${esc(label)}<small>${esc(hint)}</small></th>${Array.from({ length: LEGACY_COUNT }, (_, k) => `<td data-derived="${esc(label)}" data-k="${k}">${fn(k)}</td>`).join('')}</tr>`;
+    const head = TUNABLE.map((t) => `<th scope="col" title="${esc(t.hint)}">${esc(t.label)}</th>`).join('');
+    const rows = this.groups()
+      .map((grp) => {
+        const body = grp.kinds
+          .map((k) => {
+            const cells = TUNABLE.map((t) => {
+              if (t.tankOnly && !isTank(k)) return '<td class="na">–</td>';
+              const v = this.value(k, t.key);
+              const changed = this.state.stats[k][t.key] !== undefined;
+              return `<td><input type="number" data-k="${k}" data-key="${t.key}" value="${v}" min="${t.min}" max="${t.max}" step="${t.step}" aria-label="${esc(STATS[k].name)} ${esc(t.label)}" class="${changed ? 'changed' : ''}" /></td>`;
+            }).join('');
+            const has = Object.keys(this.state.stats[k]).length > 0;
+            return `<tr><th scope="row">${esc(STATS[k].name)}</th>${cells}<td class="derived" data-derived="dps" data-k="${k}">${this.dps(k)}</td><td class="derived" data-derived="ehp" data-k="${k}">${this.effHp(k)}</td><td><button type="button" class="mini" data-reset-kind="${k}" ${has ? '' : 'disabled'}>Sıfırla</button></td></tr>`;
+          })
+          .join('');
+        return `<tr class="grp"><th colspan="${TUNABLE.length + 4}">${esc(grp.title)}</th></tr>${body}`;
+      })
+      .join('');
 
     this.dlg.innerHTML = `
 <form method="dialog">
-  <header><h2>Birim ayarları</h2><p>Değişiklikler bir sonraki savaştan itibaren geçerli olur ve kaydedilir.</p></header>
+  <header><h2>Birim ayarları</h2><p>Varsayılanlar seçili seviyeye göredir; değişiklikler sonraki savaştan itibaren geçerli olur ve kaydedilir.</p></header>
   <div class="table-wrap">
     <table>
-      <thead><tr><th></th>${head}</tr></thead>
-      <tbody>${rows}${derived('Saniyelik güç', 'Güç / bekleme (rahipte şifa/sn)', (k) => this.dps(k))}${derived('Etkin can', 'Can / (1 − zırh)', (k) => this.effHp(k))}</tbody>
+      <thead><tr><th></th>${head}<th title="Güç / bekleme (rahipte şifa/sn)">Sn. güç</th><th title="Can / (1 − zırh)">Etkin can</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
     </table>
   </div>
   <footer>
@@ -104,6 +127,8 @@ export class UnitSettings {
     input.value = String(v);
     input.classList.toggle('changed', this.state.stats[k][key] !== undefined);
     this.refreshDerived();
+    const reset = this.dlg.querySelector<HTMLButtonElement>(`[data-reset-kind="${k}"]`);
+    if (reset) reset.disabled = Object.keys(this.state.stats[k]).length === 0;
     saveState(this.state);
     this.onChange();
     const resetAll = this.dlg.querySelector('#us-reset-all') as HTMLButtonElement | null;
@@ -113,7 +138,7 @@ export class UnitSettings {
   private refreshDerived(): void {
     this.dlg.querySelectorAll<HTMLElement>('[data-derived]').forEach((td) => {
       const k = Number(td.dataset.k);
-      td.textContent = td.dataset.derived === 'Saniyelik güç' ? this.dps(k) : this.effHp(k);
+      td.textContent = td.dataset.derived === 'dps' ? this.dps(k) : this.effHp(k);
     });
   }
 

@@ -1,5 +1,6 @@
 import { Container, Graphics } from 'pixi.js';
-import { Kind, STATS } from '../sim/units';
+import { Kind, LEGACY_COUNT, STATS } from '../sim/units';
+import { LOOKS, type Anim, type Rig } from './looks';
 
 const SCALE = 1.25;
 const SKIN = 0xf2c9a0;
@@ -66,6 +67,12 @@ export class UnitView {
   private orb: Graphics | null = null;
   private staff: Graphics | null = null;
   private nock: Graphics | null = null;
+  /** Roster birimleri (kind >= LEGACY_COUNT): animasyon ailesi ve baslangic duruslari. */
+  private anim: Anim | null = null;
+  private fists: Container | null = null;
+  private restRot = 0;
+  private weaponX = 0;
+  private weaponY = 0;
   private phase: number;
   private lastHpRatio = -1;
   private readonly kind: number;
@@ -98,11 +105,50 @@ export class UnitView {
     this.rig.addChild(this.inner);
     this.rig.scale.set(this.base);
     this.root.addChild(this.rig);
-    this.draw(kind, colors.main, colors.dark);
+    if (kind >= LEGACY_COUNT && STATS[kind].troop && LOOKS[STATS[kind].troop!]) this.drawLook(kind, colors.main, colors.dark);
+    else this.draw(kind, colors.main, colors.dark);
 
     this.bar.y = -72 * this.kScale;
     this.bar.visible = false;
     this.root.addChild(this.bar);
+  }
+
+  /** Roster birimi: tarif tablosundan (looks.ts) cizer. */
+  private drawLook(kind: number, c: number, d: number): void {
+    const rig: Rig = {
+      torso: this.torso,
+      back: new Graphics(),
+      g: new Graphics(),
+      legL: this.legL,
+      legR: this.legR,
+      weapon: null,
+      shield: null,
+      orb: null,
+      staff: null,
+      nock: null,
+      fists: null,
+      noHands: false,
+      skin: SKIN,
+    };
+    this.torso.addChild(rig.back, rig.g);
+    this.anim = LOOKS[STATS[kind].troop!](rig, c, d);
+    this.weapon = rig.weapon;
+    this.shield = rig.shield;
+    this.orb = rig.orb;
+    this.staff = rig.staff;
+    this.nock = rig.nock;
+    this.fists = rig.fists;
+    if (rig.weapon) {
+      this.restRot = rig.weapon.rotation;
+      this.weaponX = rig.weapon.x;
+      this.weaponY = rig.weapon.y;
+    }
+    if (!rig.noHands && !rig.fists) {
+      const hands = new Graphics();
+      hands.circle(-13, 2, 3.5).fill(SKIN).stroke({ width: 1, color: SKIN_D });
+      hands.circle(16, 2, 3.5).fill(SKIN).stroke({ width: 1, color: SKIN_D });
+      this.torso.addChild(hands);
+    }
   }
 
   private draw(kind: number, c: number, d: number): void {
@@ -301,6 +347,94 @@ export class UnitView {
         if (p >= 0) {
           ox = p < 0.4 ? -2 * wind : p < 0.6 ? lerp(-2, 7, strike) : lerp(7, 0, recover);
           lean = p < 0.4 ? -0.08 * wind : p < 0.6 ? lerp(-0.08, 0.14, strike) : lerp(0.14, 0, recover);
+        }
+        break;
+      }
+      default: {
+        const wp = this.weapon;
+        switch (this.anim) {
+          case 'swing': {
+            if (wp) wp.rotation = p < 0 ? this.restRot : p < 0.4 ? lerp(this.restRot, -1.4, easeOut(wind)) : p < 0.6 ? lerp(-1.4, 1.3, strike) : lerp(1.3, this.restRot, easeOut(recover));
+            if (this.shield) this.shield.x = p < 0 ? -15 : p < 0.6 ? lerp(-15, -11, easeOut(wind)) : lerp(-11, -15, recover);
+            if (p >= 0) {
+              ox = p < 0.4 ? -3 * wind : p < 0.6 ? lerp(-3, 9, strike) : lerp(9, 0, recover);
+              lean = p < 0.4 ? -0.12 * wind : p < 0.6 ? lerp(-0.12, 0.2, strike) : lerp(0.2, 0, recover);
+            }
+            break;
+          }
+          case 'thrust': {
+            if (wp) {
+              wp.x = this.weaponX + (p < 0 ? 0 : p < 0.4 ? -5 * wind : p < 0.6 ? lerp(-5, 11, strike) : lerp(11, 0, easeOut(recover)));
+            }
+            if (p >= 0) {
+              ox = p < 0.4 ? -2.5 * wind : p < 0.6 ? lerp(-2.5, 8, strike) : lerp(8, 0, recover);
+              lean = p < 0.4 ? -0.1 * wind : p < 0.6 ? lerp(-0.1, 0.18, strike) : lerp(0.18, 0, recover);
+            }
+            break;
+          }
+          case 'bow': {
+            const draw = clamp01(p / 0.55);
+            const released = p >= 0.55;
+            if (this.nock) this.nock.visible = p >= 0 && !released;
+            if (wp) wp.scale.x = p < 0 ? 1 : released ? lerp(1.15, 1, recover) : 1 + 0.35 * easeOut(draw);
+            if (p >= 0) {
+              ox = released ? -3 * rest : -2.5 * draw;
+              lean = released ? -0.05 * rest : -0.1 * draw;
+            }
+            break;
+          }
+          case 'cast': {
+            const up = p < 0 ? 0 : p < 0.6 ? easeOut(clamp01(p / 0.5)) : 1 - recover;
+            if (this.orb) {
+              this.orb.y = -21 - 9 * up;
+              this.orb.scale.set(p >= 0 ? 1 + 0.9 * up : 1 + Math.sin(time * 4 + this.seed) * 0.08);
+            }
+            if (this.staff) this.staff.rotation = p >= 0 ? -0.22 * up : 0;
+            if (wp && !this.staff) {
+              wp.y = this.weaponY - 8 * up + Math.sin(time * 3 + this.seed) * 1.2;
+              wp.rotation = this.restRot + (p >= 0 ? -0.5 * up : 0);
+            }
+            break;
+          }
+          case 'slam': {
+            if (wp) wp.rotation = p < 0 ? this.restRot : p < 0.4 ? lerp(this.restRot, -2.5, easeOut(wind)) : p < 0.6 ? lerp(-2.5, 1.2, strike) : lerp(1.2, this.restRot, easeOut(recover));
+            if (this.fists) this.fists.y = p < 0 ? 0 : p < 0.4 ? -14 * wind : p < 0.6 ? lerp(-14, 6, strike) : lerp(6, 0, easeOut(recover));
+            if (p >= 0) {
+              sy = p < 0.4 ? 1 + 0.07 * wind : p < 0.6 ? lerp(1.07, 0.86, strike) : lerp(0.86, 1, recover);
+              sx = p < 0.4 ? 1 - 0.04 * wind : p < 0.6 ? lerp(0.96, 1.1, strike) : lerp(1.1, 1, recover);
+              if (p >= 0.4 && p < 0.7) bob -= 2.5 * strike;
+              lean = p < 0.4 ? -0.1 * wind : p < 0.6 ? lerp(-0.1, 0.18, strike) : lerp(0.18, 0, recover);
+            }
+            break;
+          }
+          case 'throw': {
+            if (wp) wp.rotation = p < 0 ? this.restRot : p < 0.4 ? lerp(this.restRot, -1.5, easeOut(wind)) : p < 0.6 ? lerp(-1.5, 1.1, strike) : lerp(1.1, this.restRot, easeOut(recover));
+            if (p >= 0) {
+              ox = p < 0.4 ? -2 * wind : p < 0.6 ? lerp(-2, 4, strike) : lerp(4, 0, recover);
+              lean = p < 0.4 ? -0.1 * wind : p < 0.6 ? lerp(-0.1, 0.12, strike) : lerp(0.12, 0, recover);
+            }
+            break;
+          }
+          case 'siege': {
+            if (wp) wp.rotation = p < 0 ? this.restRot : p < 0.5 ? lerp(this.restRot, this.restRot - 0.55, easeOut(clamp01(p / 0.5))) : p < 0.6 ? lerp(this.restRot - 0.55, this.restRot + 0.7, (p - 0.5) / 0.1) : lerp(this.restRot + 0.7, this.restRot, easeOut(recover));
+            if (p >= 0.5) {
+              ox = p < 0.6 ? -4 * clamp01((p - 0.5) / 0.1) : -4 * (1 - recover);
+              sy = 1 - 0.05 * (p < 0.7 ? 1 : 1 - recover);
+            }
+            break;
+          }
+          case 'punch': {
+            if (this.fists) {
+              const ext = p < 0 ? 0 : p < 0.4 ? -4 * wind : p < 0.6 ? lerp(-4, 9, strike) : lerp(9, 0, easeOut(recover));
+              this.fists.x = ext;
+              this.fists.y = p >= 0 ? -2 * Math.sin(clamp01(p) * Math.PI) : 0;
+            }
+            if (p >= 0) {
+              ox = p < 0.4 ? -2.5 * wind : p < 0.6 ? lerp(-2.5, 7, strike) : lerp(7, 0, recover);
+              lean = p < 0.4 ? -0.12 * wind : p < 0.6 ? lerp(-0.12, 0.2, strike) : lerp(0.2, 0, recover);
+            }
+            break;
+          }
         }
         break;
       }

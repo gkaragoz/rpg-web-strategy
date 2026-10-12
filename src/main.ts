@@ -1,4 +1,4 @@
-import { Application } from 'pixi.js';
+import { Application, Container, Rectangle } from 'pixi.js';
 import './app/studio.css';
 import { BattleScene, type BattleOptions } from './app/battle';
 import { Editor } from './app/editor';
@@ -8,8 +8,9 @@ import { WorldView } from './app/world';
 import { Camera } from './camera';
 import { bakeAtlas, type Atlas } from './render/atlas';
 import { AudioSystem } from './render/audio';
-import { UnitView } from './render/unitView';
+import { POSE_STATES, UnitView } from './render/unitView';
 import type { BattleConfig } from './sim/battle';
+import { KIND_OF_TROOP, LEGACY_COUNT, STATS, setUnitLevel } from './sim/units';
 import { StatsPanel } from './ui/stats';
 
 // Benchmark ve hata ayiklama parametreleri (stüdyoyu atlar):
@@ -82,8 +83,19 @@ const banner = document.getElementById('banner')!;
 const studioRoot = document.getElementById('studio')!;
 const hudRoot = document.getElementById('hud')!;
 
+setUnitLevel(state.level);
+
+/** Atlas'ta dokusu gereken turler: klasikler, yerlestirilenler, secili tur ve bagimliliklari (Bone Caller -> Skeleton). */
+function neededKinds(): Set<number> {
+  const set = new Set<number>(Array.from({ length: LEGACY_COUNT }, (_, i) => i));
+  for (const u of state.units) set.add(u.kind);
+  set.add(state.selKind);
+  for (const k of [...set]) if (STATS[k]?.troop === 'bone-caller') set.add(KIND_OF_TROOP.skeleton);
+  return set;
+}
+
 let atlasBiome = state.map.biome;
-let atlas: Atlas = bakeAtlas(app.renderer, teamColors(state.palette, state.teamCount), atlasBiome);
+let atlas: Atlas = bakeAtlas(app.renderer, teamColors(state.palette, state.teamCount), atlasBiome, neededKinds());
 const getAtlas = (): Atlas => atlas;
 
 const audio = new AudioSystem();
@@ -123,7 +135,7 @@ const battle = new BattleScene({
 let mode: 'studio' | 'battle' = 'studio';
 
 function studioConfig(): BattleConfig {
-  return { mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, terrainSeed: state.seed, map: state.map, stats: state.stats };
+  return { mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, terrainSeed: state.seed, map: state.map, level: state.level, stats: state.stats };
 }
 
 function layoutArray(): Float32Array {
@@ -174,10 +186,50 @@ function onMapChange(): void {
 function rebakeAtlas(): void {
   const old = atlas;
   atlasBiome = state.map.biome;
-  atlas = bakeAtlas(app.renderer, teamColors(state.palette, state.teamCount), atlasBiome);
+  atlas = bakeAtlas(app.renderer, teamColors(state.palette, state.teamCount), atlasBiome, neededKinds());
   world.setAtlas(atlas, true);
   editor.refreshSprites();
   old.dispose();
+  iconCache.clear();
+}
+
+/** Gereken turlerin dokusu atlas'ta yoksa yeniden pisirir. */
+function ensureAtlas(): void {
+  for (const k of neededKinds()) {
+    if (!atlas.kinds.has(k)) {
+      rebakeAtlas();
+      return;
+    }
+  }
+}
+
+const iconCache = new Map<string, HTMLCanvasElement>();
+/** Birim simgesi: UnitView'den bir kez cizilip onbellege alinir; her cagrida kopya doner. */
+function renderIcon(kind: number, team: number): HTMLCanvasElement {
+  const colors = teamColors(state.palette, state.teamCount);
+  const key = `${kind}:${team}:${state.palette}:${state.level}`;
+  let src = iconCache.get(key);
+  if (!src) {
+    const W = 120;
+    const H = 150;
+    const view = new UnitView(kind, colors[Math.min(team, colors.length - 1)], 0);
+    view.update(POSE_STATES[0], 0, 0);
+    const box = new Container();
+    const sc = 1.45 / Math.max(1, STATS[kind].scale * 0.75);
+    view.root.position.set(W / 2, H - 18);
+    view.root.scale.set(sc);
+    box.addChild(view.root);
+    const tex = app.renderer.generateTexture({ target: box, frame: new Rectangle(0, 0, W, H), resolution: 1.5, antialias: true });
+    src = app.renderer.extract.canvas(tex) as HTMLCanvasElement;
+    tex.destroy(true);
+    box.destroy({ children: true });
+    iconCache.set(key, src);
+  }
+  const out = document.createElement('canvas');
+  out.width = src.width;
+  out.height = src.height;
+  out.getContext('2d')!.drawImage(src, 0, 0);
+  return out;
 }
 
 function onPaletteChange(): void {
@@ -192,6 +244,16 @@ studio = new Studio(studioRoot, {
   onPaletteChange,
   onStart: () => void startBattle(),
   onOptions: applyOptions,
+  icon: renderIcon,
+  onLevel: () => {
+    setUnitLevel(state.level);
+    iconCache.clear();
+    saveState(state);
+  },
+  onKindPick: () => {
+    ensureAtlas();
+    saveState(state);
+  },
   onBench: (per) => {
     location.search = `?bench=${per}&auto=30`;
   },
@@ -216,6 +278,7 @@ function battleOptions(): BattleOptions {
 
 /** Savasi ayni dizilimle bastan kurar (debug anahtari sim turunu degistirir). */
 async function restartBattle(): Promise<void> {
+  ensureAtlas();
   mode = 'studio';
   battle.exit();
   await battle.enter(battleOptions());
@@ -225,6 +288,7 @@ async function restartBattle(): Promise<void> {
 
 async function startBattle(): Promise<void> {
   saveState(state);
+  ensureAtlas();
   const opts = battleOptions();
   studio.hide();
   editor.exit();

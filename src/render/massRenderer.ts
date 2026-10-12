@@ -5,7 +5,7 @@ import type { Atlas } from './atlas';
 import { isoX, isoY } from '../iso';
 import type { SimView } from '../sim/backend';
 import { SIM_DT } from '../sim/constants';
-import { Kind, MAX_TEAMS, STATS } from '../sim/units';
+import { MAX_TEAMS, STATS, isMelee, isRanged, isTank } from '../sim/units';
 import { DEATH_FADE, POSES } from './unitView';
 
 const DEPTH_SCALE = 4;
@@ -158,7 +158,7 @@ export class MassRenderer {
       const swing = u.swing[i] > 0;
       const prog = swing ? 1 - u.swing[i] / STATS[kind].swing : 0;
       let off = 0;
-      if (swing) off = kind === Kind.Warrior ? Math.sin(prog * Math.PI) * 11 : kind === Kind.Archer ? -Math.sin(prog * Math.PI) * 4 : 0;
+      if (swing) off = isMelee(kind) && !isTank(kind) ? Math.sin(prog * Math.PI) * 11 : isRanged(kind) ? -Math.sin(prog * Math.PI) * 4 : 0;
       p.x = sx + off * u.facing[i];
       p.y = sy - bob;
       p.scaleX = u.facing[i];

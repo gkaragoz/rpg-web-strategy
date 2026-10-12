@@ -1,4 +1,4 @@
-import { KIND_COUNT, MAX_TEAMS, TUNABLE, type StatOverrides } from '../sim/units';
+import { DEFAULT_LEVEL, KIND_COUNT, MAX_LEVEL, MAX_TEAMS, TUNABLE, type StatOverrides } from '../sim/units';
 import type { TeamColors } from '../render/unitView';
 import { DEFAULT_MAP, PRESETS, sanitizeSpec, type MapSpec } from '../sim/mapSpec';
 
@@ -70,6 +70,8 @@ export interface AppState {
   brush: number;
   tool: 'place' | 'erase';
   benchPerTeam: number;
+  /** Roster birimlerinin seviyesi (1-10). */
+  level: number;
   /** Birim istatistik ayarlari (yalniz degistirilenler). */
   stats: StatOverrides;
   options: Options;
@@ -96,6 +98,7 @@ export function defaultState(): AppState {
     brush: 1,
     tool: 'place',
     benchPerTeam: 10000,
+    level: DEFAULT_LEVEL,
     stats: Array.from({ length: KIND_COUNT }, () => ({})),
     options: defaultOptions(),
     units: [],
@@ -151,6 +154,7 @@ export function loadState(): AppState {
       brush: Math.floor(num(o.brush, 0, BRUSHES.length - 1, d.brush)),
       tool: 'place',
       benchPerTeam: [1000, 3000, 10000].includes(o.benchPerTeam as number) ? (o.benchPerTeam as number) : d.benchPerTeam,
+      level: Math.floor(num(o.level, 1, MAX_LEVEL, d.level)),
       stats: Array.from({ length: KIND_COUNT }, () => ({})),
       options: defaultOptions(),
       units: [],

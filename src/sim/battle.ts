@@ -74,6 +74,8 @@ export interface BattleConfig {
   stats?: StatOverrides;
   /** false: cevre (nehir, engeller) yok, eski cıplak harita. Varsayilan true. */
   env?: boolean;
+  /** Roster birimlerinin seviyesi (1-10). */
+  level?: number;
   /** Harita tarifi (biyom, nehir, orman, koy, gecit); yoksa varsayilan orman haritasi. */
   map?: MapSpec;
   /** Harita tohumu. */
@@ -149,7 +151,7 @@ export class Battle {
 
   constructor(seed = 1, config: BattleConfig = { mode: 'demo', perTeam: 10 }) {
     this.config = config;
-    applyStats(config.stats);
+    applyStats(config.stats, config.level);
     const total = unitCapacity(config);
     this.mapSize = mapSizeFor(config);
     this.terrain = terrainFor(config);

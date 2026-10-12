@@ -1,6 +1,7 @@
-import { KIND_COUNT, LEGACY_COUNT, MAX_TEAMS, STATS } from '../sim/units';
+import { LEGACY_COUNT, MAX_TEAMS, STATS } from '../sim/units';
 import type { Editor } from './editor';
 import { MapPicker } from './mapPicker';
+import { UnitGallery } from './unitGallery';
 import { UnitSettings } from './unitSettings';
 import { BRUSHES, MAP_SIZES, MAX_PLACED, PALETTES, hex, saveState, teamColors, type AppState } from './state';
 
@@ -15,6 +16,12 @@ export interface StudioDeps {
   onBench: (perTeam: number) => void;
   /** Gorunum/ses secenekleri degisti (ses ve cubuk modu hemen uygulanir). */
   onOptions: () => void;
+  /** Birim simgesi (kopya canvas). */
+  icon: (kind: number, team: number) => HTMLCanvasElement;
+  /** Roster birim seviyesi degisti. */
+  onLevel: () => void;
+  /** Yeni bir tur secildi: atlas gerekiyorsa pisirilir. */
+  onKindPick: (kind: number) => void;
 }
 
 const KIND_KEYS = ['1', '2', '3', '4', '5'];
@@ -27,6 +34,7 @@ export class Studio {
   private visible = false;
   private readonly units: UnitSettings;
   private readonly maps: MapPicker;
+  private readonly gallery: UnitGallery;
 
   constructor(
     root: HTMLElement,
@@ -34,6 +42,18 @@ export class Studio {
   ) {
     this.root = root;
     this.units = new UnitSettings(d.state, () => this.render());
+    this.gallery = new UnitGallery({
+      state: d.state,
+      icon: d.icon,
+      onLevel: () => {
+        d.onLevel();
+        this.render();
+      },
+      onPick: (k) => {
+        d.onKindPick(k);
+        this.render();
+      },
+    });
     this.maps = new MapPicker(d.state, () => {
       d.onMapChange();
       this.render();
@@ -120,6 +140,7 @@ export class Studio {
   <div class="dock-note" id="reason" role="status"></div>
   <div class="dock-group" id="chips" role="radiogroup" aria-label="Takım"></div>
   <div class="dock-group" id="kinds" role="radiogroup" aria-label="Asker türü"></div>
+  <div class="dock-group"><button id="gallery-btn" type="button" title="Tüm birimler (nadirlik, ırk, seviye)">Birimler…</button></div>
   <div class="dock-group"><div class="seg" id="brush" role="group" aria-label="Fırça boyutu"></div><div class="seg" id="tool" role="group" aria-label="Araç"></div></div>
   <div class="dock-group">
     <button id="undo" type="button" title="Geri al (Ctrl+Z)">Geri al</button>
@@ -211,6 +232,7 @@ export class Studio {
     });
     this.$('#units-btn').addEventListener('click', () => this.units.open());
     this.$('#map-btn').addEventListener('click', () => this.maps.open());
+    this.$('#gallery-btn').addEventListener('click', () => this.gallery.open());
     this.$('#start').addEventListener('click', () => {
       if (!this.canStart().ok) return;
       this.d.onStart();
@@ -349,14 +371,17 @@ export class Studio {
         this.render();
       }),
     );
-    this.$('#kinds').innerHTML = Array.from({ length: LEGACY_COUNT }, (_, k) => {
+    const kindList = Array.from({ length: LEGACY_COUNT }, (_, k) => k);
+    if (s.selKind >= LEGACY_COUNT) kindList.push(s.selKind);
+    this.$('#kinds').innerHTML = kindList.map((k) => {
       const sel = k === s.selKind;
-      return `<button type="button" class="kind${sel ? ' sel' : ''}" role="radio" aria-checked="${sel}" data-kind="${k}" title="${esc(STATS[k].name)} (${KIND_KEYS[k]})"><kbd>${KIND_KEYS[k]}</kbd>${esc(STATS[k].name)}</button>`;
+      return `<button type="button" class="kind${sel ? ' sel' : ''}" role="radio" aria-checked="${sel}" data-kind="${k}" title="${esc(STATS[k].name)} (${KIND_KEYS[k]})">${KIND_KEYS[k] ? `<kbd>${KIND_KEYS[k]}</kbd>` : ''}${esc(STATS[k].name)}</button>`;
     }).join('');
     this.$('#kinds').querySelectorAll('button').forEach((b) =>
       b.addEventListener('click', () => {
         s.selKind = Number((b as HTMLElement).dataset.kind);
         s.tool = 'place';
+        this.d.onKindPick(s.selKind);
         this.render();
       }),
     );
@@ -408,7 +433,7 @@ export class Studio {
     else if (e.code === 'KeyB') s.brush = (s.brush + 1) % BRUSHES.length;
     else if (e.code.startsWith('Digit')) {
       const k = Number(e.code.slice(5)) - 1;
-      if (k < 0 || k >= KIND_COUNT) return;
+      if (k < 0 || k >= LEGACY_COUNT) return;
       s.selKind = k;
       s.tool = 'place';
     } else return;
