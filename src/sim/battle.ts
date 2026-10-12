@@ -22,6 +22,23 @@ const OTHER_BANK_PENALTY = 15;
 /** Bu kadar sn olum olmazsa hasar saniyede %STALE_RAMP artar. */
 const STALE_AFTER = 20;
 const STALE_RAMP = 0.08;
+/** Hedef degistirmeye direnc (puan bonusu) ve yeniden hedef arama araligi (sn). */
+const SWITCH_BONUS = 6;
+/** Menzildeki hedef kilitlenir: bu carpanla menzil icindeyken yeniden hedef aranmaz. */
+const ENGAGE_LOCK = 1.25;
+/** Melee saldirisi menzil toleransi (kalabalikta itilen birim de vurabilsin). */
+const MELEE_SLACK = 0.4;
+/** Ilerleme bekcisi: hedefe yaklasamayan birim bu sure sonra hedefi yasaklar. */
+const CHASE_TIMEOUT = 6;
+const BAN_TIME = 8;
+/** Leash yuzunden bu kadar sn beklerse leash gecici devre disi. */
+const LEASH_HOLD_MAX = 3;
+const LEASH_OFF = 8;
+/** Hic hasar yoksa (sn) berabere: once hasar varsa / hic olmamissa. */
+const NO_DAMAGE_DRAW = 90;
+const NO_DAMAGE_DRAW_FIRST = 150;
+/** Hasar verebilen birim kalmadiysa bu sure sonra berabere. */
+const NO_DAMAGER_DRAW = 4;
 const DEMO_GAP_HALF = 9;
 const BENCH_GAP = 24;
 
@@ -56,6 +73,8 @@ export interface BattleConfig {
 }
 
 export const DBG_KEYS = ['kites', 'kiteSteps', 'snapShots', 'archerDeaths', 'archerDeathsKiting', 'stuck', 'cornered'] as const;
+/** Yalniz sim-ici sayaclar (dogrulama): shared'a yazilmaz. */
+export const EXTRA_DBG = ['bans', 'leashBreaks', 'paths', 'pathFails'] as const;
 
 export class Battle {
   readonly units: Units;
@@ -69,7 +88,7 @@ export class Battle {
   /** Faz bazli sim suresi (ms, birikimli): hazirlik, grid, birim guncelleme, ayrisma, ok. */
   readonly prof = { prep: 0, grid: 0, units: 0, pick: 0, separate: 0, arrows: 0, steps: 0 };
   /** Davranis sayaclari (dogrulama icin). */
-  readonly dbg: Record<(typeof DBG_KEYS)[number], number> = {
+  readonly dbg: Record<(typeof DBG_KEYS)[number] | (typeof EXTRA_DBG)[number], number> = {
     kites: 0,
     kiteSteps: 0,
     snapShots: 0,
@@ -77,13 +96,25 @@ export class Battle {
     archerDeathsKiting: 0,
     stuck: 0,
     cornered: 0,
+    bans: 0,
+    leashBreaks: 0,
+    paths: 0,
+    pathFails: 0,
   };
+  /** Toplam hasar/sifa/olum sayaclari (ilerleme olcumu ve testler icin). */
+  readonly counters = { damage: 0, heal: 0, kills: 0 };
+  private lastDamageSeen = 0;
+  private lastDamageT = 0;
+  private noDamagerSince = -1;
   readonly alivePerTeam: number[] = new Array(MAX_TEAMS).fill(0);
   private rng: () => number = Math.random;
   private get kiteOn(): boolean {
     return this.config.kite !== false;
   }
   private stepNo = 0;
+  /** Sikisan birimler icin A* yollari (birim -> ara noktalar) ve kare basina yol hesabi butcesi. */
+  private readonly paths = new Map<number, { pts: number[]; k: number; gx: number; gy: number; t: number }>();
+  private pathBudget = 0;
   private lastDeathTime = 0;
   private readonly centroidX: number[] = new Array(MAX_TEAMS).fill(0);
   private readonly centroidY: number[] = new Array(MAX_TEAMS).fill(0);
@@ -95,6 +126,8 @@ export class Battle {
   private readonly nearestEnemy = new Int8Array(MAX_TEAMS).fill(-1);
   private readonly enemyList: number[][] = Array.from({ length: MAX_TEAMS }, () => []);
   private readonly teamCount: number;
+  /** Takim basina canli ve rahip olmayan birim sayisi (yalniz rahiplerden olusan takim kacmasin). */
+  private readonly damagerCount: number[] = new Array(MAX_TEAMS).fill(0);
   private readonly selfList: number[][] = Array.from({ length: MAX_TEAMS }, (_, t) => [t]);
   private readonly grids: Grid[];
   private readonly sepGrid: Grid;
@@ -132,7 +165,12 @@ export class Battle {
     this.time = 0;
     this.stepNo = 0;
     this.lastDeathTime = 0;
+    this.counters.damage = this.counters.heal = this.counters.kills = 0;
+    this.lastDamageSeen = this.lastDamageT = 0;
+    this.noDamagerSince = -1;
     for (const k of DBG_KEYS) this.dbg[k] = 0;
+    this.dbg.bans = this.dbg.leashBreaks = this.dbg.paths = this.dbg.pathFails = 0;
+    this.paths.clear();
     if (this.config.mode === 'custom') {
       this.spawnLayout();
     } else if (this.config.mode === 'bench') {
@@ -153,8 +191,8 @@ export class Battle {
       let x = L[k + 2];
       let y = L[k + 3];
       // Tohum degisince su/engel altinda kalan birim en yakin yurunebilir noktaya tasinir.
-      if (this.terrain && !this.terrain.walkable(x, y)) {
-        const p = this.terrain.nearestWalkable(x, y);
+      if (this.terrain && !(this.terrain.walkable(x, y) && this.terrain.reachable(x, y))) {
+        const p = this.terrain.nearestWalkable(x, y, 20, true);
         if (!p) continue;
         x = p.x;
         y = p.y;
@@ -217,6 +255,7 @@ export class Battle {
     const u = this.units;
     this.time += dt;
     this.stepNo++;
+    this.pathBudget = 24;
     const pf = this.prof;
     let tp = performance.now();
 
@@ -228,6 +267,7 @@ export class Battle {
     const wx = new Array(MAX_TEAMS).fill(0);
     const wy = new Array(MAX_TEAMS).fill(0);
     const wn = new Array(MAX_TEAMS).fill(0);
+    this.damagerCount.fill(0);
     for (let i = 0; i < u.count; i++) {
       if (!u.alive[i]) {
         u.deathT[i] += dt;
@@ -251,6 +291,7 @@ export class Battle {
       this.centroidX[tm] += u.x[i];
       this.centroidY[tm] += u.y[i];
       n[tm]++;
+      if (u.kind[i] !== Kind.Priest) this.damagerCount[tm]++;
       if (isMelee(u.kind[i])) {
         wx[tm] += u.x[i];
         wy[tm] += u.y[i];
@@ -328,7 +369,35 @@ export class Battle {
       }
       if (alive === 1) this.winner = last;
       else if (alive === 0) this.winner = -2;
+      else this.checkDraw(alive);
     }
+  }
+
+  /**
+   * Savas kilitlenmesin diye beraberlik kurallari: (1) hicbir canli birim hasar veremiyor
+   * (yalniz rahipler), (2) uzun suredir hic hasar yok (ulasilamaz hedef, sifa dengesi...).
+   */
+  private checkDraw(aliveTeams: number): void {
+    const u = this.units;
+    if (aliveTeams < 2) return;
+    let damager = false;
+    for (let i = 0; i < u.count; i++) {
+      if (u.alive[i] && u.kind[i] !== Kind.Priest) {
+        damager = true;
+        break;
+      }
+    }
+    if (!damager) {
+      if (this.noDamagerSince < 0) this.noDamagerSince = this.time;
+      if (this.time - this.noDamagerSince > NO_DAMAGER_DRAW) this.winner = -2;
+    } else this.noDamagerSince = -1;
+
+    if (this.counters.damage > this.lastDamageSeen + 0.01) {
+      this.lastDamageSeen = this.counters.damage;
+      this.lastDamageT = this.time;
+    }
+    const limit = this.lastDamageSeen > 0 ? NO_DAMAGE_DRAW : NO_DAMAGE_DRAW_FIRST;
+    if (this.time - this.lastDamageT > limit) this.winner = -2;
   }
 
   private startAttack(i: number): void {
@@ -347,6 +416,8 @@ export class Battle {
     u.cooldown[i] -= dt;
     u.retarget[i] -= dt;
     if (u.sideT[i] > 0) u.sideT[i] -= dt;
+    if (u.banT[i] > 0) u.banT[i] -= dt;
+    if (u.leashOffT[i] > 0) u.leashOffT[i] -= dt;
 
     // Geri itilen/sersemleyen birim bu adimda eylem yapamaz.
     if (u.kbVx[i] !== 0 || u.kbVy[i] !== 0) this.applyKnockback(i, dt);
@@ -377,7 +448,7 @@ export class Battle {
       const tq = performance.now();
       this.pickTarget(i);
       this.prof.pick += performance.now() - tq;
-      u.retarget[i] = u.target[i] < 0 ? 0.4 + this.rng() * 0.3 : 1.2 + this.rng() * 1.6;
+      u.retarget[i] = u.target[i] < 0 ? 0.4 + this.rng() * 0.3 : 1.8 + this.rng() * 2.0;
     }
 
     if (ranged && this.kiteOn && this.tryKite(i, dt)) return;
@@ -393,12 +464,26 @@ export class Battle {
     const dy = u.y[t] - u.y[i];
     const dist = Math.sqrt(dx * dx + dy * dy);
 
+    if (dist <= (isMelee(kind) ? s.range + MELEE_SLACK : s.range * 0.95)) {
+      u.chaseT[i] = 0;
+      u.chaseBest[i] = Infinity;
+    } else if (this.chaseWatchdog(i, t, dist, dt)) {
+      return;
+    }
+
     if (isMelee(kind)) {
-      if (dist > s.range) {
+      if (dist > s.range + MELEE_SLACK) {
         // Hedefin etrafinda kisiye ozel bir aciya kosar: herkes ayni noktaya yigilmaz.
         const base = Math.atan2(-dy, -dx) + u.slotAngle[i];
         const reach = s.range * 0.7;
-        this.moveToward(i, u.x[t] + Math.cos(base) * reach, u.y[t] + Math.sin(base) * reach, s.speed, dt);
+        let gx = u.x[t] + Math.cos(base) * reach;
+        let gy = u.y[t] + Math.sin(base) * reach;
+        // Yaklasma noktasi suya/engele dustuyse dogrudan hedefe yonel.
+        if (this.terrain && !this.terrain.walkable(gx, gy)) {
+          gx = u.x[t];
+          gy = u.y[t];
+        }
+        this.moveToward(i, gx, gy, s.speed, dt);
         return;
       }
     } else if (dist > s.range * 0.95) {
@@ -415,7 +500,7 @@ export class Battle {
         } else {
           this.moveToward(i, u.x[t], u.y[t], s.speed, dt);
         }
-      } else if (this.beyondLeash(i)) {
+      } else if (this.leashHold(i, dt)) {
         this.faceTo(i, dx, dy);
       } else {
         this.moveToward(i, u.x[t], u.y[t], s.speed, dt);
@@ -538,11 +623,53 @@ export class Battle {
     return true;
   }
 
+  /**
+   * Ilerleme bekcisi: hedefe yaklasamayan (kalabalik, engel, ulasilamaz) birim bir sure sonra
+   * o hedefi yasaklayip baska hedef secer. true: hedef birakildi.
+   */
+  private chaseWatchdog(i: number, t: number, dist: number, dt: number): boolean {
+    const u = this.units;
+    if (dist < u.chaseBest[i] - 0.5) {
+      u.chaseBest[i] = dist;
+      u.chaseT[i] = 0;
+      return false;
+    }
+    u.chaseT[i] += dt;
+    if (u.chaseT[i] < CHASE_TIMEOUT) return false;
+    u.banTarget[i] = t;
+    u.banT[i] = BAN_TIME;
+    if (u.attackers[t] > 0 && !(u.kind[i] === Kind.Priest)) u.attackers[t]--;
+    if (u.healers[t] > 0 && u.kind[i] === Kind.Priest) u.healers[t]--;
+    u.target[i] = -1;
+    u.retarget[i] = 0;
+    u.chaseT[i] = 0;
+    u.chaseBest[i] = Infinity;
+    this.dbg.bans++;
+    return true;
+  }
+
+  /** Leash: bekletiyorsa true; cok uzun beklediyse gecici olarak devre disi birakir. */
+  private leashHold(i: number, dt: number): boolean {
+    const u = this.units;
+    if (!this.beyondLeash(i)) {
+      u.holdT[i] = 0;
+      return false;
+    }
+    u.holdT[i] += dt;
+    if (u.holdT[i] > LEASH_HOLD_MAX) {
+      u.leashOffT[i] = LEASH_OFF;
+      u.holdT[i] = 0;
+      this.dbg.leashBreaks++;
+      return false;
+    }
+    return true;
+  }
+
   /** Okcu/priest kendi warrior merkezinin onune (dusmana dogru) gecmesin. */
   private beyondLeash(i: number): boolean {
     const u = this.units;
     const tm = u.team[i];
-    if (!this.kiteOn || !this.hasFront[tm]) return false;
+    if (!this.kiteOn || !this.hasFront[tm] || u.leashOffT[i] > 0) return false;
     const en = this.nearestEnemy[tm];
     if (en < 0) return false;
     let ex = this.centroidX[en] - this.frontX[tm];
@@ -571,6 +698,16 @@ export class Battle {
     const terrain = this.terrain;
     const sideI = terrain ? terrain.sideAt(u.x[i], u.y[i]) : 0;
     const reach = STATS[kind].range * 0.95;
+    const myRegion = terrain ? terrain.regionAt(u.x[i], u.y[i]) : -1;
+    const banned = u.banT[i] > 0 ? u.banTarget[i] : -1;
+
+    // Menzildeki (veya vurulabilir mesafedeki) mevcut hedef kilitlidir: titresim/dongu olmasin.
+    if (cur >= 0 && u.alive[cur] && !isPriest) {
+      const cdx = u.x[cur] - u.x[i];
+      const cdy = u.y[cur] - u.y[i];
+      const lockR = (melee ? STATS[kind].range + MELEE_SLACK : STATS[kind].range) * ENGAGE_LOCK;
+      if (cdx * cdx + cdy * cdy <= lockR * lockR) return;
+    }
     let best = -1;
     let bestScore = Infinity;
     let foundRing = -1;
@@ -588,11 +725,11 @@ export class Battle {
             const grid = this.grids[searchTeams[ti]];
             for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
               const j = grid.items[k];
-              if (j === i || (isPriest && u.hp[j] >= u.maxHp[j])) continue;
+              if (j === i || j === banned || (isPriest && u.hp[j] >= u.maxHp[j])) continue;
               const ddx = u.x[j] - u.x[i];
               const ddy = u.y[j] - u.y[i];
               const dist = Math.sqrt(ddx * ddx + ddy * ddy);
-              const jitter = this.rng();
+              const jitter = this.rng() * 0.8;
               const tank = isTank(u.kind[j]);
               let score: number;
               if (melee) {
@@ -606,11 +743,13 @@ export class Battle {
                 const heal = u.healers[j] - (j === cur ? 1 : 0);
                 score = (u.hp[j] / u.maxHp[j]) * 10 + dist * 0.3 + heal * 4 + jitter;
               }
+              // Kapali cep/ada: menzil disindaysa ulasilamaz, hedef alma.
+              if (terrain && myRegion !== -1 && dist > reach && terrain.regionAt(u.x[j], u.y[j]) !== myRegion) continue;
               // Nehrin karsisindaki hedefe sadece gerekirse: okcu menzildeyse nehir uzerinden vurur.
               if (terrain && (melee || isPriest || dist > reach) && terrain.sideAt(u.x[j], u.y[j]) !== sideI) {
                 score += OTHER_BANK_PENALTY;
               }
-              if (j === cur) score -= 2.5;
+              if (j === cur) score -= SWITCH_BONUS;
               if (score < bestScore) {
                 bestScore = score;
                 best = j;
@@ -623,12 +762,17 @@ export class Battle {
     }
 
     if (cur >= 0 && cur !== best) {
-      if (isPriest) u.healers[cur]--;
-      else u.attackers[cur]--;
+      if (isPriest) {
+        if (u.healers[cur] > 0) u.healers[cur]--;
+      } else if (u.attackers[cur] > 0) u.attackers[cur]--;
     }
     if (best >= 0 && best !== cur) {
       if (isPriest) u.healers[best]++;
       else u.attackers[best]++;
+    }
+    if (best !== cur) {
+      u.chaseT[i] = 0;
+      u.chaseBest[i] = Infinity;
     }
     u.target[i] = best;
   }
@@ -637,7 +781,7 @@ export class Battle {
     const u = this.units;
     const en = this.nearestEnemy[u.team[i]];
     if (en < 0) return;
-    if (!isMelee(u.kind[i]) && this.beyondLeash(i)) return;
+    if (!isMelee(u.kind[i]) && this.leashHold(i, dt)) return;
     this.moveToward(i, this.centroidX[en], this.centroidY[en], STATS[u.kind[i]].speed, dt);
   }
 
@@ -645,7 +789,8 @@ export class Battle {
     const u = this.units;
     const tm = u.team[i];
     const en = this.nearestEnemy[tm];
-    if (en < 0) return;
+    // Savasci yoksa (yalniz rahipler) orduya eslik edecek kimse yok: kacip koseye gitme.
+    if (en < 0 || this.damagerCount[tm] === 0) return;
     let ax = this.centroidX[tm] - this.centroidX[en];
     let ay = this.centroidY[tm] - this.centroidY[en];
     const len = Math.sqrt(ax * ax + ay * ay) || 1;
@@ -680,7 +825,11 @@ export class Battle {
       const ty = u.y[t] + u.vy[t] * flight;
       this.projectiles.spawn(u.x[i], u.y[i], tx, ty, flight, 18 + dist * 2.2, s.power, u.team[i]);
     } else if (dist <= s.range + 1 && u.hp[t] < u.maxHp[t]) {
-      u.hp[t] = Math.min(u.maxHp[t], u.hp[t] + s.power);
+      const before = u.hp[t];
+      const stale = this.time - this.lastDeathTime - STALE_AFTER;
+      const heal = stale > 0 ? s.power / (1 + stale * STALE_RAMP) : s.power;
+      u.hp[t] = Math.min(u.maxHp[t], u.hp[t] + heal);
+      this.counters.heal += u.hp[t] - before;
       if (this.emitEvents) this.events.push({ type: 'heal', x: u.x[t], y: u.y[t], unit: t });
     }
   }
@@ -814,11 +963,13 @@ export class Battle {
     const stale = this.time - this.lastDeathTime - STALE_AFTER;
     if (stale > 0) amount *= 1 + stale * STALE_RAMP;
     amount *= 1 - STATS[u.kind[j]].armor;
+    this.counters.damage += Math.min(amount, Math.max(0, u.hp[j]));
     u.hp[j] -= amount;
     u.flash[j] = 0.12;
     if (u.hp[j] <= 0) {
       u.hp[j] = 0;
       this.lastDeathTime = this.time;
+      this.counters.kills++;
       u.alive[j] = 0;
       u.deathT[j] = 0;
       u.target[j] = -1;
@@ -842,6 +993,9 @@ export class Battle {
       this.applyRoute(i, gx, gy);
       gx = this.rx;
       gy = this.ry;
+      this.followPath(i, gx, gy, dt);
+      gx = this.rx;
+      gy = this.ry;
     }
     const dx = gx - u.x[i];
     const dy = gy - u.y[i];
@@ -863,12 +1017,39 @@ export class Battle {
     const ox = u.x[i];
     const oy = u.y[i];
     // Konumlar Float32 saklanir: yurunebilirlik testi yuvarlanmis degerle yapilmali.
-    let nx = Math.fround(ox + ux * step);
-    let ny = Math.fround(oy + uy * step);
+    const lim = this.mapSize - 0.5;
+    let nx = Math.fround(Math.min(lim, Math.max(0.5, ox + ux * step)));
+    let ny = Math.fround(Math.min(lim, Math.max(0.5, oy + uy * step)));
     if (t && !t.walkable(nx, ny)) {
-      if (t.walkable(nx, oy)) ny = oy;
-      else if (t.walkable(ox, ny)) nx = ox;
-      else {
+      // Engel onunde kenar boyunca TAM hizla kay (hedef yonu engele dikse bile ilerleyebilsin).
+      const canX = t.walkable(Math.fround(ox + (ux >= 0 ? step : -step)), oy);
+      const canY = t.walkable(ox, Math.fround(oy + (uy >= 0 ? step : -step)));
+      const dirX = Math.abs(ux) > 1e-3 ? (ux > 0 ? 1 : -1) : u.sideDir[i];
+      const dirY = Math.abs(uy) > 1e-3 ? (uy > 0 ? 1 : -1) : u.sideDir[i];
+      let slideX = canX && (!canY || Math.abs(ux) >= Math.abs(uy));
+      let slideY = canY && !slideX;
+      if (!slideX && !slideY) {
+        // Iki eksen de dogrudan yonde kapali: ters yone (engelin yanina) dene.
+        if (t.walkable(Math.fround(ox + dirX * -step), oy) && Math.abs(ux) > 1e-3) {
+          nx = Math.fround(ox - dirX * step);
+          ny = oy;
+        } else {
+          nx = ox;
+          ny = oy;
+        }
+        slideX = slideY = false;
+      }
+      if (slideX) {
+        nx = Math.fround(Math.min(lim, Math.max(0.5, ox + dirX * step)));
+        ny = oy;
+        if (!t.walkable(nx, ny)) nx = ox;
+      } else if (slideY) {
+        nx = ox;
+        ny = Math.fround(Math.min(lim, Math.max(0.5, oy + dirY * step)));
+        if (!t.walkable(nx, ny)) ny = oy;
+      }
+      // Ters yone kayma dali da dogrulanmali.
+      if (!t.walkable(nx, ny)) {
         nx = ox;
         ny = oy;
       }
@@ -882,6 +1063,19 @@ export class Battle {
     u.vy[i] = mdy / dt;
     if (mv > 1e-4) u.moving[i] = 1;
 
+    // Net yer degistirme penceresi: 0.8 sn'de 0.3 tile'dan az ilerlediyse (ileri-geri kipirdama dahil) sikismis say.
+    u.winT[i] += dt;
+    if (u.winT[i] >= 0.8) {
+      const wx = u.x[i] - u.winX[i];
+      const wy = u.y[i] - u.winY[i];
+      if (wx * wx + wy * wy < 0.09 && d > 1.2) {
+        u.stuckT[i] = Math.max(u.stuckT[i], 0.6);
+        this.dbg.stuck++;
+      }
+      u.winX[i] = u.x[i];
+      u.winY[i] = u.y[i];
+      u.winT[i] = 0;
+    }
     // Hedefe dogru gercek ilerleme (kenar boyunca surunmek ilerleme sayilmaz).
     const progress = mdx * ux + mdy * uy;
     if (step > 0.02 && progress < step * 0.25) {
@@ -897,6 +1091,90 @@ export class Battle {
     }
     if (faceMove) this.faceTo(i, dx, dy);
     return mv;
+  }
+
+  /**
+   * Sikisan birim icin A* yolu: yol varsa (rx, ry) = siradaki ara nokta. Yol yoksa hedef
+   * ulasilamaz sayilir ve yasaklanir.
+   */
+  private followPath(i: number, gx: number, gy: number, dt: number): void {
+    const u = this.units;
+    const t = this.terrain!;
+    this.rx = gx;
+    this.ry = gy;
+    let p = this.paths.get(i);
+    if (p) {
+      p.t += dt;
+      const gd = (gx - p.gx) ** 2 + (gy - p.gy) ** 2;
+      if (gd > 9 || p.t > 12) {
+        this.paths.delete(i);
+        p = undefined;
+      }
+    }
+    // Her ~0.6 sn'de (birime kaydirmali) goruş hatti kontrolu: hedef/ara hedef gorunmuyorsa yol iste,
+    // gorunuyorsa mevcut yolu birak.
+    let blocked = false;
+    if ((i + this.stepNo) % 20 === 0) {
+      const dx0 = gx - u.x[i];
+      const dy0 = gy - u.y[i];
+      const far = dx0 * dx0 + dy0 * dy0 > 6;
+      const clear = !far || t.lineWalkable(u.x[i], u.y[i], gx, gy);
+      if (p && clear) {
+        this.paths.delete(i);
+        p = undefined;
+      }
+      blocked = far && !clear;
+    }
+    // Aktif yolun siradaki ara noktasi mevcut konumdan gorunmuyorsa (surunme/itilme) yolu yeniden kur.
+    let dropped = false;
+    if (p) {
+      const k = Math.min(p.k, p.pts.length / 2 - 1);
+      if (!t.lineWalkable(u.x[i], u.y[i], p.pts[k * 2], p.pts[k * 2 + 1])) {
+        this.paths.delete(i);
+        p = undefined;
+        dropped = true;
+      }
+    }
+    if (!p && (u.stuckT[i] > 0.3 || blocked || dropped) && this.pathBudget > 0) {
+      this.pathBudget--;
+      const pts = t.findPath(u.x[i], u.y[i], gx, gy);
+      if (pts && pts.length > 0) {
+        p = { pts, k: 0, gx, gy, t: 0 };
+        this.paths.set(i, p);
+        this.dbg.paths++;
+        u.sideT[i] = 0;
+      } else if (!pts) {
+        this.dbg.pathFails++;
+        const tg = u.target[i];
+        if (tg >= 0) {
+          u.banTarget[i] = tg;
+          u.banT[i] = BAN_TIME;
+          if (u.kind[i] === Kind.Priest) {
+            if (u.healers[tg] > 0) u.healers[tg]--;
+          } else if (u.attackers[tg] > 0) u.attackers[tg]--;
+          u.target[i] = -1;
+          u.retarget[i] = 0;
+        }
+        u.stuckT[i] = 0;
+      }
+    }
+    if (!p) return;
+    const m = p.pts.length / 2;
+    while (p.k < m) {
+      const wx = p.pts[p.k * 2] - u.x[i];
+      const wy = p.pts[p.k * 2 + 1] - u.y[i];
+      if (wx * wx + wy * wy > 0.12) break;
+      p.k++;
+    }
+    // Birimin guncel konumundan bir sonraki ara nokta dogrudan gorunuyorsa ara noktayi atla.
+    if (p.k + 1 < m && t.lineWalkable(u.x[i], u.y[i], p.pts[(p.k + 1) * 2], p.pts[(p.k + 1) * 2 + 1])) p.k++;
+    if (p.k >= m) {
+      this.paths.delete(i);
+      return;
+    }
+    this.rx = p.pts[p.k * 2];
+    this.ry = p.pts[p.k * 2 + 1];
+    u.sideT[i] = 0;
   }
 
   /** Nehir gecisi: hedef karsi yakadaysa (rx, ry) = kopru girisi/cikisi, degilse hedefin kendisi. */
@@ -1011,6 +1289,9 @@ export class Battle {
       }
       const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / grid.cell) | 0));
       const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / grid.cell) | 0));
+      // Itme gecersiz konuma sokarsa yalniz itmeyi geri al (adimdaki hareketi silme).
+      const bx = u.x[i];
+      const by = u.y[i];
       for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
         for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
           const c = gy * cols + gx;
@@ -1026,8 +1307,8 @@ export class Battle {
             const nx = d2 === 0 ? 1 : dx;
             u.x[i] -= nx * kk;
             u.y[i] -= dy * kk;
-            const jx = u.x[j] + nx * kk;
-            const jy = u.y[j] + dy * kk;
+            const jx = Math.min(lim, Math.max(0.5, u.x[j] + nx * kk));
+            const jy = Math.min(lim, Math.max(0.5, u.y[j] + dy * kk));
             if (bad(jx, jy)) continue; // j'yi suya/engele itme
             u.x[j] = jx;
             u.y[j] = jy;
@@ -1037,8 +1318,8 @@ export class Battle {
       u.x[i] = Math.min(lim, Math.max(0.5, u.x[i]));
       u.y[i] = Math.min(lim, Math.max(0.5, u.y[i]));
       if (bad(u.x[i], u.y[i])) {
-        u.x[i] = u.px[i];
-        u.y[i] = u.py[i];
+        u.x[i] = bx;
+        u.y[i] = by;
       }
     }
     this.pushAroundTanks(bad);
@@ -1055,6 +1336,8 @@ export class Battle {
       const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / g0.cell) | 0));
       const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / g0.cell) | 0));
       for (let t = 0; t < this.teamCount; t++) {
+        // Tank yalniz DUSMAN birimleri iter: dost birimleri iterse ayni takim birbirini kilitler.
+        if (t === u.team[i]) continue;
         const grid = this.grids[t];
         for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
           for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
@@ -1070,8 +1353,9 @@ export class Battle {
               const share = isTank(u.kind[j]) ? 0.5 : 1;
               const k2 = ((R - d) * 0.35 * share) / d;
               const nx = d2 === 0 ? 1 : dx;
-              const jx = u.x[j] + nx * k2;
-              const jy = u.y[j] + dy * k2;
+              const lim = this.mapSize - 0.5;
+              const jx = Math.min(lim, Math.max(0.5, u.x[j] + nx * k2));
+              const jy = Math.min(lim, Math.max(0.5, u.y[j] + dy * k2));
               if (!bad(jx, jy)) {
                 u.x[j] = jx;
                 u.y[j] = jy;

@@ -72,6 +72,9 @@ export class Terrain {
   readonly decor: Decor[] = [];
   /** Toprak yol karolari (indeks). */
   readonly pathTiles: number[] = [];
+  /** Yurunebilir karolarin bagli bilesen numarasi (-1: yurunemez) ve en buyuk bilesen. */
+  region: Int32Array = new Int32Array(0);
+  mainRegion = -1;
   readonly cx: number;
   readonly cy: number;
   private readonly sMin: number;
@@ -115,6 +118,7 @@ export class Terrain {
     this.placeVillages();
     this.placeForest();
     this.mirror();
+    this.computeRegions();
   }
 
   /** Tile yurunebilir mi (su ve engeller haric). */
@@ -125,9 +129,208 @@ export class Terrain {
     return f !== T_WATER && f !== T_BLOCKED;
   }
 
-  /** (x,y) yurunemezse en yakin yurunebilir tile merkezini dondurur (halka halka arama). */
-  nearestWalkable(x: number, y: number, maxR = 14): { x: number; y: number } | null {
-    if (this.walkable(x, y)) return { x, y };
+  /** Yurunebilir karolari bagli bilesenlere boler (8 komsuluk, kose kesme yok). */
+  private computeRegions(): void {
+    const n = this.size;
+    const region = new Int32Array(n * n).fill(-1);
+    const sizes: number[] = [];
+    const walk = (x: number, y: number) => x >= 0 && y >= 0 && x < n && y < n && this.walkable(x + 0.5, y + 0.5);
+    const stack: number[] = [];
+    let id = 0;
+    for (let sy = 0; sy < n; sy++) {
+      for (let sx = 0; sx < n; sx++) {
+        if (region[sy * n + sx] !== -1 || !walk(sx, sy)) continue;
+        let count = 0;
+        region[sy * n + sx] = id;
+        stack.push(sx, sy);
+        while (stack.length) {
+          const y = stack.pop()!;
+          const x = stack.pop()!;
+          count++;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (!dx && !dy) continue;
+              const nx = x + dx;
+              const ny = y + dy;
+              if (!walk(nx, ny) || region[ny * n + nx] !== -1) continue;
+              if (dx && dy && !(walk(x + dx, y) && walk(x, y + dy))) continue;
+              region[ny * n + nx] = id;
+              stack.push(nx, ny);
+            }
+          }
+        }
+        sizes.push(count);
+        id++;
+      }
+    }
+    this.region = region;
+    this.mainRegion = sizes.length ? sizes.indexOf(Math.max(...sizes)) : -1;
+  }
+
+  // ---- A* yol bulma (yalniz sikisan birimler icin) ----
+  private astarG: Float32Array | null = null;
+  private astarParent: Int32Array | null = null;
+  private astarStamp: Int32Array | null = null;
+  private astarGen = 0;
+
+  /** (x0,y0)-(x1,y1) dogrusu boyunca tum ornekler yurunebilir mi (birim yaricapi payi ile). */
+  lineWalkable(x0: number, y0: number, x1: number, y1: number): boolean {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    const steps = Math.max(1, Math.ceil(len / 0.3));
+    for (let i = 1; i <= steps; i++) {
+      const x = x0 + (dx * i) / steps;
+      const y = y0 + (dy * i) / steps;
+      if (!this.walkable(x, y)) return false;
+      // Kenarlara surtunmemek icin yan komsulara da bak (yaklasik birim yaricapi)
+      const nx = -dy / (len || 1);
+      const ny = dx / (len || 1);
+      if (!this.walkable(x + nx * 0.2, y + ny * 0.2) || !this.walkable(x - nx * 0.2, y - ny * 0.2)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Tile izgarasinda A* (8 komsu, kose kesme yok) + dogrudan gorus ile yol duzlestirme.
+   * Donus: [x0,y0,x1,y1,...] ara noktalar (baslangic haric); yol yoksa null; zaten varmissa [].
+   */
+  findPath(sx: number, sy: number, gx: number, gy: number, maxNodes = 8000): number[] | null {
+    const n = this.size;
+    const total = n * n;
+    if (!this.astarG) {
+      this.astarG = new Float32Array(total);
+      this.astarParent = new Int32Array(total);
+      this.astarStamp = new Int32Array(total);
+    }
+    const G = this.astarG;
+    const P = this.astarParent!;
+    const S = this.astarStamp!;
+    const gen = ++this.astarGen;
+    let goal = { x: gx, y: gy };
+    if (!this.walkable(gx, gy)) {
+      const q = this.nearestWalkable(gx, gy, 4);
+      if (!q) return null;
+      goal = q;
+    }
+    const start = (sy | 0) * n + (sx | 0);
+    const target = (goal.y | 0) * n + (goal.x | 0);
+    if (start === target) return [];
+    const tx = goal.x | 0;
+    const ty = goal.y | 0;
+    const h = (x: number, y: number): number => {
+      const dx = Math.abs(x - tx);
+      const dy = Math.abs(y - ty);
+      return dx + dy + (1.414 - 2) * Math.min(dx, dy);
+    };
+    // ikili yigin (f degeri kucuk olan once)
+    const heapNode: number[] = [];
+    const heapF: number[] = [];
+    const push = (node: number, f: number): void => {
+      let i = heapNode.length;
+      heapNode.push(node);
+      heapF.push(f);
+      while (i > 0) {
+        const p = (i - 1) >> 1;
+        if (heapF[p] <= heapF[i]) break;
+        [heapNode[p], heapNode[i]] = [heapNode[i], heapNode[p]];
+        [heapF[p], heapF[i]] = [heapF[i], heapF[p]];
+        i = p;
+      }
+    };
+    const pop = (): number => {
+      const top = heapNode[0];
+      const lastN = heapNode.pop()!;
+      const lastF = heapF.pop()!;
+      if (heapNode.length) {
+        heapNode[0] = lastN;
+        heapF[0] = lastF;
+        let i = 0;
+        for (;;) {
+          const l = i * 2 + 1;
+          const r = l + 1;
+          let m = i;
+          if (l < heapNode.length && heapF[l] < heapF[m]) m = l;
+          if (r < heapNode.length && heapF[r] < heapF[m]) m = r;
+          if (m === i) break;
+          [heapNode[m], heapNode[i]] = [heapNode[i], heapNode[m]];
+          [heapF[m], heapF[i]] = [heapF[i], heapF[m]];
+          i = m;
+        }
+      }
+      return top;
+    };
+    G[start] = 0;
+    S[start] = gen;
+    P[start] = -1;
+    push(start, h(start % n, (start / n) | 0));
+    let expanded = 0;
+    let found = false;
+    while (heapNode.length && expanded < maxNodes) {
+      const cur = pop();
+      expanded++;
+      if (cur === target) {
+        found = true;
+        break;
+      }
+      const cx = cur % n;
+      const cy = (cur / n) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= n || ny >= n) continue;
+          if (!this.walkable(nx + 0.5, ny + 0.5)) continue;
+          if (dx && dy && !(this.walkable(cx + dx + 0.5, cy + 0.5) && this.walkable(cx + 0.5, cy + dy + 0.5))) continue;
+          const idx = ny * n + nx;
+          const ng = G[cur] + (dx && dy ? 1.414 : 1);
+          if (S[idx] === gen && ng >= G[idx]) continue;
+          S[idx] = gen;
+          G[idx] = ng;
+          P[idx] = cur;
+          push(idx, ng + h(nx, ny));
+        }
+      }
+    }
+    if (!found) return null;
+    // yolu geri kur (tile merkezleri)
+    const nodes: number[] = [];
+    for (let cur = target; cur !== -1 && cur !== start; cur = P[cur]) nodes.push(cur);
+    nodes.reverse();
+    const pts: number[] = [];
+    for (const cur of nodes) pts.push((cur % n) + 0.5, ((cur / n) | 0) + 0.5);
+    // dogrudan gorusle duzlestir
+    const out: number[] = [];
+    let ax = sx;
+    let ay = sy;
+    let i = 0;
+    while (i < pts.length / 2) {
+      let j = pts.length / 2 - 1;
+      while (j > i && !this.lineWalkable(ax, ay, pts[j * 2], pts[j * 2 + 1])) j--;
+      out.push(pts[j * 2], pts[j * 2 + 1]);
+      ax = pts[j * 2];
+      ay = pts[j * 2 + 1];
+      i = j + 1;
+    }
+    return out;
+  }
+
+  /** (x,y)'nin bagli bilesen numarasi (-1: yurunemez / harita disi). */
+  regionAt(x: number, y: number): number {
+    const n = this.size;
+    if (x < 0 || y < 0 || x >= n || y >= n) return -1;
+    return this.region[((y | 0) * n + (x | 0)) | 0];
+  }
+
+  /** Ana (en buyuk) bolgede mi: kapali cep/ada degil. */
+  reachable(x: number, y: number): boolean {
+    return this.regionAt(x, y) === this.mainRegion;
+  }
+
+  /** (x,y) yurunemezse en yakin yurunebilir tile merkezini dondurur (halka halka arama). mainOnly: ana bolgede olsun. */
+  nearestWalkable(x: number, y: number, maxR = 14, mainOnly = false): { x: number; y: number } | null {
+    if (this.walkable(x, y) && (!mainOnly || this.reachable(x, y))) return { x, y };
     const cx = Math.floor(x);
     const cy = Math.floor(y);
     for (let r = 1; r <= maxR; r++) {
@@ -138,7 +341,7 @@ export class Terrain {
           if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
           const px = cx + dx + 0.5;
           const py = cy + dy + 0.5;
-          if (!this.walkable(px, py)) continue;
+          if (!this.walkable(px, py) || (mainOnly && !this.reachable(px, py))) continue;
           const d = (px - x) * (px - x) + (py - y) * (py - y);
           if (d < bestD) {
             bestD = d;
@@ -187,7 +390,8 @@ export class Terrain {
   /** Kopru ucu: side=-1/+1 yakasi, lat = tabla boyunca yanal ofset. */
   bridgeEnd(b: Bridge, side: number, lat: number, out: { x: number; y: number }): void {
     const s = b.s + lat;
-    const d = b.o + side * (b.w / 2 + 2.4);
+    // Tabla ucunun biraz icinde (uc, karo yuvarlamasiyla suya dusebilir).
+    const d = b.o + side * (b.w / 2 + 1.7);
     out.x = this.worldX(s, d);
     out.y = this.worldY(s, d);
   }
@@ -219,7 +423,7 @@ export class Terrain {
     for (let k = -Math.floor(limit / spacing); k <= Math.floor(limit / spacing); k++) {
       const s = k * spacing;
       const w = this.widthAt(s);
-      this.bridges.push({ s, o: this.offsetAt(s), w, halfLen: w / 2 + 2.5, halfW: 1.3 });
+      this.bridges.push({ s, o: this.offsetAt(s), w, halfLen: w / 2 + 2.5, halfW: 1.8 });
     }
     for (let ty = 0; ty < n; ty++) {
       for (let tx = 0; tx < n; tx++) {

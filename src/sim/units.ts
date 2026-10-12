@@ -131,8 +131,8 @@ export class Units {
   deathT: Float32Array;
   facing: Int8Array;
   moving: Uint8Array;
-  attackers: Uint8Array;
-  healers: Uint8Array;
+  attackers: Uint16Array;
+  healers: Uint16Array;
   slotAngle: Float32Array;
   stamina: Float32Array;
   /** 1: geri cekiliyor (kite). */
@@ -152,6 +152,19 @@ export class Units {
   kbVx: Float32Array;
   kbVy: Float32Array;
   stunT: Float32Array;
+  /** Yasaklanan hedef ve kalan sure (ilerleme bekcisi). */
+  banTarget: Int32Array;
+  banT: Float32Array;
+  /** Hedefe kovalama suresi ve o zamana kadarki en yakin mesafe. */
+  chaseT: Float32Array;
+  chaseBest: Float32Array;
+  /** Leash yuzunden bekleme suresi ve leash'in devre disi kalacagi sure. */
+  holdT: Float32Array;
+  leashOffT: Float32Array;
+  /** Net yer degistirme penceresi: baslangic konumu ve gecen sure (sikisma tespiti). */
+  winX: Float32Array;
+  winY: Float32Array;
+  winT: Float32Array;
 
   constructor(cap: number) {
     this.cap = cap;
@@ -175,8 +188,8 @@ export class Units {
     this.deathT = new Float32Array(cap);
     this.facing = new Int8Array(cap).fill(1);
     this.moving = new Uint8Array(cap);
-    this.attackers = new Uint8Array(cap);
-    this.healers = new Uint8Array(cap);
+    this.attackers = new Uint16Array(cap);
+    this.healers = new Uint16Array(cap);
     this.slotAngle = new Float32Array(cap);
     this.stamina = new Float32Array(cap).fill(1);
     this.kiteState = new Uint8Array(cap);
@@ -191,6 +204,15 @@ export class Units {
     this.kbVx = new Float32Array(cap);
     this.kbVy = new Float32Array(cap);
     this.stunT = new Float32Array(cap);
+    this.banTarget = new Int32Array(cap).fill(-1);
+    this.banT = new Float32Array(cap);
+    this.chaseT = new Float32Array(cap);
+    this.chaseBest = new Float32Array(cap).fill(Infinity);
+    this.holdT = new Float32Array(cap);
+    this.leashOffT = new Float32Array(cap);
+    this.winX = new Float32Array(cap);
+    this.winY = new Float32Array(cap);
+    this.winT = new Float32Array(cap);
   }
 
   clear(): void {
@@ -229,6 +251,12 @@ export class Units {
     this.sideDir[i] = 1;
     this.kbVx[i] = this.kbVy[i] = 0;
     this.stunT[i] = 0;
+    this.banTarget[i] = -1;
+    this.banT[i] = this.chaseT[i] = this.holdT[i] = this.leashOffT[i] = 0;
+    this.chaseBest[i] = Infinity;
+    this.winX[i] = x;
+    this.winY[i] = y;
+    this.winT[i] = 0;
     return i;
   }
 }
