@@ -43,6 +43,34 @@ export const STATS: KindStats[] = [
   { name: 'Çekiç Tankı', hp: 460, speed: 2.1, range: 1.8, power: 22, cooldown: 2.0, swing: 0.6, hitAt: 0.35, armor: 0.2, scale: 2, aoe: 2.2, knockback: 1.5 },
 ];
 
+export type StatKey = 'hp' | 'speed' | 'power' | 'cooldown' | 'range' | 'armor' | 'knockback';
+export type StatOverrides = Array<Partial<Record<StatKey, number>>>;
+
+/** Arayuzde ayarlanabilen alanlar: sinirlar ve adimlar. */
+export const TUNABLE: Array<{ key: StatKey; label: string; hint: string; min: number; max: number; step: number; tankOnly?: boolean }> = [
+  { key: 'hp', label: 'Can', hint: 'Başlangıç canı', min: 10, max: 5000, step: 10 },
+  { key: 'speed', label: 'Hız', hint: 'Hareket hızı (tile/sn)', min: 0.5, max: 8, step: 0.1 },
+  { key: 'power', label: 'Güç', hint: 'Hasar (rahipte şifa miktarı)', min: 1, max: 300, step: 1 },
+  { key: 'cooldown', label: 'Bekleme', hint: 'İki saldırı arası (sn)', min: 0.2, max: 6, step: 0.1 },
+  { key: 'range', label: 'Menzil', hint: 'Saldırı menzili (tile)', min: 0.5, max: 16, step: 0.1 },
+  { key: 'armor', label: 'Zırh', hint: 'Gelen hasarı azaltma (0 - 0.9)', min: 0, max: 0.9, step: 0.05 },
+  { key: 'knockback', label: 'İtme', hint: 'Tank itme mesafesi (tile)', min: 0, max: 8, step: 0.5, tankOnly: true },
+];
+
+/** Varsayilan degerler (arayuzdeki "sifirla" icin). */
+export const DEFAULT_STATS: KindStats[] = STATS.map((s) => ({ ...s }));
+
+/** Kullanici ayarlarini STATS'a uygular; eksik alanlar varsayilana doner. Sim baslamadan once cagrilir. */
+export function applyStats(overrides: StatOverrides | undefined): void {
+  for (let k = 0; k < STATS.length; k++) {
+    const o = overrides?.[k] ?? {};
+    for (const t of TUNABLE) {
+      const v = o[t.key];
+      STATS[k][t.key] = typeof v === 'number' && Number.isFinite(v) ? Math.min(t.max, Math.max(t.min, v)) : DEFAULT_STATS[k][t.key];
+    }
+  }
+}
+
 /** Tank etki sabitleri. */
 export const TANK = {
   /** Kalkan itmesi yari acisi icin cos(60 derece). */

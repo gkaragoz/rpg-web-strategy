@@ -1,6 +1,6 @@
 import { Grid } from './grid';
 import { Terrain, T_BLOCKED, T_WATER } from './terrain';
-import { KITE, Kind, MAX_TEAMS, STATS, TANK, Units, isMelee, isTank } from './units';
+import { KITE, Kind, MAX_TEAMS, STATS, TANK, Units, applyStats, isMelee, isTank, type StatOverrides } from './units';
 import { Projectiles } from './projectiles';
 import { mulberry32 } from './random';
 
@@ -45,6 +45,8 @@ export interface BattleConfig {
   mapSize?: number;
   /** custom: birimler, 4'lu gruplar halinde (takim, tur, x, y). */
   layout?: Float32Array;
+  /** Birim istatistik ayarlari (tur indeksine gore); yoksa varsayilanlar. */
+  stats?: StatOverrides;
   /** false: cevre (nehir, engeller) yok, eski cıplak harita. Varsayilan true. */
   env?: boolean;
   /** Harita tohumu. */
@@ -104,6 +106,7 @@ export class Battle {
 
   constructor(seed = 1, config: BattleConfig = { mode: 'demo', perTeam: 10 }) {
     this.config = config;
+    applyStats(config.stats);
     const total = unitCapacity(config);
     this.mapSize = mapSizeFor(config);
     this.terrain = terrainFor(config);

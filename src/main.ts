@@ -53,7 +53,7 @@ const battle = new BattleScene({ app, world, camera, getAtlas, stats, hudRoot, b
 let mode: 'studio' | 'battle' = 'studio';
 
 function studioConfig(): BattleConfig {
-  return { mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, terrainSeed: state.seed };
+  return { mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, terrainSeed: state.seed, stats: state.stats };
 }
 
 function layoutArray(): Float32Array {

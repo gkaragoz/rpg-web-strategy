@@ -1,4 +1,4 @@
-import { KIND_COUNT, MAX_TEAMS } from '../sim/units';
+import { KIND_COUNT, MAX_TEAMS, TUNABLE, type StatOverrides } from '../sim/units';
 import type { TeamColors } from '../render/unitView';
 
 export interface PaletteSet {
@@ -50,6 +50,8 @@ export interface AppState {
   brush: number;
   tool: 'place' | 'erase';
   benchPerTeam: number;
+  /** Birim istatistik ayarlari (yalniz degistirilenler). */
+  stats: StatOverrides;
   units: PlacedUnit[];
   /** Hic kaydedilmis kurulum yoksa ilk acilista hizli dizilim kurulur. */
   fresh: boolean;
@@ -71,6 +73,7 @@ export function defaultState(): AppState {
     brush: 1,
     tool: 'place',
     benchPerTeam: 10000,
+    stats: Array.from({ length: KIND_COUNT }, () => ({})),
     units: [],
     fresh: true,
   };
@@ -122,9 +125,19 @@ export function loadState(): AppState {
       brush: Math.floor(num(o.brush, 0, BRUSHES.length - 1, d.brush)),
       tool: 'place',
       benchPerTeam: [1000, 3000, 10000].includes(o.benchPerTeam as number) ? (o.benchPerTeam as number) : d.benchPerTeam,
+      stats: Array.from({ length: KIND_COUNT }, () => ({})),
       units: [],
       fresh: false,
     };
+    if (Array.isArray(o.stats)) {
+      o.stats.slice(0, KIND_COUNT).forEach((row, k) => {
+        if (!row || typeof row !== 'object') return;
+        for (const t of TUNABLE) {
+          const v = (row as Record<string, unknown>)[t.key];
+          if (typeof v === 'number' && Number.isFinite(v)) s.stats[k][t.key] = Math.min(t.max, Math.max(t.min, v));
+        }
+      });
+    }
     if (Array.isArray(o.units)) {
       for (const u of o.units.slice(0, MAX_PLACED)) {
         if (!u || typeof u !== 'object') continue;

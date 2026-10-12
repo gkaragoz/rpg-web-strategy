@@ -1,5 +1,6 @@
 import { KIND_COUNT, MAX_TEAMS, STATS } from '../sim/units';
 import type { Editor } from './editor';
+import { UnitSettings } from './unitSettings';
 import { BRUSHES, MAP_SIZES, MAX_PLACED, PALETTES, hex, saveState, teamColors, type AppState } from './state';
 
 export interface StudioDeps {
@@ -21,12 +22,14 @@ export class Studio {
   private readonly root: HTMLElement;
   private readonly $: (sel: string) => HTMLElement;
   private visible = false;
+  private readonly units: UnitSettings;
 
   constructor(
     root: HTMLElement,
     private readonly d: StudioDeps,
   ) {
     this.root = root;
+    this.units = new UnitSettings(d.state, () => this.render());
     root.innerHTML = this.template();
     this.$ = (sel) => root.querySelector(sel) as HTMLElement;
     this.bind();
@@ -67,6 +70,11 @@ export class Studio {
     <h2>Savaş</h2>
     <label class="row"><span>Vur-kaç <small>okçu, rahip kaçar</small></span><input type="checkbox" id="kite" role="switch" /></label>
     <div class="row"><span>Hız</span><div class="seg" id="speed" role="group" aria-label="Savaş hızı"></div></div>
+  </section>
+  <section>
+    <h2>Birimler</h2>
+    <button id="units-btn" type="button" class="wide">Birim ayarları…</button>
+    <p class="note" id="units-note">Can, hız, güç, menzil, zırh ve itmeyi ayarla.</p>
   </section>
   <section>
     <h2>Benchmark</h2>
@@ -167,6 +175,7 @@ export class Studio {
       this.render();
     });
     this.$('#bench').addEventListener('click', () => this.d.onBench(s.benchPerTeam));
+    this.$('#units-btn').addEventListener('click', () => this.units.open());
     this.$('#start').addEventListener('click', () => {
       if (!this.canStart().ok) return;
       this.d.onStart();
@@ -230,6 +239,8 @@ export class Studio {
       this.changed(false);
     });
     this.$('#tm-count').textContent = String(s.teamCount);
+    const changed = this.units.changedCount();
+    this.$('#units-note').textContent = changed > 0 ? `${changed} değer varsayılandan farklı.` : 'Can, hız, güç, menzil, zırh ve itmeyi ayarla.';
 
     // Palet setleri
     this.$('#palettes').innerHTML = PALETTES.map((p) => {
