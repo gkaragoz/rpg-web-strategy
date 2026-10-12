@@ -7,6 +7,10 @@ export const T_BRIDGE = 2;
 export const T_BLOCKED = 3;
 export const T_PATH = 4;
 
+/** Bir yukselti kademesinin ekrandaki yuksekligi (piksel). */
+export const LEVEL_PX = 15;
+export const MAX_LEVEL_H = 4;
+
 const R = Math.SQRT1_2;
 /** Nehir eksenleri: u = ordu ekseni (ekranda yatay), v = nehir yonu (ekranda dikey). */
 export const U_X = R;
@@ -77,6 +81,11 @@ export class Terrain {
   readonly pathTiles: number[] = [];
   /** Nehir icindeki kara (ada) karolari (indeks). */
   readonly landTiles: number[] = [];
+  /** Tile yukseltisi (0..4 kademe), kose yukseltileri ((n+1)^2, komsu tile ortalamasi) ve ucurum karolari. */
+  height: Uint8Array;
+  vh: Float32Array;
+  hasRelief = false;
+  readonly cliffTiles: number[] = [];
   readonly spec: MapSpec;
   /** Yurunebilir karolarin bagli bilesen numarasi (-1: yurunemez) ve en buyuk bilesen. */
   region: Int32Array = new Int32Array(0);
@@ -98,6 +107,8 @@ export class Terrain {
     this.cx = this.cy = size / 2;
     this.flags = new Uint8Array(size * size);
     this.occ = new Uint8Array(size * size);
+    this.height = new Uint8Array(size * size);
+    this.vh = new Float32Array((size + 1) * (size + 1));
     this.rng = mulberry32(opts.seed * 9973 + 17);
 
     const step = 0.25;
@@ -131,11 +142,40 @@ export class Terrain {
     this.buildRiver();
     if (rv !== 'none') this.buildBridges();
     if (rv === 'islands') this.carveIslands();
+    this.buildRelief();
     this.placeVillages();
     this.placeForest();
     this.mirror();
+    this.finishRelief();
     this.collectLand();
     this.computeRegions();
+  }
+
+  /** (x,y) noktasinin yuksekligi (kademe, kesirli): kose yukseltilerinin bilineer ara degeri. */
+  heightAt(x: number, y: number): number {
+    if (!this.hasRelief) return 0;
+    const n = this.size;
+    const cx = Math.min(n - 1, Math.max(0, Math.floor(x)));
+    const cy = Math.min(n - 1, Math.max(0, Math.floor(y)));
+    const fx = Math.min(1, Math.max(0, x - cx));
+    const fy = Math.min(1, Math.max(0, y - cy));
+    const w = n + 1;
+    const i = cy * w + cx;
+    const h00 = this.vh[i];
+    const h10 = this.vh[i + 1];
+    const h01 = this.vh[i + w];
+    const h11 = this.vh[i + w + 1];
+    return h00 + (h10 - h00) * fx + (h01 - h00) * fy + (h00 - h10 - h01 + h11) * fx * fy;
+  }
+
+  /** (x,y) noktasinin ekran yuksekligi (piksel). */
+  elevPx(x: number, y: number): number {
+    return this.hasRelief ? this.heightAt(x, y) * LEVEL_PX : 0;
+  }
+
+  /** Kose yuksekligi (kademe) vx,vy in [0..n]. */
+  vertexH(vx: number, vy: number): number {
+    return this.vh[vy * (this.size + 1) + vx];
   }
 
   /**
@@ -513,6 +553,131 @@ export class Terrain {
     }
   }
 
+  /** Yukselti uretimi: kabartma tipine gore surekli alan -> kademe; sinir/nehir/dogus yakini duzlenir. */
+  private buildRelief(): void {
+    const rl = this.spec.relief;
+    if (rl === 'flat') return;
+    const n = this.size;
+    const c = n / 2;
+    const seed = this.opts.seed + 101;
+    const hasRiver = this.spec.river !== 'none';
+    const smooth = (a: number, b: number, v: number): number => {
+      const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    };
+    const radial = rl === 'plateau' || rl === 'peak';
+    for (let ty = 0; ty < n; ty++) {
+      for (let tx = 0; tx < n; tx++) {
+        const x = tx + 0.5;
+        const y = ty + 0.5;
+        const d = this.toD(x, y);
+        if (d > 1e-9) continue; // yalniz d <= 0 yarisi uretilir, sonra yansitilir
+        const s = this.toS(x, y);
+        const ad = Math.abs(d);
+        const dist = Math.hypot(x - c, y - c);
+        let H = 0;
+        if (rl === 'hills') {
+          H = 3.6 * (0.65 * noise(x / 13, y / 13, seed) + 0.35 * noise(x / 6, y / 6, seed + 5)) - 1.05;
+        } else if (rl === 'ridge') {
+          const R = n * 0.2;
+          const pass = 0.5 + 0.5 * Math.cos((s * Math.PI * 2) / (n * 0.5));
+          H = 4.2 * Math.exp(-(((ad - R) / (n * 0.055)) ** 2)) * (0.25 + 0.75 * smooth(0.25, 0.8, pass)) + 0.7 * noise(x / 7, y / 7, seed + 3);
+        } else if (rl === 'plateau') {
+          const r = n * 0.21;
+          const ang = Math.atan2(y - c, x - c);
+          const ramp = Math.pow(Math.max(0, Math.cos(2 * ang)), 4);
+          const w = 0.9 + 6 * ramp;
+          H = 3.4 * smooth(0, 1, (r - dist) / w + 0.5) + 0.3 * noise(x / 5, y / 5, seed + 2);
+        } else {
+          const R = n * 0.3;
+          H = 4.6 * Math.pow(Math.max(0, 1 - dist / R), 1.25) + 0.45 * noise(x / 5, y / 5, seed + 9) * smooth(0, 6, R - dist);
+        }
+        if (!radial) H *= smooth(1.5, 5, ad); // nehir/orta eksen vadi
+        if (hasRiver && !radial) H *= smooth(2.5, 6, this.riverEdgeDist(x, y));
+        else if (hasRiver) H *= smooth(0, 2.5, this.riverEdgeDist(x, y));
+        // Kopru ve yaklasim yollari duz kalir (rampa/ucurum kopruyu kesmesin).
+        for (const br of this.bridges) {
+          const bd = Math.max(Math.abs(s - br.s) / 4.5, Math.abs(d - br.o) / (br.halfLen + 6));
+          if (bd < 1) H *= smooth(0.55, 1, bd);
+        }
+        H *= smooth(0, 3, Math.min(tx, ty, n - 1 - tx, n - 1 - ty)); // harita kenari duz
+        if (this.reserved(x, y, 2)) H = 0;
+        const f = this.flags[ty * n + tx];
+        if (f === T_WATER || f === T_BRIDGE) H = 0;
+        this.height[ty * n + tx] = Math.min(MAX_LEVEL_H, Math.max(0, Math.floor(H)));
+      }
+    }
+    // Nokta simetri.
+    for (let ty = 0; ty < n; ty++) {
+      for (let tx = 0; tx < n; tx++) {
+        const d = this.toD(tx + 0.5, ty + 0.5);
+        if (d > 1e-9 || (d >= -1e-9 && ty * n + tx > (n - 1 - ty) * n + (n - 1 - tx))) continue;
+        this.height[(n - 1 - ty) * n + (n - 1 - tx)] = this.height[ty * n + tx];
+      }
+    }
+    // Ucurum: komsusundan >= 2 kademe yuksekteki yurunebilir tile gecilmez.
+    for (let ty = 0; ty < n; ty++) {
+      for (let tx = 0; tx < n; tx++) {
+        const i = ty * n + tx;
+        if (this.flags[i] !== T_GRASS) continue;
+        const h = this.height[i];
+        let cliff = false;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = tx + dx;
+          const ny = ty + dy;
+          if (nx < 0 || ny < 0 || nx >= n || ny >= n) continue;
+          if (h - this.height[ny * n + nx] >= 2) cliff = true;
+        }
+        if (cliff) {
+          this.flags[i] = T_BLOCKED;
+          this.cliffTiles.push(i);
+        }
+      }
+    }
+  }
+
+  /** Yukselti bittikten sonra: kose yukseltileri ve kabartma bayragi. */
+  private finishRelief(): void {
+    const n = this.size;
+    let any = false;
+    for (let i = 0; i < this.height.length; i++) if (this.height[i] > 0) any = true;
+    this.hasRelief = any;
+    if (!any) return;
+    const w = n + 1;
+    for (let vy = 0; vy <= n; vy++) {
+      for (let vx = 0; vx <= n; vx++) {
+        let sum = 0;
+        let cnt = 0;
+        for (let dy = -1; dy <= 0; dy++) {
+          for (let dx = -1; dx <= 0; dx++) {
+            const tx = vx + dx;
+            const ty = vy + dy;
+            if (tx < 0 || ty < 0 || tx >= n || ty >= n) continue;
+            sum += this.height[ty * n + tx];
+            cnt++;
+          }
+        }
+        this.vh[vy * w + vx] = sum / Math.max(1, cnt);
+      }
+    }
+    // Ucurum karolarini cizim icin ekran listesi olarak koru (dekor/ev yerlesimi bunlari zaten engel sayar).
+    this.cliffTiles.length = 0;
+    for (let i = 0; i < this.flags.length; i++) {
+      if (this.flags[i] !== T_BLOCKED) continue;
+      const tx = i % n;
+      const ty = (i / n) | 0;
+      const h = this.height[i];
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = tx + dx;
+        const ny = ty + dy;
+        if (nx >= 0 && ny >= 0 && nx < n && ny < n && h - this.height[ny * n + nx] >= 2) {
+          this.cliffTiles.push(i);
+          break;
+        }
+      }
+    }
+  }
+
   /** Ordu doguslari ve kopru yaklasim koridorlari: engel konmaz. */
   private reserved(x: number, y: number, m: number): boolean {
     const s = this.toS(x, y);
@@ -532,11 +697,13 @@ export class Terrain {
 
   private freeRect(tx: number, ty: number, w: number, h: number, margin: number): boolean {
     const n = this.size;
+    const h0 = tx >= 0 && ty >= 0 && tx < n && ty < n ? this.height[ty * n + tx] : 0;
     for (let y = ty - margin; y < ty + h + margin; y++) {
       for (let x = tx - margin; x < tx + w + margin; x++) {
         if (x < 1 || y < 1 || x >= n - 1 || y >= n - 1) return false;
         const i = y * n + x;
         if (this.flags[i] !== T_GRASS || this.occ[i]) return false;
+        if (this.height[i] !== h0) return false; // yapi duz zemine kurulur
         if (this.reserved(x + 0.5, y + 0.5, 1)) return false;
       }
     }

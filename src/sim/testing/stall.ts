@@ -219,7 +219,7 @@ export function checkInvariants(b: Battle): string[] {
     }
     if (x < 0 || y < 0 || x > n || y > n) errs.push(`birim ${i} harita disinda (${x.toFixed(2)},${y.toFixed(2)})`);
     if (t && !t.walkable(x, y)) errs.push(`birim ${i} (${STATS[u.kind[i]].name}) yurunemez karoda (${x.toFixed(2)},${y.toFixed(2)})`);
-    if (u.attackers[i] === 255) errs.push(`birim ${i} attackers sayaci 255 (tasma suphesi)`);
+    if (u.attackers[i] > 60000) errs.push(`birim ${i} attackers sayaci ${u.attackers[i]} (tasma suphesi)`);
     if (u.hp[i] > u.maxHp[i] + 1e-3) errs.push(`birim ${i} can maxHp'yi asti`);
   }
   return errs;

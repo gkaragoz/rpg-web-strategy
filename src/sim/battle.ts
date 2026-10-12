@@ -1792,9 +1792,14 @@ export class Battle {
     const eff = Math.max(u.spd[i], speed * 0.25);
     ux = u.hx[i];
     uy = u.hy[i];
-    const step = Math.min(eff * dt, d);
+    let step = Math.min(eff * dt, d);
     const ox = u.x[i];
     const oy = u.y[i];
+    // Yokus yukari: egime gore yavaslar (en cok %35); yokus asagi etkilemez.
+    if (t && t.hasRelief) {
+      const dh = t.heightAt(ox + ux * 0.45, oy + uy * 0.45) - t.heightAt(ox, oy);
+      if (dh > 0.04) step *= 1 - Math.min(0.35, dh * 0.6);
+    }
     // Konumlar Float32 saklanir: yurunebilirlik testi yuvarlanmis degerle yapilmali.
     const lim = this.mapSize - 0.5;
     let nx = Math.fround(Math.min(lim, Math.max(0.5, ox + ux * step)));
