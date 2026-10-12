@@ -30,7 +30,8 @@ paleti, asker yerleştirme ve benchmark.
 | Tekerlek, WASD, orta tuş | Yakınlaş, kaydır |
 | Space · R · Esc · 1-2-3 · F3 | (savaşta) duraklat · yeniden başlat · düzenle · hız · istatistik |
 
-**Debug katmanı (`?debug=1`):** sim ana thread'de çalışır ve test paketindeki takılma dedektörü savaşı canlı izler.
+**Debug katmanı:** stüdyoda *Görünüm ve ses → Hata ayıklama* anahtarı, savaşta HUD'daki *Debug* düğmesi veya `V` tuşu
+(savaş aynı dizilimle yeniden başlar) ya da `?debug=1` ile açılır. Sim ana thread'de çalışır ve test paketindeki takılma dedektörü savaşı canlı izler.
 Sorunlu birim kırmızı nabızlı halka, sıkışan birim turuncu halka, hedefi yasaklanan mor halka alır; sol üstteki panel
 sayaçları (takılan, aktif A* yolu, yasak, leash kırılması) ve son bayrakları (`idleChaser`, `cannotHit`, `oscillation`,
 `noProgress`...) gösterir. Tuşlar: `H` katmanı aç/kapat · `T` hedef çizgileri · `P` A* yolları · `G` kapalı bölgeler.

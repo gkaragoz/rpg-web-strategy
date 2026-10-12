@@ -42,8 +42,10 @@ const autoSeconds = Number(params.get('auto')) || 0;
 const isBench = benchPer > 0;
 const canUseWorker = typeof SharedArrayBuffer !== 'undefined' && self.crossOriginIsolated;
 // ?debug=1: takilma izleme katmani sim'e dogrudan erisim ister, bu yuzden sim ana thread'de calisir.
-const debug = params.get('debug') === '1';
-const useWorker = params.get('sim') !== 'main' && canUseWorker && !debug;
+const debugParam = params.get('debug') === '1';
+/** Debug acik mi (URL veya secenek) ve sim worker'da mi calisacak. */
+const debugOn = (): boolean => debugParam || state.options.debug;
+const workerOk = (): boolean => params.get('sim') !== 'main' && canUseWorker && !debugOn();
 
 const app = new Application();
 await app.init({
@@ -103,6 +105,13 @@ const battle = new BattleScene({
   banner,
   audio,
   isSoundOn: () => state.options.sound,
+  isDebugOn: debugOn,
+  toggleDebug: () => {
+    state.options.debug = !debugOn();
+    saveState(state);
+    studio.render();
+    void restartBattle();
+  },
   toggleSound: () => {
     state.options.sound = !state.options.sound;
     saveState(state);
@@ -181,22 +190,35 @@ studio = new Studio(studioRoot, {
   },
 });
 
-async function startBattle(): Promise<void> {
-  saveState(state);
+function battleOptions(): BattleOptions {
   const colors = teamColors(state.palette, state.teamCount);
-  const opts: BattleOptions = {
+  return {
     config: { ...studioConfig(), layout: layoutArray() },
     colors,
     speed: state.speed,
     bench: false,
     autoSeconds: 0,
-    useWorker,
+    useWorker: workerOk(),
     seed: state.seed,
     fx: state.options.fx,
     numbers: state.options.numbers,
-    debug,
+    debug: debugOn(),
     onEdit: () => void backToStudio(),
   };
+}
+
+/** Savasi ayni dizilimle bastan kurar (debug anahtari sim turunu degistirir). */
+async function restartBattle(): Promise<void> {
+  mode = 'studio';
+  battle.exit();
+  await battle.enter(battleOptions());
+  stats.setShown(true);
+  mode = 'battle';
+}
+
+async function startBattle(): Promise<void> {
+  saveState(state);
+  const opts = battleOptions();
   studio.hide();
   editor.exit();
   await battle.enter(opts);
@@ -222,7 +244,7 @@ async function startBench(): Promise<void> {
     speed: 1,
     bench: true,
     autoSeconds,
-    useWorker,
+    useWorker: workerOk(),
     seed: 1,
     fx: 'off',
     numbers: false,

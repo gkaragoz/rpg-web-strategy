@@ -44,10 +44,12 @@ export interface Options {
   fx: 'auto' | 'high' | 'low' | 'off';
   numbers: boolean;
   bars: 'damaged' | 'always' | 'never';
+  /** Hata ayiklama katmani (sim ana thread'de calisir). */
+  debug: boolean;
 }
 
 export function defaultOptions(): Options {
-  return { sound: true, volume: 0.6, fx: 'auto', numbers: true, bars: 'damaged' };
+  return { sound: true, volume: 0.6, fx: 'auto', numbers: true, bars: 'damaged', debug: false };
 }
 
 export interface AppState {
@@ -151,6 +153,7 @@ export function loadState(): AppState {
       if (typeof op.volume === 'number' && Number.isFinite(op.volume)) s.options.volume = Math.min(1, Math.max(0, op.volume));
       if (op.fx === 'auto' || op.fx === 'high' || op.fx === 'low' || op.fx === 'off') s.options.fx = op.fx;
       if (typeof op.numbers === 'boolean') s.options.numbers = op.numbers;
+      if (typeof op.debug === 'boolean') s.options.debug = op.debug;
       if (op.bars === 'damaged' || op.bars === 'always' || op.bars === 'never') s.options.bars = op.bars;
     }
     if (Array.isArray(o.stats)) {

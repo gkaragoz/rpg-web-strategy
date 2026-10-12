@@ -51,6 +51,9 @@ export interface BattleDeps {
   /** Sesi ac/kapat (kalici); yeni durumu dondurur. */
   toggleSound: () => boolean;
   isSoundOn: () => boolean;
+  /** Hata ayiklama katmanini ac/kapat (savasi ayni dizilimle yeniden baslatir). */
+  isDebugOn: () => boolean;
+  toggleDebug: () => void;
 }
 
 /** Savas sahnesi: sim (worker) + cizim (ayrintili veya toplu) + HUD + benchmark olcumu. */
@@ -205,6 +208,7 @@ export class BattleScene {
   <div class="seg" id="hud-speed" role="group" aria-label="Hız"></div>
   <button type="button" id="hud-pause">Duraklat</button>
   <button type="button" id="hud-sound" aria-pressed="true">Ses</button>
+  <button type="button" id="hud-debug" aria-pressed="false" title="Takılma izleme katmanı (savaş yeniden başlar)">Debug</button>
   <button type="button" id="hud-full">Tam ekran</button>
   <button type="button" id="hud-restart">Yeniden başlat</button>
   <button type="button" id="hud-edit" class="primary">Düzenle</button>
@@ -213,6 +217,10 @@ export class BattleScene {
 <div class="result" id="hud-result" hidden></div>`;
     const q = (s: string) => root.querySelector(s) as HTMLElement;
     q('#hud-pause').addEventListener('click', () => this.togglePause());
+    const dbg = q('#hud-debug');
+    dbg.textContent = this.d.isDebugOn() ? 'Debug: açık' : 'Debug: kapalı';
+    dbg.setAttribute('aria-pressed', String(this.d.isDebugOn()));
+    dbg.addEventListener('click', () => this.d.toggleDebug());
     q('#hud-full').addEventListener('click', () => {
       if (document.fullscreenElement) void document.exitFullscreen();
       else void document.documentElement.requestFullscreen?.();
@@ -299,6 +307,7 @@ export class BattleScene {
     else if (e.code === 'Digit2') this.setSpeed(2);
     else if (e.code === 'Digit3') this.setSpeed(4);
     else if (e.code === 'Escape' && !bench) this.opts.onEdit();
+    else if (e.code === 'KeyV' && !bench) this.d.toggleDebug();
     else if (bench && e.code === 'KeyB') this.massOpts.bars = !this.massOpts.bars;
     else if (bench && e.code === 'KeyO') this.massOpts.sort = !this.massOpts.sort;
     else if (bench && e.code === 'KeyC') this.massOpts.cull = !this.massOpts.cull;
