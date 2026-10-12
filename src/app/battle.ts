@@ -109,7 +109,11 @@ export class BattleScene {
     const unitCount = this.sim.units.count;
     this.initialAlive = new Array(6).fill(0);
     this.initialHp = new Array(6).fill(0);
+    // Cagrilacak (uyuyan) iskeletler baslangic sayimina girmez: yalniz canli birimler.
+    let anyAlive = false;
+    for (let i = 0; i < unitCount; i++) if (this.sim.units.alive[i]) anyAlive = true;
     for (let i = 0; i < unitCount; i++) {
+      if (anyAlive && !this.sim.units.alive[i]) continue;
       this.initialAlive[this.sim.units.team[i]]++;
       this.initialHp[this.sim.units.team[i]] += this.sim.units.maxHp[i];
     }

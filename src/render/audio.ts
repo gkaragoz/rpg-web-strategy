@@ -94,6 +94,8 @@ export class AudioSystem {
         return 'slam';
       case 'death':
         return 'death';
+      case 'burst':
+        return 'bash';
       default:
         return null;
     }

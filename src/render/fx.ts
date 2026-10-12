@@ -155,6 +155,9 @@ export class FxSystem {
         case 'land':
           if (high && !crowded) this.land(sx, sy);
           break;
+        case 'burst':
+          if (!crowded) this.burstFx(sx, sy, ev.value ?? 2, ev.element ?? 0, high);
+          break;
       }
     }
   }
@@ -224,6 +227,22 @@ export class FxSystem {
       this.spawn('puff', sx + Math.cos(a) * 20, sy - 4 + Math.sin(a) * 10, Math.cos(a) * 110, Math.sin(a) * 55, 0.55 + Math.random() * 0.2, 0.7, 1.9, 0xc7b497, 0.7);
     }
     this.camera.shake(8);
+  }
+
+  /** Yetenek patlamasi/halkasi: unsura gore renkli halka ve parcaciklar (yaricap tile). */
+  private burstFx(sx: number, sy: number, radius: number, element: number, high: boolean): void {
+    const COLORS = [0xe9e1c8, 0xff8a2a, 0x9ae0ff, 0xffe27a, 0xb04fff, 0x7aff9a, 0x4fc3ff];
+    const col = COLORS[element] ?? 0xffffff;
+    const r = Math.max(0.8, Math.min(5, radius));
+    this.spawn('ring', sx, sy - 4, 0, 0, 0.45, 0.25, r * 1.15, col, 0.9);
+    if (high) this.spawn('ring', sx, sy - 4, 0, 0, 0.65, 0.15, r * 0.8, 0xffffff, 0.45);
+    const n = high ? 9 : 4;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.5;
+      const d = 14 + r * 14;
+      this.spawn(element === 0 || element === 4 ? 'puff' : 'spark', sx + Math.cos(a) * d * 0.5, sy - 8 + Math.sin(a) * d * 0.25, Math.cos(a) * 60 * r, Math.sin(a) * 30 * r - 15, 0.5 + Math.random() * 0.25, 0.7, 0.2, col, 0.9, { rot: a + Math.PI / 2 });
+    }
+    if (r >= 3 && high) this.camera.shake(2.5);
   }
 
   private shot(sx: number, sy: number, angle: number): void {
