@@ -4,7 +4,7 @@ import type { Units } from './units';
 /** Renderer'in okudugu birim alanlari (Units ve worker anlik goruntusu ayni sekli tasir). */
 export type UnitsView = Pick<
   Units,
-  'count' | 'kind' | 'team' | 'x' | 'y' | 'px' | 'py' | 'hp' | 'maxHp' | 'facing' | 'moving' | 'swing' | 'flash' | 'alive' | 'deathT'
+  'count' | 'kind' | 'team' | 'x' | 'y' | 'px' | 'py' | 'hp' | 'maxHp' | 'facing' | 'moving' | 'swing' | 'flash' | 'alive' | 'deathT' | 'status'
 >;
 
 export interface ProjView {

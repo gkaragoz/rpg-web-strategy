@@ -11,6 +11,7 @@ export interface SnapSlot {
   facing: Int8Array;
   moving: Uint8Array;
   alive: Uint8Array;
+  status: Uint8Array;
   pSx: Float32Array;
   pSy: Float32Array;
   pTx: Float32Array;
@@ -84,6 +85,7 @@ function build(sab: SharedArrayBuffer | null, cap: number, pcap: number): { shar
       facing: i8(cap),
       moving: u8(cap),
       alive: u8(cap),
+      status: u8(cap),
       pSx: f32(pcap),
       pSy: f32(pcap),
       pTx: f32(pcap),

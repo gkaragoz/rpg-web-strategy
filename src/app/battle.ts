@@ -480,6 +480,7 @@ export class BattleScene {
           moving: u.moving[i] === 1,
           swingProgress: swingTotal > 0 ? 1 - u.swing[i] / swingTotal : -1,
           flash: u.flash[i] > 0,
+          status: u.status[i],
           deathT: alive ? -1 : u.deathT[i],
         },
         this.time,

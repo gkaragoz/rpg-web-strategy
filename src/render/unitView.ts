@@ -26,6 +26,21 @@ export interface ViewState {
   deathT: number;
   /** Atlas pisirme icin: yuruyus fazini sabitler. */
   phase?: number;
+  /** Gorsel durum maskesi (ST_*): yavaslama, yanma, sersemleme... */
+  status?: number;
+}
+
+/** Durum maskesinden renk tonu (0xffffff: etkisiz). Oncelik: dokunulmaz > sersem > yanma > yavas > kalkan > korku > kiskirtma. */
+export function statusTint(st: number): number {
+  if (st === 0) return 0xffffff;
+  if (st & 32) return 0xfff2b0;
+  if (st & 4) return 0xffc56a;
+  if (st & 2) return 0xffa070;
+  if (st & 1) return 0x9ad8ff;
+  if (st & 16) return 0xbfe9ff;
+  if (st & 8) return 0xd0b0ff;
+  if (st & 64) return 0xffb0b0;
+  return 0xffffff;
 }
 
 export const DEATH_FADE = 0.7;
@@ -475,7 +490,7 @@ export class UnitView {
 
     this.rig.x = 0;
     this.rig.scale.x = this.base * this.faceCur * pop;
-    this.rig.tint = s.flash ? 0xff9a9a : 0xffffff;
+    this.rig.tint = s.flash ? 0xff9a9a : statusTint(s.status ?? 0);
 
     let squash = 1;
     if (!alive) {

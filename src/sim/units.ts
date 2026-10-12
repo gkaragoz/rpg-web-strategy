@@ -104,6 +104,15 @@ export const F_REVIVED = 1;
 export const F_RAGE = 2;
 export const F_EXPLODED = 4;
 
+/** Gorsel durum maskesi (Units.status). */
+export const ST_SLOW = 1;
+export const ST_BURN = 2;
+export const ST_STUN = 4;
+export const ST_FEAR = 8;
+export const ST_SHIELD = 16;
+export const ST_INVULN = 32;
+export const ST_TAUNT = 64;
+
 /** Rol sorgulari (sicak donguler icin tip dizileri). */
 const ROLE_OF = new Uint8Array(KIND_COUNT);
 STATS.forEach((s, i) => (ROLE_OF[i] = s.role));
@@ -303,6 +312,8 @@ export class Units {
   flags: Uint8Array;
   /** Cagrilan birimin sahibi (-1: yok). */
   owner: Int32Array;
+  /** Gorsel durum maskesi (ST_*): renderer renklendirmek icin okur. */
+  status: Uint8Array;
 
   constructor(cap: number) {
     this.cap = cap;
@@ -375,6 +386,7 @@ export class Units {
     this.stackT = new Float32Array(cap);
     this.flags = new Uint8Array(cap);
     this.owner = new Int32Array(cap).fill(-1);
+    this.status = new Uint8Array(cap);
   }
 
   clear(): void {
@@ -428,6 +440,7 @@ export class Units {
     this.skillN[i] = this.stacks[i] = this.flags[i] = 0;
     this.skillT[i] = this.stackT[i] = 0;
     this.owner[i] = -1;
+    this.status[i] = 0;
     return i;
   }
 }

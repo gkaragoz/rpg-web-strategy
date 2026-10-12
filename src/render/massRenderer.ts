@@ -6,7 +6,7 @@ import { isoX, isoY } from '../iso';
 import type { SimView } from '../sim/backend';
 import { SIM_DT } from '../sim/constants';
 import { MAX_TEAMS, STATS, isMelee, isRanged, isTank } from '../sim/units';
-import { DEATH_FADE, POSES } from './unitView';
+import { DEATH_FADE, POSES, statusTint } from './unitView';
 
 const DEPTH_SCALE = 4;
 
@@ -170,7 +170,7 @@ export class MassRenderer {
       if (alive) {
         p.scaleY = 1;
         p.rotation = moving ? 0.08 * u.facing[i] : 0;
-        p.tint = u.flash[i] > 0 ? 0xff9a9a : 0xffffff;
+        p.tint = u.flash[i] > 0 ? 0xff9a9a : u.status[i] !== 0 ? statusTint(u.status[i]) : 0xffffff;
         p.alpha = 1;
       } else {
         const k = Math.min(1, u.deathT[i] / DEATH_FADE);

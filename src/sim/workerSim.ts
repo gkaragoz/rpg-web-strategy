@@ -63,6 +63,7 @@ export class WorkerSim implements SimBackend {
       flash: s0.flash,
       alive: s0.alive,
       deathT: s0.deathT,
+      status: s0.status,
     };
     this.projectiles = {
       count: 0,
@@ -117,6 +118,7 @@ export class WorkerSim implements SimBackend {
     u.flash = c.flash;
     u.alive = c.alive;
     u.deathT = c.deathT;
+    u.status = c.status;
     u.count = sh.ctrlI[I_COUNT];
 
     const pr = this.projectiles;

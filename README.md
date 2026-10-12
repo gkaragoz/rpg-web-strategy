@@ -47,9 +47,18 @@ sayaçları (takılan, aktif A* yolu, yasak, leash kırılması) ve son bayrakla
 
 ## Birimler
 
-Savaşçı, Okçu (yay, vur-kaç), Rahip (şifa, vur-kaç), **Kalkan Tankı** (önünde koni itme, güçlü knockback),
-**Çekiç Tankı** (çevresinde daire darbe, yarım knockback). Tüm değerler stüdyodaki *Birim ayarları* penceresinden
-değiştirilebilir (`src/sim/units.ts` varsayılanlar).
+5 klasik tür (Savaşçı, Okçu, Rahip, **Kalkan Tankı**, **Çekiç Tankı**) ve [the reference roster](docs/UNITS.md)
+(source terms) birimleri: **46 birim** (Yaygın/Nadir/Destansı/Efsanevi; İnsan/Karanlık/Kutsal/Vahşi). Veri `src/sim/data/troops.ts`
+(10 seviyelik can/saldırı/savunma, hareket sınıfı, menzil, hasar şekli, yetenek), yetenek parametreleri `src/sim/data/skills.ts`.
+Her birim tek askerdir (mangalar yok); roster değerleri oyun ölçeğine bölenle indirgenir (`HP_DIV`, `ATK_DIV`, savunma → zırh).
+
+Stüdyoda **Birimler…** galerisi: nadirlik/ırk filtresi, arama, birim simgeleri, **seviye (1-10)** seçici. Tüm değerler
+*Birim ayarları* penceresinden birim bazında değiştirilebilir. Roster sanatı kullanılmaz: çizimler `src/render/looks.ts` içinde
+özgün, prosedürel tariflerdir.
+
+Yetenekler (`src/sim/battle.ts`): alan/dikdörtgen/delici hasar, yavaşlatma-donma, sersemletme, korku, kışkırtma, kalkan,
+yanma ve lanet bölgeleri, çağırma (Bone Caller → iskelet), yeniden doğma, iyileştirme/arındırma, öfke, yaşam çalma,
+diken yansıtma, kritik, patlama, Hex bağı, ışığa dönüşme vb.
 
 ## Mimari
 
@@ -73,7 +82,10 @@ npm test                                  # birim + kenar durum + 120 rastgele s
 FUZZ_N=600 FUZZ_START=300 npm test        # daha geniş rastgele tarama
 HUNT=1 FUZZ_N=300 npx vitest run src/sim/__tests__/fuzz.test.ts   # hataları toplayıp raporla (test-results/fuzz-report.txt)
 DEBUG_SCN=9 DEBUG_AT=20,30 npx vitest run src/sim/__tests__/debug.test.ts  # bir senaryonun birim dökümü
+ROSTER_N=400 npx vitest run src/sim/__tests__/rosterfuzz.test.ts      # roster birimleriyle rastgele tarama
+BALANCE=1 LEVEL=6 npx vitest run src/sim/__tests__/balance.test.ts  # round-robin kazanma oranları (test-results/balance.txt)
 ```
+`skills.test.ts` yeteneklerin gerçekten çalıştığını (çağırma, yeniden doğma, patlama, yavaşlatma, kışkırtma, korku, bağ...), `troops.test.ts` her roster birimini 1. ve 10. seviyede takılma/döngü açısından sınar.
 
 `src/sim/testing/stall.ts` takılma dedektörü (boşta kovalayıcı, vuramayan, salınım, ilerlemesizlik, ulaşılamaz hedef)
 ve değişmezleri (yürünemez karo, NaN, harita dışı) içerir. Bilinen sınır: ~%0.3 senaryoda nadir kapalı-köşe takılması.

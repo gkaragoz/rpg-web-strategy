@@ -1,7 +1,7 @@
 import { Grid } from './grid';
 import { Terrain, T_BLOCKED, T_WATER } from './terrain';
 import type { MapSpec } from './mapSpec';
-import { DEFAULT_LEVEL, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides } from './units';
+import { DEFAULT_LEVEL, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides } from './units';
 import { PF_PIERCE, PF_SKILL, Projectiles } from './projectiles';
 import { SKILL_ELEMENT, skillParams, type SkillParams } from './data/skills';
 import type { SkillId } from './data/troops';
@@ -390,6 +390,7 @@ export class Battle {
       tp = tn;
     }
 
+    if (this.config.mode !== 'bench') this.updateStatus();
     this.projectiles.update(dt, (x, y, team, dmg, idx) => this.arrowLanded(x, y, team, dmg, idx));
     pf.arrows += performance.now() - tp;
     pf.steps++;
@@ -1034,6 +1035,25 @@ export class Battle {
   private readonly pools = new Map<number, number[]>();
   private readonly scratch: number[] = [];
   private readonly scratch2: number[] = [];
+
+  /** Gorsel durum maskesini yazar (renderer renklendirir). */
+  private updateStatus(): void {
+    const u = this.units;
+    for (let i = 0; i < u.count; i++) {
+      if (!u.alive[i]) {
+        u.status[i] = 0;
+        continue;
+      }
+      u.status[i] =
+        (u.slowT[i] > 0 ? ST_SLOW : 0) |
+        (u.burnT[i] > 0 ? ST_BURN : 0) |
+        (u.stunT[i] > 0.35 ? ST_STUN : 0) |
+        (u.fearT[i] > 0 ? ST_FEAR : 0) |
+        (u.shieldT[i] > 0 ? ST_SHIELD : 0) |
+        (u.invulnT[i] > 0 ? ST_INVULN : 0) |
+        (u.tauntT[i] > 0 ? ST_TAUNT : 0);
+    }
+  }
 
   private sp(id: SkillId): SkillParams {
     return (this.skillCache[id] ??= skillParams(id, this.config.level ?? DEFAULT_LEVEL));
