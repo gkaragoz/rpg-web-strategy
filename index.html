@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RPG Web - Savas Prototipi</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #1a2332; font-family: system-ui, sans-serif; }
+      canvas { display: block; }
+      #stats { position: fixed; top: 8px; right: 8px; padding: 8px 10px; background: rgba(10,14,20,.78); color: #d8e2ee;
+        font: 12px/1.45 ui-monospace, Consolas, monospace; border-radius: 6px; min-width: 210px; pointer-events: none; white-space: pre; }
+      #stats canvas { display: block; margin-top: 6px; }
+      #hint { position: fixed; left: 8px; bottom: 8px; color: #9fb0c4; font-size: 12px; background: rgba(10,14,20,.6); padding: 5px 8px; border-radius: 6px; pointer-events: none; }
+      #banner { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; pointer-events: none;
+        color: #fff; font-size: 34px; font-weight: 600; text-shadow: 0 2px 8px #000; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <div id="stats"></div>
+    <div id="hint">WASD / orta tus: kamera · tekerlek: zoom · R: yeniden başlat · 1-2-3: hız · Space: duraklat · F3: istatistik</div>
+    <div id="banner"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

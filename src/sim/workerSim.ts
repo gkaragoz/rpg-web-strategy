@@ -1,0 +1,170 @@
+import type { FrameInfo, ProjView, SimBackend, SimStats, UnitsView } from './backend';
+import { mapSizeFor, projectileCapacity, unitCapacity, type BattleConfig, type SimEvent } from './battle';
+import { SIM_DT } from './constants';
+import {
+  F_ALIVE_BLUE,
+  F_ALIVE_RED,
+  F_MAX_MS,
+  F_PREV_PUBLISH,
+  F_PROF,
+  F_PUBLISH,
+  F_SIM_TIME,
+  F_STEPS,
+  F_TOTAL_MS,
+  F_WINNER,
+  I_COUNT,
+  I_LATEST,
+  I_PCOUNT,
+  PROF_KEYS,
+  SNAP_SLOTS,
+  allocShared,
+  bindShared,
+  type Shared,
+} from './shared';
+import type { WorkerCommand, WorkerEvent } from './worker';
+
+/** Sim'i Web Worker'da calistirir; durumu SharedArrayBuffer halka tamponundan okur. */
+export class WorkerSim implements SimBackend {
+  readonly kind = 'worker' as const;
+  readonly mapSize: number;
+  readonly events: SimEvent[] = [];
+  readonly alivePerTeam: [number, number] = [0, 0];
+  winner = -1;
+  time = 0;
+  readonly units: UnitsView;
+  readonly projectiles: ProjView;
+  private readonly worker: Worker;
+  private readonly sh: Shared;
+  private pendingReset: ((count: number) => void) | null = null;
+
+  private constructor(
+    readonly config: BattleConfig,
+    worker: Worker,
+    sh: Shared,
+    count: number,
+  ) {
+    this.worker = worker;
+    this.sh = sh;
+    this.mapSize = mapSizeFor(config);
+    const s0 = sh.slots[0];
+    this.units = {
+      count,
+      kind: sh.kind,
+      team: sh.team,
+      maxHp: sh.maxHp,
+      x: s0.x,
+      y: s0.y,
+      px: s0.x,
+      py: s0.y,
+      hp: s0.hp,
+      facing: s0.facing,
+      moving: s0.moving,
+      swing: s0.swing,
+      flash: s0.flash,
+      alive: s0.alive,
+      deathT: s0.deathT,
+    };
+    this.projectiles = {
+      count: 0,
+      active: sh.pActive,
+      sx: s0.pSx,
+      sy: s0.pSy,
+      tx: s0.pTx,
+      ty: s0.pTy,
+      t: s0.pT,
+      dur: s0.pDur,
+      height: s0.pH,
+    };
+    worker.onmessage = (e: MessageEvent<WorkerEvent>) => {
+      const m = e.data;
+      if (m.type === 'events') this.events.push(...m.events);
+      else if (m.type === 'reset') {
+        this.units.count = m.count;
+        this.pendingReset?.(m.count);
+        this.pendingReset = null;
+      }
+    };
+  }
+
+  static async create(config: BattleConfig, seed: number): Promise<WorkerSim> {
+    const sab = allocShared(unitCapacity(config), projectileCapacity(config));
+    const sh = bindShared(sab, unitCapacity(config), projectileCapacity(config));
+    const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+    const count = await new Promise<number>((resolve, reject) => {
+      worker.onmessage = (e: MessageEvent<WorkerEvent>) => e.data.type === 'ready' && resolve(e.data.count);
+      worker.onerror = (e) => reject(new Error(`sim worker hatasi: ${e.message}`));
+      worker.postMessage({ type: 'init', sab, config, seed } satisfies WorkerCommand);
+    });
+    return new WorkerSim(config, worker, sh, count);
+  }
+
+  frame(): FrameInfo {
+    const sh = this.sh;
+    const latest = Atomics.load(sh.ctrlI, I_LATEST);
+    const cur = latest % SNAP_SLOTS;
+    const prev = latest > 0 ? (latest - 1) % SNAP_SLOTS : cur;
+    const c = sh.slots[cur];
+    const p = sh.slots[prev];
+    const u = this.units;
+    u.x = c.x;
+    u.y = c.y;
+    u.px = p.x;
+    u.py = p.y;
+    u.hp = c.hp;
+    u.facing = c.facing;
+    u.moving = c.moving;
+    u.swing = c.swing;
+    u.flash = c.flash;
+    u.alive = c.alive;
+    u.deathT = c.deathT;
+    u.count = sh.ctrlI[I_COUNT];
+
+    const pr = this.projectiles;
+    pr.count = sh.ctrlI[I_PCOUNT + cur];
+    pr.sx = c.pSx;
+    pr.sy = c.pSy;
+    pr.tx = c.pTx;
+    pr.ty = c.pTy;
+    pr.t = c.pT;
+    pr.dur = c.pDur;
+    pr.height = c.pH;
+
+    const f = sh.ctrlF;
+    this.winner = f[F_WINNER];
+    this.time = f[F_SIM_TIME];
+    this.alivePerTeam[0] = f[F_ALIVE_BLUE];
+    this.alivePerTeam[1] = f[F_ALIVE_RED];
+
+    // Son iki yayin arasindaki gercek aralikla interpolasyon: bir adim gecikmeli ama puruzsuz.
+    const interval = Math.max(1, f[F_PUBLISH] - f[F_PREV_PUBLISH]);
+    const now = performance.timeOrigin + performance.now();
+    const alpha = Math.min(1, Math.max(0, (now - f[F_PUBLISH]) / Math.min(interval, SIM_DT * 1000 * 4)));
+    return { steps: 0, mainSimMs: 0, alpha };
+  }
+
+  reset(seed: number): Promise<void> {
+    return new Promise((resolve) => {
+      this.pendingReset = () => resolve();
+      this.worker.postMessage({ type: 'reset', seed } satisfies WorkerCommand);
+    });
+  }
+
+  setSpeed(speed: number): void {
+    this.worker.postMessage({ type: 'speed', speed } satisfies WorkerCommand);
+  }
+
+  setPaused(paused: boolean): void {
+    this.worker.postMessage({ type: 'pause', paused } satisfies WorkerCommand);
+  }
+
+  resetStats(): void {
+    this.worker.postMessage({ type: 'resetStats' } satisfies WorkerCommand);
+  }
+
+  stats(): SimStats {
+    const f = this.sh.ctrlF;
+    const prof: Record<string, number> = {};
+    PROF_KEYS.forEach((k, i) => (prof[k] = f[F_PROF + i]));
+    return { steps: f[F_STEPS], totalMs: f[F_TOTAL_MS], maxMs: f[F_MAX_MS], prof };
+  }
+}
