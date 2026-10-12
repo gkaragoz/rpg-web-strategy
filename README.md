@@ -48,13 +48,19 @@ paleti, asker yerleştirme ve benchmark.
 | Q / E | Takım değiştir · 1–5: asker türü · B: fırça · X: yerleştir/sil |
 | Ctrl+Z / Ctrl+Y (veya Z / Y) | Geri al / yinele |
 | Tekerlek, WASD, orta tuş | Yakınlaş, kaydır |
-| Space · R · Esc · 1-2-3 · F3 | (savaşta) duraklat · yeniden başlat · düzenle · hız · istatistik |
+| Space · R · Esc · 1-2-3 · F3 · V | (savaşta) duraklat · yeniden başlat · düzenle · hız · istatistik · debug |
 
-**Haritalar:** stüdyoda *Harita → Harita seç…* ile önizlemeli kart galerisi açılır: 4 biyom (Orman, Çöl, Kar, Bataklık) ×
-nehir (kıvrımlı, düz, adalı, göllü, nehirsiz), orman (yoğun, seyrek, koru, çevre ormanı, ormansız), köy (köy, dağınık evler,
-harabe kale, kamp, köysüz) ve geçit (ahşap köprü, taş köprü, sığ geçit) çeşitleri. 12 hazır harita, *Özelleştir*
-açılırları ve **Rastgele** kartı (her şey rastgele + tohum; *Yeniden çek* / *Kilitle*) vardır. Tarif `MapSpec`
-(`src/sim/mapSpec.ts`) ile sim ve çizimde ortaktır; her tarif merkeze göre simetriktir.
+**Haritalar:** stüdyoda *Harita → Harita seç…* ile önizlemeli kart galerisi açılır (21 hazır harita, biyom filtresi,
+*Özelleştir* açılırları, **Rastgele** kartı: her şey rastgele + tohum; *Yeniden çek* / *Kilitle*). Tarif `MapSpec`
+(`src/sim/mapSpec.ts`) ile sim ve çizimde ortaktır; her harita merkeze göre simetrik ve iki ordu birbirine ulaşabilir.
+- **Biyom:** Orman, Çöl, Kar, Bataklık (zemin, ağaç/kaktüs/karlı çam/ölü ağaç, ev stili, su rengi).
+- **Kurgu:** *Klasik* (nehir + kabartma), **Vadi ve geçit** (iki yüksek set, tek kapı), **Merkez kale** (rampalı plato, halka
+  duvar, kuleler, hisar), **Adalar ve köprüler** (nehre dik iki kanal + köprüler), **Çapraz yol** (kavşak, mezralar).
+- **Kabartma / yükselti:** Düz, Tepecikler, Sıradağ, Plato, Dağ. Yükselti yalnız görsel + yokuş yukarı yavaşlama (en çok %35);
+  komşusundan ≥ 1,5 kademe yüksek tile uçurumdur (geçilmez). Zemin eğimli dörtgenlerle çizilir; birimler/dekor/mermiler
+  yüksekliğe oturur.
+- Nehir (kıvrımlı, düz, adalı, göllü, nehirsiz), orman (yoğun, seyrek, koru, çevre ormanı, ormansız), köy (köy, dağınık evler,
+  harabe kale, kamp, köysüz), geçit (ahşap köprü, taş köprü, sığ geçit) seçenekleri.
 
 **Debug katmanı:** stüdyoda *Görünüm ve ses → Hata ayıklama* anahtarı, savaşta HUD'daki *Debug* düğmesi veya `V` tuşu
 (savaş aynı dizilimle yeniden başlar) ya da `?debug=1` ile açılır. Sim ana thread'de çalışır ve test paketindeki takılma dedektörü savaşı canlı izler.
