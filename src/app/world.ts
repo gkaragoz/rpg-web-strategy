@@ -1,6 +1,7 @@
 import { Container, Sprite } from 'pixi.js';
 import { isoX, isoY } from '../iso';
 import type { Atlas } from '../render/atlas';
+import { PALETTES } from '../render/biome';
 import { buildGround } from '../render/ground';
 import { buildTerrainOverlay } from '../render/terrainView';
 import { mapSizeFor, terrainFor, type BattleConfig } from '../sim/battle';
@@ -35,7 +36,7 @@ export class WorldView {
 
     this.mapSize = mapSizeFor(config);
     this.terrain = terrainFor(config);
-    if (ground) this.staticLayer.addChild(buildGround(this.mapSize));
+    if (ground) this.staticLayer.addChild(buildGround(this.mapSize, PALETTES[config.map?.biome ?? 'forest']));
     if (this.terrain) this.staticLayer.addChild(buildTerrainOverlay(this.terrain));
     if (this.terrain && atlas && decorSprites) this.addDecor(this.terrain, atlas);
   }

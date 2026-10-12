@@ -1,4 +1,5 @@
 import type { BattleConfig } from '../battle';
+import { randomSpec } from '../mapSpec';
 import { mulberry32 } from '../random';
 import { DEFAULT_STATS, KIND_COUNT, Kind, TUNABLE, type StatOverrides } from '../units';
 
@@ -126,6 +127,8 @@ export function makeScenario(id: number): Scenario {
       teamCount: teams,
       mapSize: size,
       env,
+      // Harita tarifi ayri bir uretecten: eski senaryo dizisi degismez.
+      map: id % 2 === 0 ? undefined : randomSpec(mulberry32(id * 7919 + 13)),
       kite,
       terrainSeed: 1 + Math.floor(rng() * 50),
       layout: new Float32Array(layout),

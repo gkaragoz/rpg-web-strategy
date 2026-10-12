@@ -929,7 +929,7 @@ export class Battle {
     const oy = u.y[i];
     let nx = Math.fround(Math.min(this.mapSize - 0.5, Math.max(0.5, ox + u.kbVx[i] * dt)));
     let ny = Math.fround(Math.min(this.mapSize - 0.5, Math.max(0.5, oy + u.kbVy[i] * dt)));
-    if (t && !t.walkable(nx, ny)) {
+    if (t && !t.stepOk(ox, oy, nx, ny)) {
       if (t.walkable(nx, oy)) ny = oy;
       else if (t.walkable(ox, ny)) nx = ox;
       else {
@@ -1064,7 +1064,7 @@ export class Battle {
     const lim = this.mapSize - 0.5;
     let nx = Math.fround(Math.min(lim, Math.max(0.5, ox + ux * step)));
     let ny = Math.fround(Math.min(lim, Math.max(0.5, oy + uy * step)));
-    if (t && !t.walkable(nx, ny)) {
+    if (t && !t.stepOk(ox, oy, nx, ny)) {
       // Engel onunde kenar boyunca TAM hizla kay (hedef yonu engele dikse bile ilerleyebilsin).
       const canX = t.walkable(Math.fround(ox + (ux >= 0 ? step : -step)), oy);
       const canY = t.walkable(ox, Math.fround(oy + (uy >= 0 ? step : -step)));
@@ -1319,10 +1319,19 @@ export class Battle {
     const terrain = this.terrain;
     const flags = terrain ? terrain.flags : null;
     const n = this.mapSize;
-    const bad = (x: number, y: number): boolean => {
-      if (!flags) return false;
-      const f = flags[(Math.fround(y) | 0) * n + (Math.fround(x) | 0)];
+    const isBad = (x: number, y: number): boolean => {
+      const f = flags![(Math.fround(y) | 0) * n + (Math.fround(x) | 0)];
       return f === T_WATER || f === T_BLOCKED;
+    };
+    // Itme: hedef su/engel olmamali ve kose capraz gecisinde yan komsular acik olmali.
+    const bad = (ox: number, oy: number, x: number, y: number): boolean => {
+      if (!flags) return false;
+      if (isBad(x, y)) return true;
+      const fx = Math.fround(x);
+      const fy = Math.fround(y);
+      const gx = Math.fround(ox);
+      const gy = Math.fround(oy);
+      return (gx | 0) !== (fx | 0) && (gy | 0) !== (fy | 0) && (isBad(fx, gy) || isBad(gx, fy));
     };
     for (let i = 0; i < u.count; i++) {
       if (!u.alive[i]) continue;
@@ -1353,7 +1362,7 @@ export class Battle {
             u.y[i] -= dy * kk;
             const jx = Math.min(lim, Math.max(0.5, u.x[j] + nx * kk));
             const jy = Math.min(lim, Math.max(0.5, u.y[j] + dy * kk));
-            if (bad(jx, jy)) continue; // j'yi suya/engele itme
+            if (bad(u.x[j], u.y[j], jx, jy)) continue; // j'yi suya/engele itme
             u.x[j] = jx;
             u.y[j] = jy;
           }
@@ -1361,7 +1370,7 @@ export class Battle {
       }
       u.x[i] = Math.min(lim, Math.max(0.5, u.x[i]));
       u.y[i] = Math.min(lim, Math.max(0.5, u.y[i]));
-      if (bad(u.x[i], u.y[i])) {
+      if (bad(bx, by, u.x[i], u.y[i])) {
         u.x[i] = bx;
         u.y[i] = by;
       }
@@ -1370,7 +1379,7 @@ export class Battle {
   }
 
   /** Tanklar (2x boyut) yakinlarindaki birimleri belirgin sekilde iter. */
-  private pushAroundTanks(bad: (x: number, y: number) => boolean): void {
+  private pushAroundTanks(bad: (ox: number, oy: number, x: number, y: number) => boolean): void {
     const u = this.units;
     const R = TANK.pushRadius;
     const g0 = this.grids[0];
@@ -1400,7 +1409,7 @@ export class Battle {
               const lim = this.mapSize - 0.5;
               const jx = Math.min(lim, Math.max(0.5, u.x[j] + nx * k2));
               const jy = Math.min(lim, Math.max(0.5, u.y[j] + dy * k2));
-              if (!bad(jx, jy)) {
+              if (!bad(u.x[j], u.y[j], jx, jy)) {
                 u.x[j] = jx;
                 u.y[j] = jy;
               }

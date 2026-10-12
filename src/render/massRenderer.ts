@@ -1,3 +1,4 @@
+import { PALETTES } from './biome';
 import { Application, Container, Graphics, Particle, ParticleContainer, Rectangle, Texture, TilingSprite } from 'pixi.js';
 import type { Terrain } from '../sim/terrain';
 import type { Atlas } from './atlas';
@@ -79,8 +80,9 @@ export class MassRenderer {
     const n = this.sim.mapSize;
     const tile = new Container();
     const bg = new Graphics();
-    bg.rect(0, 0, 64, 32).fill(0x6c9e48);
-    bg.poly([32, 0, 64, 16, 32, 32, 0, 16]).fill(0x78ab52);
+    const pal = PALETTES[this.terrain?.spec.biome ?? 'forest'];
+    bg.rect(0, 0, 64, 32).fill(pal.grassB);
+    bg.poly([32, 0, 64, 16, 32, 32, 0, 16]).fill(pal.grassA);
     tile.addChild(bg);
     const tex = this.app.renderer.generateTexture({ target: tile, frame: new Rectangle(0, 0, 64, 32), resolution: 1 });
     const ts = new TilingSprite({ texture: tex, width: n * 64, height: n * 32 });

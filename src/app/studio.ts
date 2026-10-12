@@ -1,5 +1,6 @@
 import { KIND_COUNT, MAX_TEAMS, STATS } from '../sim/units';
 import type { Editor } from './editor';
+import { MapPicker } from './mapPicker';
 import { UnitSettings } from './unitSettings';
 import { BRUSHES, MAP_SIZES, MAX_PLACED, PALETTES, hex, saveState, teamColors, type AppState } from './state';
 
@@ -25,6 +26,7 @@ export class Studio {
   private readonly $: (sel: string) => HTMLElement;
   private visible = false;
   private readonly units: UnitSettings;
+  private readonly maps: MapPicker;
 
   constructor(
     root: HTMLElement,
@@ -32,6 +34,10 @@ export class Studio {
   ) {
     this.root = root;
     this.units = new UnitSettings(d.state, () => this.render());
+    this.maps = new MapPicker(d.state, () => {
+      d.onMapChange();
+      this.render();
+    });
     root.innerHTML = this.template();
     this.$ = (sel) => root.querySelector(sel) as HTMLElement;
     this.bind();
@@ -64,6 +70,7 @@ export class Studio {
   <header><h1>Savaş Stüdyosu</h1><p>Ordunu kur, haritayı seç, savaşı izle.</p></header>
   <section>
     <h2>Harita</h2>
+    <button id="map-btn" type="button" class="wide map-btn" aria-haspopup="dialog">Harita seç…</button>
     <label class="row"><span>Çevre <small>nehir, orman, köy</small></span><input type="checkbox" id="env" role="switch" /></label>
     <div class="row"><span>Tohum</span><span class="inline"><input id="seed" type="number" min="1" max="999999" inputmode="numeric" aria-label="Harita tohumu" /><button id="dice" type="button" title="Rastgele tohum" aria-label="Rastgele tohum">Rastgele</button></span></div>
     <div class="row"><span>Boyut</span><div class="seg" id="mapsize" role="group" aria-label="Harita boyutu"></div></div>
@@ -203,6 +210,7 @@ export class Studio {
       this.optionsChanged();
     });
     this.$('#units-btn').addEventListener('click', () => this.units.open());
+    this.$('#map-btn').addEventListener('click', () => this.maps.open());
     this.$('#start').addEventListener('click', () => {
       if (!this.canStart().ok) return;
       this.d.onStart();
@@ -256,6 +264,7 @@ export class Studio {
     const $in = (id: string) => this.$(id) as HTMLInputElement;
 
     $in('#env').checked = s.env;
+    this.$('#map-btn').textContent = `Harita: ${this.maps.label()}…`;
     $in('#kite').checked = s.kite;
     if (document.activeElement !== $in('#seed')) $in('#seed').value = String(s.seed);
 

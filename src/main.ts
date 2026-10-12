@@ -82,7 +82,8 @@ const banner = document.getElementById('banner')!;
 const studioRoot = document.getElementById('studio')!;
 const hudRoot = document.getElementById('hud')!;
 
-let atlas: Atlas = bakeAtlas(app.renderer, teamColors(state.palette, state.teamCount));
+let atlasBiome = state.map.biome;
+let atlas: Atlas = bakeAtlas(app.renderer, teamColors(state.palette, state.teamCount), atlasBiome);
 const getAtlas = (): Atlas => atlas;
 
 const audio = new AudioSystem();
@@ -122,7 +123,7 @@ const battle = new BattleScene({
 let mode: 'studio' | 'battle' = 'studio';
 
 function studioConfig(): BattleConfig {
-  return { mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, terrainSeed: state.seed, stats: state.stats };
+  return { mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, terrainSeed: state.seed, map: state.map, stats: state.stats };
 }
 
 function layoutArray(): Float32Array {
@@ -151,6 +152,7 @@ const editor = new Editor({
 
 /** Harita ayarlari (tohum/cevre/boyut) degisince dunyayi yeniler, gecersiz askerleri tasir. */
 function rebuildWorld(announce: boolean): void {
+  if (state.map.biome !== atlasBiome) rebakeAtlas();
   world.rebuild(studioConfig(), atlas, true);
   camera.setMap(world.mapSize);
   camera.fit(app.screen.width, app.screen.height);
@@ -169,12 +171,17 @@ function onMapChange(): void {
 }
 
 /** Takim sayisi/palet degisti: atlas'i yeni renklerle yeniden pisirir. */
-function onPaletteChange(): void {
+function rebakeAtlas(): void {
   const old = atlas;
-  atlas = bakeAtlas(app.renderer, teamColors(state.palette, state.teamCount));
+  atlasBiome = state.map.biome;
+  atlas = bakeAtlas(app.renderer, teamColors(state.palette, state.teamCount), atlasBiome);
   world.setAtlas(atlas, true);
   editor.refreshSprites();
   old.dispose();
+}
+
+function onPaletteChange(): void {
+  rebakeAtlas();
   studio.render();
 }
 
@@ -239,7 +246,7 @@ async function backToStudio(): Promise<void> {
 async function startBench(): Promise<void> {
   studioRoot.hidden = true;
   await battle.enter({
-    config: { mode: 'bench', perTeam: benchPer, env: state.env, terrainSeed: state.seed, kite: state.kite },
+    config: { mode: 'bench', perTeam: benchPer, env: state.env, terrainSeed: state.seed, map: state.map, kite: state.kite },
     colors: teamColors('classic', 2),
     speed: 1,
     bench: true,

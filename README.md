@@ -30,6 +30,12 @@ paleti, asker yerleştirme ve benchmark.
 | Tekerlek, WASD, orta tuş | Yakınlaş, kaydır |
 | Space · R · Esc · 1-2-3 · F3 | (savaşta) duraklat · yeniden başlat · düzenle · hız · istatistik |
 
+**Haritalar:** stüdyoda *Harita → Harita seç…* ile önizlemeli kart galerisi açılır: 4 biyom (Orman, Çöl, Kar, Bataklık) ×
+nehir (kıvrımlı, düz, adalı, göllü, nehirsiz), orman (yoğun, seyrek, koru, çevre ormanı, ormansız), köy (köy, dağınık evler,
+harabe kale, kamp, köysüz) ve geçit (ahşap köprü, taş köprü, sığ geçit) çeşitleri. 12 hazır harita, *Özelleştir*
+açılırları ve **Rastgele** kartı (her şey rastgele + tohum; *Yeniden çek* / *Kilitle*) vardır. Tarif `MapSpec`
+(`src/sim/mapSpec.ts`) ile sim ve çizimde ortaktır; her tarif merkeze göre simetriktir.
+
 **Debug katmanı:** stüdyoda *Görünüm ve ses → Hata ayıklama* anahtarı, savaşta HUD'daki *Debug* düğmesi veya `V` tuşu
 (savaş aynı dizilimle yeniden başlar) ya da `?debug=1` ile açılır. Sim ana thread'de çalışır ve test paketindeki takılma dedektörü savaşı canlı izler.
 Sorunlu birim kırmızı nabızlı halka, sıkışan birim turuncu halka, hedefi yasaklanan mor halka alır; sol üstteki panel

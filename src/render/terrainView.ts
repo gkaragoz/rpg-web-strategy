@@ -2,6 +2,7 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import { isoX, isoY } from '../iso';
 import type { Bridge, Terrain } from '../sim/terrain';
 import type { Atlas } from './atlas';
+import { PALETTES, type BiomePalette } from './biome';
 
 type Pt = [number, number];
 
@@ -14,13 +15,14 @@ export function buildTerrainOverlay(t: Terrain): Container {
   const root = new Container();
   const g = new Graphics();
   root.addChild(g);
+  const pal = PALETTES[t.spec.biome];
 
   // Toprak yol karolari.
   for (const idx of t.pathTiles) {
     const tx = idx % t.size;
     const ty = Math.floor(idx / t.size);
     const c = [scr(tx + 0.5, ty), scr(tx + 1, ty + 0.5), scr(tx + 0.5, ty + 1), scr(tx, ty + 0.5)];
-    g.poly(flat(c)).fill({ color: 0xb79a6a, alpha: 0.9 });
+    g.poly(flat(c)).fill({ color: pal.path, alpha: 0.9 });
   }
 
   // Nehir: merkez cizgisinden iki kiyi noktasi dizisi -> ucgen seritler yerine tek poligon.
@@ -38,22 +40,42 @@ export function buildTerrainOverlay(t: Terrain): Container {
     }
     g.poly(flat([...left, ...right.reverse()])).fill({ color, alpha });
   };
-  band(1.0, 1, 0xe3d3a4); // kumlu kiyi
-  band(0, 1, 0x4a90c8);
-  band(0, 0.62, 0x6fb0e0);
-  band(0, 0.22, 0x8cc6ee, 0.8);
+  const hasRiver = t.spec.river !== 'none';
+  if (hasRiver) {
+    band(1.0, 1, pal.bank); // kiyi
+    band(0, 1, pal.water);
+    band(0, 0.62, pal.waterMid);
+    band(0, 0.22, pal.waterShine, 0.8);
+  }
+
+  // Nehir icindeki adalar: kiyi halkasi + zemin rengi.
+  const tileDiamond = (tx: number, ty: number, grow: number): number[] => {
+    const cx = tx + 0.5;
+    const cy = ty + 0.5;
+    const h = 0.5 + grow;
+    return flat([scr(cx, cy - h), scr(cx + h, cy), scr(cx, cy + h), scr(cx - h, cy)]);
+  };
+  for (const idx of t.landTiles) g.poly(tileDiamond(idx % t.size, Math.floor(idx / t.size), 0.35)).fill({ color: pal.bank, alpha: 0.95 });
+  for (const idx of t.landTiles) {
+    const tx = idx % t.size;
+    const ty = Math.floor(idx / t.size);
+    g.poly(tileDiamond(tx, ty, 0.02)).fill((tx + ty) % 2 === 0 ? pal.grassA : pal.grassB);
+  }
 
   // Dalga cizgileri.
-  for (let s = sMin + 2; s < sMax; s += 3.1) {
+  for (let s = sMin + 2; hasRiver && s < sMax; s += 3.1) {
     const o = t.offsetAt(s);
     const w = t.widthAt(s);
     const d = o + (((Math.round(s * 7) % 5) - 2) / 5) * (w * 0.35);
     const a = scr(t.worldX(s, d), t.worldY(s, d));
     const b = scr(t.worldX(s + 0.9, d), t.worldY(s + 0.9, d));
-    g.moveTo(a[0], a[1]).lineTo(b[0], b[1]).stroke({ width: 1.5, color: 0xffffff, alpha: 0.55 });
+    g.moveTo(a[0], a[1]).lineTo(b[0], b[1]).stroke({ width: 1.5, color: pal.wave, alpha: pal.waveAlpha });
   }
 
-  for (const b of t.bridges) drawBridge(g, t, b);
+  for (const b of t.bridges) {
+    if (t.spec.crossing === 'ford') drawFord(g, t, b, pal);
+    else drawBridge(g, t, b, pal, t.spec.crossing === 'stone');
+  }
 
   // Harita seklinde maskele (nehir haritanin disina tasmasin).
   const n = t.size;
@@ -64,7 +86,28 @@ export function buildTerrainOverlay(t: Terrain): Container {
   return root;
 }
 
-function drawBridge(g: Graphics, t: Terrain, b: Bridge): void {
+/** Sig gecit: acik renkli sig su seridi ve basamak taslari. */
+function drawFord(g: Graphics, t: Terrain, b: Bridge, pal: BiomePalette): void {
+  const s0 = b.s - b.halfW;
+  const s1 = b.s + b.halfW;
+  const d0 = b.o - b.halfLen;
+  const d1 = b.o + b.halfLen;
+  const quad: Pt[] = [scr(t.worldX(s0, d0), t.worldY(s0, d0)), scr(t.worldX(s1, d0), t.worldY(s1, d0)), scr(t.worldX(s1, d1), t.worldY(s1, d1)), scr(t.worldX(s0, d1), t.worldY(s0, d1))];
+  g.poly(flat(quad)).fill({ color: pal.bank, alpha: 0.55 });
+  const inner: Pt[] = [scr(t.worldX(s0 + 0.4, d0 + 0.5), t.worldY(s0 + 0.4, d0 + 0.5)), scr(t.worldX(s1 - 0.4, d0 + 0.5), t.worldY(s1 - 0.4, d0 + 0.5)), scr(t.worldX(s1 - 0.4, d1 - 0.5), t.worldY(s1 - 0.4, d1 - 0.5)), scr(t.worldX(s0 + 0.4, d1 - 0.5), t.worldY(s0 + 0.4, d1 - 0.5))];
+  g.poly(flat(inner)).fill({ color: pal.waterShine, alpha: 0.55 });
+  let k = 0;
+  for (let d = d0 + 0.5; d < d1; d += 0.85) {
+    const sOff = Math.sin(d * 12.9898 + b.s) * 1.1;
+    const p = scr(t.worldX(b.s + sOff, d), t.worldY(b.s + sOff, d));
+    const r = 5 + (k++ % 3) * 1.3;
+    g.ellipse(p[0], p[1] + 1.5, r + 1, r * 0.5 + 1).fill({ color: 0x000000, alpha: 0.18 });
+    g.ellipse(p[0], p[1], r, r * 0.5).fill(0x9d9b92).stroke({ width: 0.8, color: 0x6a6860 });
+    g.ellipse(p[0] - 1, p[1] - 1, r * 0.6, r * 0.28).fill(0xb9b7ad);
+  }
+}
+
+function drawBridge(g: Graphics, t: Terrain, b: Bridge, pal: BiomePalette, stone: boolean): void {
   const Z = 6;
   const s0 = b.s - b.halfW;
   const s1 = b.s + b.halfW;
@@ -82,7 +125,7 @@ function drawBridge(g: Graphics, t: Terrain, b: Bridge): void {
   let bottom = 0;
   for (let i = 1; i < 4; i++) if (base[i][1] > base[bottom][1]) bottom = i;
   for (const nb of [(bottom + 1) % 4, (bottom + 3) % 4]) {
-    g.poly(flat([base[bottom], base[nb], up(base[nb]), up(base[bottom])])).fill(nb === (bottom + 1) % 4 ? 0x6b4a2b : 0x7f5733).stroke({ width: 1, color: 0x000000, alpha: 0.35 });
+    g.poly(flat([base[bottom], base[nb], up(base[nb]), up(base[bottom])])).fill(nb === (bottom + 1) % 4 ? (stone ? pal.stoneSideA : pal.deckSideA) : stone ? pal.stoneSideB : pal.deckSideB).stroke({ width: 1, color: 0x000000, alpha: 0.35 });
   }
 
   // Direkler/korkuluk: uzun kenarlar s = s0 ve s1; arka olan once.
@@ -90,18 +133,18 @@ function drawBridge(g: Graphics, t: Terrain, b: Bridge): void {
     for (let d = d0 + 0.3; d <= d1 - 0.2; d += 1.1) {
       const p = scr(t.worldX(sc, d), t.worldY(sc, d), Z);
       const q = scr(t.worldX(sc, d), t.worldY(sc, d), Z + 11);
-      g.moveTo(p[0], p[1]).lineTo(q[0], q[1]).stroke({ width: 3, color: 0x5b3d22 });
+      g.moveTo(p[0], p[1]).lineTo(q[0], q[1]).stroke({ width: stone ? 5 : 3, color: stone ? pal.stoneSideA : pal.post });
     }
     const a = scr(t.worldX(sc, d0 + 0.3), t.worldY(sc, d0 + 0.3), Z + 10);
     const c = scr(t.worldX(sc, d1 - 0.2), t.worldY(sc, d1 - 0.2), Z + 10);
-    g.moveTo(a[0], a[1]).lineTo(c[0], c[1]).stroke({ width: 3, color: 0x8a6238 });
+    g.moveTo(a[0], a[1]).lineTo(c[0], c[1]).stroke({ width: stone ? 5 : 3, color: stone ? pal.stoneRail : pal.rail });
   };
   const yS = (sc: number): number => scr(t.worldX(sc, b.o), t.worldY(sc, b.o))[1];
   const far = yS(s0) < yS(s1) ? s0 : s1;
   const near = far === s0 ? s1 : s0;
   rail(far);
 
-  g.poly(flat(base.map((p) => up(p)))).fill(0xa9794a).stroke({ width: 1, color: 0x000000, alpha: 0.4 });
+  g.poly(flat(base.map((p) => up(p)))).fill(stone ? pal.stoneDeck : pal.deck).stroke({ width: 1, color: 0x000000, alpha: 0.4 });
   for (let d = d0 + 0.45; d < d1; d += 0.45) {
     const p = scr(t.worldX(s0, d), t.worldY(s0, d), Z);
     const q = scr(t.worldX(s1, d), t.worldY(s1, d), Z);

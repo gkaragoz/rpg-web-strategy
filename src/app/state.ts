@@ -1,5 +1,6 @@
 import { KIND_COUNT, MAX_TEAMS, TUNABLE, type StatOverrides } from '../sim/units';
 import type { TeamColors } from '../render/unitView';
+import { DEFAULT_MAP, PRESETS, sanitizeSpec, type MapSpec } from '../sim/mapSpec';
 
 export interface PaletteSet {
   id: string;
@@ -55,6 +56,10 @@ export function defaultOptions(): Options {
 export interface AppState {
   mapSize: number;
   env: boolean;
+  /** Harita tarifi (biyom, nehir, orman, koy, gecit). */
+  map: MapSpec;
+  /** Secili hazir harita: preset kimligi, 'random' (son cekilen) veya 'custom'. */
+  mapPreset: string;
   kite: boolean;
   seed: number;
   teamCount: number;
@@ -79,6 +84,8 @@ export function defaultState(): AppState {
   return {
     mapSize: 56,
     env: true,
+    map: { ...DEFAULT_MAP },
+    mapPreset: 'pine-valley',
     kite: true,
     seed: 1,
     teamCount: 2,
@@ -132,6 +139,8 @@ export function loadState(): AppState {
     const s: AppState = {
       mapSize: MAP_SIZES.some((m) => m.id === o.mapSize) ? (o.mapSize as number) : d.mapSize,
       env: typeof o.env === 'boolean' ? o.env : d.env,
+      map: sanitizeSpec(o.map),
+      mapPreset: o.mapPreset === 'random' || o.mapPreset === 'custom' || PRESETS.some((p) => p.id === o.mapPreset) ? (o.mapPreset as string) : 'custom',
       kite: typeof o.kite === 'boolean' ? o.kite : d.kite,
       seed: Math.floor(num(o.seed, 1, 999999, d.seed)),
       teamCount: Math.floor(num(o.teamCount, 2, MAX_TEAMS, d.teamCount)),

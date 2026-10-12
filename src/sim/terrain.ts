@@ -138,6 +138,16 @@ export class Terrain {
     this.computeRegions();
   }
 
+  /**
+   * (ox,oy) -> (nx,ny) adimi gecerli mi: hedef yurunebilir olmali ve kose capraz gecisinde
+   * iki yan komsu da acik olmali (iki engelin kose kose degdigi yerden sizilmaz).
+   */
+  stepOk(ox: number, oy: number, nx: number, ny: number): boolean {
+    if (!this.walkable(nx, ny)) return false;
+    if ((ox | 0) !== (nx | 0) && (oy | 0) !== (ny | 0)) return this.walkable(nx, oy) && this.walkable(ox, ny);
+    return true;
+  }
+
   /** Tile yurunebilir mi (su ve engeller haric). */
   walkable(x: number, y: number): boolean {
     const n = this.size;
@@ -603,6 +613,18 @@ export class Terrain {
     }
   }
 
+  /** Karonun 8 komsusundan biri engel mi (duvarlar kose kose degmesin: sizinti olur). */
+  private blockedAround(tx: number, ty: number): boolean {
+    const n = this.size;
+    for (let y = ty - 1; y <= ty + 1; y++) {
+      for (let x = tx - 1; x <= tx + 1; x++) {
+        if (x < 0 || y < 0 || x >= n || y >= n) continue;
+        if (this.flags[y * n + x] === T_BLOCKED) return true;
+      }
+    }
+    return false;
+  }
+
   /** Merkez etrafinda aralikli duvar halkasi (giris boslugu birakir). */
   private wallRing(cx: number, cy: number, radius: number, segs: number, gapEvery: number): void {
     const n = this.size;
@@ -611,7 +633,7 @@ export class Terrain {
       const a = (k / segs) * Math.PI * 2;
       const tx = Math.floor(cx + Math.cos(a) * radius);
       const ty = Math.floor(cy + Math.sin(a) * radius);
-      if (!this.freeRect(tx, ty, 1, 1, 0)) continue;
+      if (!this.freeRect(tx, ty, 1, 1, 0) || this.blockedAround(tx, ty)) continue;
       this.flags[ty * n + tx] = T_BLOCKED;
       this.occ[ty * n + tx] = 1;
       this.decor.push({ kind: 'wall', variant: k % 2, x: tx + 0.5, y: ty + 0.5 });
