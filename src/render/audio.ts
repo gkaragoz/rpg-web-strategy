@@ -3,10 +3,13 @@ import { isoX, isoY } from '../iso';
 import type { SimEvent } from '../sim/battle';
 import { isTank } from '../sim/units';
 
-type Sfx = 'hit' | 'shot' | 'land' | 'heal' | 'bash' | 'slam' | 'death';
+type Sfx = 'hit' | 'shot' | 'land' | 'heal' | 'bash' | 'slam' | 'death' | 'fire' | 'ice' | 'holy' | 'dark' | 'nature' | 'zap';
+
+const SFX_LIST: Sfx[] = ['hit', 'shot', 'land', 'heal', 'bash', 'slam', 'death', 'fire', 'ice', 'holy', 'dark', 'nature', 'zap'];
+const zeroed = (): Record<Sfx, number> => Object.fromEntries(SFX_LIST.map((k) => [k, 0])) as Record<Sfx, number>;
 
 /** Ses basina en kisa tekrar araligi (ms): kalabalikta ses yagmuru olmasin. */
-const MIN_GAP: Record<Sfx, number> = { hit: 40, shot: 55, land: 110, heal: 120, bash: 130, slam: 160, death: 70 };
+const MIN_GAP: Record<Sfx, number> = { hit: 40, shot: 55, land: 110, heal: 120, bash: 130, slam: 160, death: 70, fire: 150, ice: 150, holy: 170, dark: 160, nature: 170, zap: 150 };
 const MAX_VOICES = 14;
 
 /**
@@ -20,10 +23,10 @@ export class AudioSystem {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
-  private readonly lastPlay: Record<Sfx, number> = { hit: 0, shot: 0, land: 0, heal: 0, bash: 0, slam: 0, death: 0 };
+  private readonly lastPlay: Record<Sfx, number> = zeroed();
   private readonly endTimes: number[] = [];
   /** Test/dogrulama: calinan seslerin sayaci (ses duyulamayan ortamlarda olay->ses eslemesini kanitlar). */
-  readonly played: Record<Sfx, number> = { hit: 0, shot: 0, land: 0, heal: 0, bash: 0, slam: 0, death: 0 };
+  readonly played: Record<Sfx, number> = zeroed();
 
   setVolume(v: number): void {
     this.volume = Math.min(1, Math.max(0, v));
@@ -64,7 +67,7 @@ export class AudioSystem {
   handle(events: SimEvent[], camera: Camera, screenW: number, screenH: number): void {
     if (!this.enabled || !this.ctx || this.ctx.state !== 'running') return;
     for (const ev of events) {
-      const sfx = this.map(ev.type);
+      const sfx = this.map(ev.type, ev.element);
       if (!sfx) continue;
       const sx = (isoX(ev.x, ev.y) - camera.x) * camera.zoom + screenW / 2;
       const sy = (isoY(ev.x, ev.y) - camera.y) * camera.zoom + screenH / 2;
@@ -78,7 +81,7 @@ export class AudioSystem {
     }
   }
 
-  private map(t: SimEvent['type']): Sfx | null {
+  private map(t: SimEvent['type'], element?: number): Sfx | null {
     switch (t) {
       case 'hit':
         return 'hit';
@@ -95,7 +98,8 @@ export class AudioSystem {
       case 'death':
         return 'death';
       case 'burst':
-        return 'bash';
+        // Unsur: 0 fiziksel, 1 ates, 2 buz, 3 kutsal, 4 karanlik, 5 doga, 6 enerji.
+        return element === 1 ? 'fire' : element === 2 ? 'ice' : element === 3 ? 'holy' : element === 4 ? 'dark' : element === 5 ? 'nature' : element === 6 ? 'zap' : 'bash';
       default:
         return null;
     }
@@ -158,6 +162,53 @@ export class AudioSystem {
         dur = 0.45;
         this.tone(out, now, 'sine', 70, 32, 0.4, 0.55);
         this.burst(out, now, 0.28, 360, 0.7, 0.34);
+        break;
+      }
+      case 'fire': {
+        // Alev patlamasi: alcak gumbur + sicak gurultu + yukselen cizirti.
+        dur = 0.36;
+        this.tone(out, now, 'sawtooth', 130 * r, 48, 0.3, 0.2);
+        this.burst(out, now, 0.3, 780, 0.6, 0.32);
+        this.burst(out, now + 0.04, 0.2, 2400, 1.2, 0.1);
+        break;
+      }
+      case 'ice': {
+        // Buz kirilmasi: parlak cam tinlamasi + ince kirilma.
+        dur = 0.34;
+        this.tone(out, now, 'triangle', 2100 * r, 1500, 0.2, 0.12);
+        this.tone(out, now + 0.03, 'sine', 3100 * r, 2300, 0.22, 0.07);
+        this.burst(out, now, 0.12, 5200, 2, 0.22);
+        break;
+      }
+      case 'holy': {
+        // Kutsal isik: yukselen uclu cin.
+        dur = 0.5;
+        this.tone(out, now, 'sine', 660 * r, 700 * r, 0.4, 0.1);
+        this.tone(out, now + 0.07, 'sine', 990 * r, 1040 * r, 0.38, 0.09);
+        this.tone(out, now + 0.14, 'sine', 1320 * r, 1380 * r, 0.34, 0.08);
+        break;
+      }
+      case 'dark': {
+        // Karanlik buyu: alcak titresim + ters gurultu.
+        dur = 0.42;
+        this.tone(out, now, 'sawtooth', 90 * r, 52, 0.38, 0.17);
+        this.tone(out, now, 'square', 61 * r, 40, 0.34, 0.07);
+        this.burst(out, now + 0.05, 0.28, 300, 1.4, 0.2);
+        break;
+      }
+      case 'nature': {
+        // Doga/korku: hisirti ve alcalan nota.
+        dur = 0.38;
+        this.burst(out, now, 0.34, 1500, 0.9, 0.2);
+        this.tone(out, now, 'triangle', 420 * r, 240, 0.3, 0.12);
+        break;
+      }
+      case 'zap': {
+        // Enerji: hizli yukselen/alcalan elektrik.
+        dur = 0.3;
+        this.tone(out, now, 'square', 900 * r, 220, 0.22, 0.1);
+        this.tone(out, now + 0.02, 'sawtooth', 1500 * r, 300, 0.18, 0.08);
+        this.burst(out, now, 0.14, 3600, 1.1, 0.16);
         break;
       }
       case 'death': {

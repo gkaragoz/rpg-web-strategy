@@ -41,7 +41,7 @@ export class Studio {
     private readonly d: StudioDeps,
   ) {
     this.root = root;
-    this.units = new UnitSettings(d.state, () => this.render());
+    this.units = new UnitSettings(d.state, () => this.render(), d.icon);
     this.gallery = new UnitGallery({
       state: d.state,
       icon: d.icon,

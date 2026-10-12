@@ -1,4 +1,4 @@
-import { RARITY_NAMES, TROOP_BY_ID, type Rarity } from '../sim/data/troops';
+import { RACE_NAMES, RARITY_NAMES, TROOP_BY_ID, type Rarity } from '../sim/data/troops';
 import { DEFAULT_STATS, KIND_COUNT, LEGACY_COUNT, STATS, TUNABLE, isTank, type StatKey } from '../sim/units';
 import { saveState, type AppState } from './state';
 
@@ -13,9 +13,10 @@ export class UnitSettings {
   constructor(
     private readonly state: AppState,
     private readonly onChange: () => void,
+    private readonly icon: (kind: number, team: number) => HTMLCanvasElement,
   ) {
     this.dlg = document.createElement('dialog');
-    this.dlg.className = 'unit-dialog';
+    this.dlg.className = 'unit-dialog unit-settings';
     this.dlg.setAttribute('aria-label', 'Birim ayarları');
     document.body.appendChild(this.dlg);
     this.dlg.addEventListener('click', (e) => {
@@ -66,10 +67,13 @@ export class UnitSettings {
               return `<td><input type="number" data-k="${k}" data-key="${t.key}" value="${v}" min="${t.min}" max="${t.max}" step="${t.step}" aria-label="${esc(STATS[k].name)} ${esc(t.label)}" class="${changed ? 'changed' : ''}" /></td>`;
             }).join('');
             const has = Object.keys(this.state.stats[k]).length > 0;
-            return `<tr><th scope="row">${esc(STATS[k].name)}</th>${cells}<td class="derived" data-derived="dps" data-k="${k}">${this.dps(k)}</td><td class="derived" data-derived="ehp" data-k="${k}">${this.effHp(k)}</td><td><button type="button" class="mini" data-reset-kind="${k}" ${has ? '' : 'disabled'}>Sıfırla</button></td></tr>`;
+            const t = STATS[k].troop ? TROOP_BY_ID[STATS[k].troop!] : undefined;
+            const meta = t ? `${RARITY_NAMES[t.rarity]} · ${RACE_NAMES[t.race]}` : 'Klasik';
+            const skill = t?.skillText ? `<small class="us-skill">${esc(t.skillText)}</small>` : '';
+            return `<tr><th scope="row" class="us-unit"><span class="us-icon" data-icon="${k}"></span><span class="us-name"><b>${esc(STATS[k].name)}</b><small>${esc(meta)}</small>${skill}</span></th>${cells}<td class="derived" data-derived="dps" data-k="${k}">${this.dps(k)}</td><td class="derived" data-derived="ehp" data-k="${k}">${this.effHp(k)}</td><td><button type="button" class="mini" data-reset-kind="${k}" ${has ? '' : 'disabled'}>Sıfırla</button></td></tr>`;
           })
           .join('');
-        return `<tr class="grp"><th colspan="${TUNABLE.length + 4}">${esc(grp.title)}</th></tr>${body}`;
+        return `<tr class="grp"><th colspan="${TUNABLE.length + 4}">${esc(grp.title)} · ${grp.kinds.length}</th></tr>${body}`;
       })
       .join('');
 
@@ -78,7 +82,7 @@ export class UnitSettings {
   <header><h2>Birim ayarları</h2><p>Varsayılanlar seçili seviyeye göredir; değişiklikler sonraki savaştan itibaren geçerli olur ve kaydedilir.</p></header>
   <div class="table-wrap">
     <table>
-      <thead><tr><th></th>${head}<th title="Güç / bekleme (rahipte şifa/sn)">Sn. güç</th><th title="Can / (1 − zırh)">Etkin can</th><th></th></tr></thead>
+      <thead><tr><th class="us-unit-h">Birim</th>${head}<th title="Güç / bekleme (rahipte şifa/sn)">Sn. güç</th><th title="Can / (1 − zırh)">Etkin can</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>
@@ -88,6 +92,7 @@ export class UnitSettings {
   </footer>
 </form>`;
 
+    this.dlg.querySelectorAll<HTMLElement>('[data-icon]').forEach((el) => el.appendChild(this.icon(Number(el.dataset.icon), 0)));
     this.dlg.querySelectorAll('input[data-k]').forEach((el) => {
       el.addEventListener('change', (e) => this.edit(e.target as HTMLInputElement));
     });
