@@ -2,7 +2,9 @@ import { Graphics, type Application } from 'pixi.js';
 import type { Camera } from '../camera';
 import { isoX, isoY } from '../iso';
 import type { Atlas } from '../render/atlas';
-import { MassRenderer, type MassOptions } from '../render/massRenderer';
+import { AudioSystem } from '../render/audio';
+import { FxSystem, type FxQuality } from '../render/fx';
+import { MassRenderer, type MassOptions, type MassViewport } from '../render/massRenderer';
 import { DEATH_FADE, UnitView, type TeamColors } from '../render/unitView';
 import type { SimBackend } from '../sim/backend';
 import { terrainFor, type BattleConfig } from '../sim/battle';
@@ -15,7 +17,6 @@ import { hex } from './state';
 import type { WorldView } from './world';
 
 const WARMUP_FRAMES = 60;
-const HEAL_FX_LIFE = 0.8;
 /** Bu sayidan az birimde ayrintili (animasyonlu) cizim, fazlasinda toplu cizim. */
 const DETAILED_MAX = 150;
 
@@ -28,17 +29,11 @@ export interface BattleOptions {
   autoSeconds: number;
   useWorker: boolean;
   seed: number;
+  /** Efekt kalitesi ('auto': birim sayisina gore) ve yuzen hasar sayilari. */
+  fx: 'auto' | FxQuality;
+  numbers: boolean;
   /** Savastan stüdyoya don. */
   onEdit: () => void;
-}
-
-interface Fx {
-  g: Graphics;
-  t: number;
-  life: number;
-  kind: 'heal' | 'ring' | 'arc';
-  x: number;
-  y: number;
 }
 
 export interface BattleDeps {
@@ -49,6 +44,10 @@ export interface BattleDeps {
   stats: StatsPanel;
   hudRoot: HTMLElement;
   banner: HTMLElement;
+  audio: AudioSystem;
+  /** Sesi ac/kapat (kalici); yeni durumu dondurur. */
+  toggleSound: () => boolean;
+  isSoundOn: () => boolean;
 }
 
 /** Savas sahnesi: sim (worker) + cizim (ayrintili veya toplu) + HUD + benchmark olcumu. */
@@ -58,7 +57,7 @@ export class BattleScene {
   private mass: MassRenderer | null = null;
   private views: UnitView[] = [];
   private arrowViews: Array<{ shadow: Graphics; arrow: Graphics }> = [];
-  private fx: Fx[] = [];
+  private fx: FxSystem | null = null;
   private massOpts: MassOptions = { bars: true, sort: true, cull: true };
   private speed = 1;
   private paused = false;
@@ -70,6 +69,10 @@ export class BattleScene {
   private keyHandler: ((e: KeyboardEvent) => void) | null = null;
   private lastHud = 0;
   private resultShown = false;
+  private hiddenPaused = false;
+  private initialAlive: number[] = [];
+  private initialHp: number[] = [];
+  private visHandler: (() => void) | null = null;
 
   // olcum
   private frameLog = new Float32Array(60 * 60 * 20);
@@ -97,6 +100,12 @@ export class BattleScene {
     this.sim.setSpeed(this.speed);
 
     const unitCount = this.sim.units.count;
+    this.initialAlive = new Array(6).fill(0);
+    this.initialHp = new Array(6).fill(0);
+    for (let i = 0; i < unitCount; i++) {
+      this.initialAlive[this.sim.units.team[i]]++;
+      this.initialHp[this.sim.units.team[i]] += this.sim.units.maxHp[i];
+    }
     const detailed = !opts.bench && unitCount <= DETAILED_MAX;
     const atlas = this.d.getAtlas();
     const { world, camera, app } = this.d;
@@ -113,15 +122,38 @@ export class BattleScene {
       world.entityLayer.addChild(this.mass.layer);
     }
 
+    if (!opts.bench) {
+      const quality: FxQuality = opts.fx === 'auto' ? (unitCount <= 400 ? 'high' : 'low') : opts.fx;
+      // Kalabalikta yuzen sayilar okunmaz: yalniz az birimde goster.
+      this.fx = new FxSystem(atlas, camera, quality, opts.numbers && unitCount <= 200);
+      world.fxLayer.addChild(this.fx.layer, this.fx.numbers);
+    }
+
     this.buildHud();
     this.keyHandler = (e) => this.onKey(e);
     window.addEventListener('keydown', this.keyHandler);
+    // Sekme gizlenince sim durur (savas kacirilmaz), ses susar.
+    this.visHandler = () => {
+      this.d.audio.setHidden(document.hidden);
+      if (document.hidden) {
+        if (!this.paused) {
+          this.sim.setPaused(true);
+          this.hiddenPaused = true;
+        }
+      } else if (this.hiddenPaused) {
+        this.sim.setPaused(this.paused);
+        this.hiddenPaused = false;
+      }
+    };
+    document.addEventListener('visibilitychange', this.visHandler);
     (window as unknown as { __sim: SimBackend }).__sim = this.sim;
   }
 
   exit(): void {
     if (this.keyHandler) window.removeEventListener('keydown', this.keyHandler);
     this.keyHandler = null;
+    if (this.visHandler) document.removeEventListener('visibilitychange', this.visHandler);
+    this.visHandler = null;
     this.sim.dispose();
     for (const v of this.views) v.root.destroy({ children: true });
     this.views = [];
@@ -130,8 +162,11 @@ export class BattleScene {
       a.shadow.destroy();
     }
     this.arrowViews = [];
-    for (const f of this.fx) f.g.destroy();
-    this.fx = [];
+    if (this.fx) {
+      this.fx.layer.destroy();
+      this.fx.numbers.destroy({ children: true });
+      this.fx = null;
+    }
     if (this.mass) {
       this.mass.layer.destroy({ children: true });
       this.mass = null;
@@ -156,6 +191,8 @@ export class BattleScene {
 <div class="hud-bottom">
   <div class="seg" id="hud-speed" role="group" aria-label="Hız"></div>
   <button type="button" id="hud-pause">Duraklat</button>
+  <button type="button" id="hud-sound" aria-pressed="true">Ses</button>
+  <button type="button" id="hud-full">Tam ekran</button>
   <button type="button" id="hud-restart">Yeniden başlat</button>
   <button type="button" id="hud-edit" class="primary">Düzenle</button>
 </div>
@@ -163,6 +200,17 @@ export class BattleScene {
 <div class="result" id="hud-result" hidden></div>`;
     const q = (s: string) => root.querySelector(s) as HTMLElement;
     q('#hud-pause').addEventListener('click', () => this.togglePause());
+    q('#hud-full').addEventListener('click', () => {
+      if (document.fullscreenElement) void document.exitFullscreen();
+      else void document.documentElement.requestFullscreen?.();
+    });
+    const snd = q('#hud-sound');
+    const paintSnd = (on: boolean): void => {
+      snd.textContent = on ? 'Ses: açık' : 'Ses: kapalı';
+      snd.setAttribute('aria-pressed', String(on));
+    };
+    paintSnd(this.d.isSoundOn());
+    snd.addEventListener('click', () => paintSnd(this.d.toggleSound()));
     q('#hud-restart').addEventListener('click', () => void this.restart());
     q('#hud-edit').addEventListener('click', () => this.opts.onEdit());
     this.renderSpeed();
@@ -185,10 +233,14 @@ export class BattleScene {
     this.lastHud = now;
     const teams = document.getElementById('hud-teams');
     if (teams) {
+      const u = this.sim.units;
+      const hp = new Array(6).fill(0);
+      for (let i = 0; i < u.count; i++) if (u.alive[i]) hp[u.team[i]] += u.hp[i];
       teams.innerHTML = this.opts.colors
         .map((c, t) => {
           const n = this.sim.alivePerTeam[t];
-          return `<span class="hud-team${n === 0 ? ' out' : ''}" style="background:${hex(c.main)}22;color:${hex(c.main)}"><i class="dot" style="background:${hex(c.main)}"></i>${n}</span>`;
+          const pct = Math.round(Math.min(1, hp[t] / Math.max(1, this.initialHp[t])) * 100);
+          return `<span class="hud-team${n === 0 ? ' out' : ''}" style="background:${hex(c.main)}22;color:${hex(c.main)}" title="Takım ${t + 1}: ${n} asker, güç %${pct}"><i class="dot" style="background:${hex(c.main)}"></i>${n}<span class="hud-bar"><i style="width:${pct}%;background:${hex(c.main)}"></i></span></span>`;
         })
         .join('');
     }
@@ -198,7 +250,12 @@ export class BattleScene {
       this.resultShown = true;
       const color = w >= 0 ? hex(this.opts.colors[w].main) : '#e6edf6';
       res.hidden = false;
-      res.innerHTML = `<div><h2 style="color:${color}">${w >= 0 ? `Takım ${w + 1} kazandı` : 'Berabere'}</h2><p>Savaş bitti.</p><div class="btns"><button type="button" id="res-restart">Yeniden oyna</button><button type="button" id="res-edit" class="primary">Düzenle</button></div></div>`;
+      const secs = Math.round(this.sim.time);
+      const dur = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+      const losses = this.opts.colors
+        .map((cc, t) => `<span style="color:${hex(cc.main)}">T${t + 1}: ${this.initialAlive[t] - this.sim.alivePerTeam[t]}/${this.initialAlive[t]}</span>`)
+        .join(' · ');
+      res.innerHTML = `<div><h2 style="color:${color}">${w >= 0 ? `Takım ${w + 1} kazandı` : 'Berabere'}</h2><p>Süre ${dur} · Kayıp ${losses}</p><div class="btns"><button type="button" id="res-restart">Yeniden oyna</button><button type="button" id="res-edit" class="primary">Düzenle</button></div></div>`;
       document.getElementById('res-restart')!.addEventListener('click', () => void this.restart());
       document.getElementById('res-edit')!.addEventListener('click', () => this.opts.onEdit());
     }
@@ -248,8 +305,7 @@ export class BattleScene {
     if (res) res.hidden = true;
     if (this.mass) this.mass.rebuild();
     else this.buildViews();
-    for (const f of this.fx) f.g.destroy();
-    this.fx = [];
+    this.fx?.clear();
     this.d.banner.style.display = 'none';
     this.resetting = false;
   }
@@ -272,6 +328,12 @@ export class BattleScene {
     if (this.simTimeBase < 0) this.simTimeBase = this.sim.time;
 
     const t1 = performance.now();
+    if (!this.opts.bench) this.d.audio.handle(this.sim.events, camera, app.screen.width, app.screen.height);
+    if (this.fx) {
+      this.fx.handle(this.sim.events, this.viewRect());
+      this.fx.update(this.paused ? 0 : dt);
+    }
+    this.sim.events.length = 0;
     if (this.mass) this.syncMass(info.alpha);
     else this.syncViews(dt, info.alpha);
     app.render();
@@ -315,6 +377,14 @@ export class BattleScene {
     this.updateHud();
   }
 
+  /** Gorunur dunya dikdortgeni (iso piksel). */
+  private viewRect(): MassViewport {
+    const { camera, app } = this.d;
+    const w = app.screen.width / camera.zoom;
+    const h = app.screen.height / camera.zoom;
+    return { left: camera.x - w / 2 - 60, right: camera.x + w / 2 + 60, top: camera.y - h / 2 - 100, bottom: camera.y + h / 2 + 40 };
+  }
+
   private wallSeconds(): number {
     return (performance.now() - this.wallStart - this.stallMs) / 1000;
   }
@@ -322,16 +392,7 @@ export class BattleScene {
   // ---- toplu cizim ----
 
   private syncMass(alpha: number): void {
-    const { camera, app } = this.d;
-    const w = app.screen.width / camera.zoom;
-    const h = app.screen.height / camera.zoom;
-    this.mass!.sync(
-      this.time,
-      alpha,
-      { left: camera.x - w / 2 - 60, right: camera.x + w / 2 + 60, top: camera.y - h / 2 - 100, bottom: camera.y + h / 2 + 40 },
-      this.massOpts,
-    );
-    this.sim.events.length = 0;
+    this.mass!.sync(this.time, alpha, this.viewRect(), this.massOpts);
     this.activeProjectiles = this.mass!.drawnArrows;
     this.drawnLine = `Cizilen    ${this.mass!.drawnUnits} birim, ${this.mass!.drawnDecor} dekor, ${this.mass!.drawnArrows} ok`;
   }
@@ -366,38 +427,9 @@ export class BattleScene {
     return v;
   }
 
-  private spawnFx(kind: Fx['kind'], x: number, y: number, angle = 0): void {
-    const g = new Graphics();
-    if (kind === 'heal') {
-      g.roundRect(-2, -7, 4, 14, 1).fill(0x5be07a);
-      g.roundRect(-7, -2, 14, 4, 1).fill(0x5be07a);
-    } else if (kind === 'ring') {
-      g.ellipse(0, 0, 45, 22.5).stroke({ width: 4, color: 0xffe9a8, alpha: 0.9 });
-    } else {
-      // koni dalgasi: ileriye dogru genisleyen yay
-      g.moveTo(0, 0).arc(0, 0, 70, -0.9, 0.9).closePath().fill({ color: 0xffffff, alpha: 0.35 }).stroke({ width: 2, color: 0xffffff, alpha: 0.8 });
-      g.rotation = angle;
-    }
-    g.position.set(isoX(x, y), isoY(x, y) - (kind === 'heal' ? 50 : 6));
-    this.d.world.fxLayer.addChild(g);
-    this.fx.push({ g, t: 0, life: kind === 'heal' ? HEAL_FX_LIFE : 0.45, kind, x, y });
-  }
-
   private syncViews(dt: number, alpha: number): void {
     const u = this.sim.units;
     const vdt = this.paused ? 0 : dt;
-
-    for (const ev of this.sim.events) {
-      if (ev.type === 'heal') this.spawnFx('heal', ev.x, ev.y);
-      else if (ev.type === 'slam') this.spawnFx('ring', ev.x, ev.y);
-      else if (ev.type === 'bash') {
-        // Dunya acisini ekrana cevir: (cos, sin) -> iso yonu.
-        const dx = Math.cos(ev.angle ?? 0);
-        const dy = Math.sin(ev.angle ?? 0);
-        this.spawnFx('arc', ev.x, ev.y, Math.atan2((dx + dy) * 16, (dx - dy) * 32));
-      }
-    }
-    this.sim.events.length = 0;
 
     for (let i = 0; i < u.count; i++) {
       const v = this.views[i];
@@ -452,19 +484,6 @@ export class BattleScene {
       if (v) v.arrow.visible = v.shadow.visible = false;
     }
 
-    for (let i = this.fx.length - 1; i >= 0; i--) {
-      const f = this.fx[i];
-      f.t += dt;
-      const k = f.t / f.life;
-      if (k >= 1) {
-        f.g.destroy();
-        this.fx.splice(i, 1);
-        continue;
-      }
-      if (f.kind === 'heal') f.g.position.y = isoY(f.x, f.y) - 50 - k * 28;
-      else f.g.scale.set(0.4 + k * (f.kind === 'ring' ? 1.6 : 1));
-      f.g.alpha = 1 - k;
-    }
   }
 
   // ---- benchmark olcumu ----

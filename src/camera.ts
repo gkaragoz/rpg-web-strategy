@@ -12,6 +12,8 @@ export class Camera {
   zoom = 1;
   /** false iken girdi (klavye/fare/tekerlek) yok sayilir: otomatik benchmark icin. */
   enabled = true;
+  /** Kamera sarsintisi genligi (px); hizla soner. */
+  private shakeAmp = 0;
   private keys = new Set<string>();
   private dragging = false;
   private lastX = 0;
@@ -61,6 +63,11 @@ export class Camera {
     );
   }
 
+  /** Sarsinti ekler (en buyuk deger korunur; 0-14 px araligi). */
+  shake(amount: number): void {
+    this.shakeAmp = Math.min(14, Math.max(this.shakeAmp, amount));
+  }
+
   /** Harita boyutu degisince kameranin sinirlarini gunceller. */
   setMap(size: number): void {
     this.mapSize = size;
@@ -76,6 +83,8 @@ export class Camera {
   }
 
   update(dt: number): void {
+    this.shakeAmp *= Math.exp(-dt * 9);
+    if (this.shakeAmp < 0.05) this.shakeAmp = 0;
     let dx = 0;
     let dy = 0;
     if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) dy -= 1;
@@ -94,6 +103,8 @@ export class Camera {
 
   apply(world: Container, screenW: number, screenH: number): void {
     world.scale.set(this.zoom);
-    world.position.set(screenW / 2 - this.x * this.zoom, screenH / 2 - this.y * this.zoom);
+    const sx = this.shakeAmp > 0 ? (Math.random() - 0.5) * 2 * this.shakeAmp : 0;
+    const sy = this.shakeAmp > 0 ? (Math.random() - 0.5) * 2 * this.shakeAmp : 0;
+    world.position.set(screenW / 2 - this.x * this.zoom + sx, screenH / 2 - this.y * this.zoom + sy);
   }
 }

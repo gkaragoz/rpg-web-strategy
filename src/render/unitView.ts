@@ -23,27 +23,63 @@ export interface ViewState {
   flash: boolean;
   /** Olum animasyonu suresi, hayattaysa -1. */
   deathT: number;
+  /** Atlas pisirme icin: yuruyus fazini sabitler. */
+  phase?: number;
 }
 
 export const DEATH_FADE = 0.7;
 
+/** Atlas'ta pisirilen pozlar: 0 bekleme, 1-2 yuruyus A/B, 3 saldiri hazirligi, 4 vurus. */
+export const POSES = 5;
+export const POSE_STATES: ViewState[] = [
+  { hp: 1, maxHp: 1, facing: 1, moving: false, swingProgress: -1, flash: false, deathT: -1 },
+  { hp: 1, maxHp: 1, facing: 1, moving: true, swingProgress: -1, flash: false, deathT: -1, phase: Math.PI / 2 },
+  { hp: 1, maxHp: 1, facing: 1, moving: true, swingProgress: -1, flash: false, deathT: -1, phase: -Math.PI / 2 },
+  { hp: 1, maxHp: 1, facing: 1, moving: false, swingProgress: 0.3, flash: false, deathT: -1 },
+  { hp: 1, maxHp: 1, facing: 1, moving: false, swingProgress: 0.52, flash: false, deathT: -1 },
+];
+
+const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
+const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+const easeOut = (t: number): number => 1 - (1 - t) * (1 - t);
+const easeOutBack = (t: number): number => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
+
+/** Saldiri fazlari: hazirlik (0-0.4), vurus (0.4-0.6), toparlanma (0.6-1). */
+function attackPhases(p: number): { wind: number; strike: number; recover: number } {
+  if (p < 0) return { wind: 0, strike: 0, recover: 0 };
+  return { wind: clamp01(p / 0.4), strike: clamp01((p - 0.4) / 0.2), recover: clamp01((p - 0.6) / 0.4) };
+}
+
 export class UnitView {
+  /** Sagligi gosteren cubuk modu: 'damaged' hasarliyken, 'always' her zaman, 'never' hic. */
+  static barMode: 'damaged' | 'always' | 'never' = 'damaged';
+
   readonly root = new Container();
   private readonly rig = new Container();
   private readonly inner = new Container();
+  private readonly torso = new Container();
+  private readonly legL = new Graphics();
+  private readonly legR = new Graphics();
   private readonly bar = new Graphics();
   private weapon: Container | null = null;
   private shield: Container | null = null;
   private orb: Graphics | null = null;
+  private staff: Graphics | null = null;
+  private nock: Graphics | null = null;
   private phase: number;
   private lastHpRatio = -1;
   private readonly kind: number;
-  /** Kind'a gore cizim olcegi (tank = 2x). */
   private readonly kScale: number;
   private readonly base: number;
+  private faceCur = 1;
+  private age = 0;
+  private hurtT = 0;
+  private prevFlash = false;
+  private readonly seed: number;
 
   constructor(kind: number, colors: TeamColors, seed: number) {
     this.kind = kind;
+    this.seed = seed;
     this.kScale = STATS[kind].scale;
     this.base = SCALE * this.kScale;
     this.phase = seed * 1.7;
@@ -56,6 +92,9 @@ export class UnitView {
     this.root.addChild(shadow);
 
     this.inner.y = -16;
+    this.torso.pivot.set(0, 15);
+    this.torso.position.set(0, 15);
+    this.inner.addChild(this.legL, this.legR, this.torso);
     this.rig.addChild(this.inner);
     this.rig.scale.set(this.base);
     this.root.addChild(this.rig);
@@ -68,11 +107,9 @@ export class UnitView {
 
   private draw(kind: number, c: number, d: number): void {
     const g = new Graphics();
-    const legs = new Graphics();
     const legCol = kind === Kind.Shield ? 0x4b4b52 : 0x5a4636;
-    legs.roundRect(-8, 8, 6, 9, 2).fill(legCol);
-    legs.roundRect(2, 8, 6, 9, 2).fill(legCol);
-    this.inner.addChild(legs);
+    this.legL.roundRect(-8, 8, 6, 9, 2).fill(legCol);
+    this.legR.roundRect(2, 8, 6, 9, 2).fill(legCol);
 
     if (kind === Kind.Warrior) {
       g.ellipse(-15, 2, 5, 8).fill(c).stroke({ width: 1.5, color: d });
@@ -92,7 +129,6 @@ export class UnitView {
       if (kind === Kind.Priest) g.rect(-11, 2, 22, 4).fill(c);
     }
 
-    // Brute omuzluklari (govdenin ustunde)
     if (kind === Kind.Brute) {
       g.circle(-14, -8, 6.5).fill(STEEL).stroke({ width: 1.2, color: STEEL_D });
       g.circle(14, -8, 6.5).fill(STEEL).stroke({ width: 1.2, color: STEEL_D });
@@ -123,7 +159,7 @@ export class UnitView {
       g.poly([-10, headY - 6, -17, headY - 17, -6, headY - 10]).fill(0xe9e1c8).stroke({ width: 0.8, color: 0x8a826a });
       g.poly([10, headY - 6, 17, headY - 17, 6, headY - 10]).fill(0xe9e1c8).stroke({ width: 0.8, color: 0x8a826a });
     }
-    this.inner.addChild(g);
+    this.torso.addChild(g);
 
     if (kind === Kind.Warrior) {
       const w = new Container();
@@ -135,7 +171,7 @@ export class UnitView {
       w.addChild(blade);
       w.rotation = 0.25;
       this.weapon = w;
-      this.inner.addChild(w);
+      this.torso.addChild(w);
     } else if (kind === Kind.Archer) {
       const w = new Container();
       w.position.set(18, 0);
@@ -143,19 +179,27 @@ export class UnitView {
       bow.moveTo(0, -14).quadraticCurveTo(14, 0, 0, 14).stroke({ width: 2.5, color: BROWN });
       bow.moveTo(0, -14).lineTo(0, 14).stroke({ width: 0.8, color: 0x666666 });
       w.addChild(bow);
+      // Yaya takili ok (yalniz cekme sirasinda gorunur).
+      const nock = new Graphics();
+      nock.moveTo(-9, 0).lineTo(11, 0).stroke({ width: 1.8, color: 0x6b4a2b });
+      nock.poly([11, -2.5, 16, 0, 11, 2.5]).fill(0xcfd4dc);
+      nock.visible = false;
+      w.addChild(nock);
+      this.nock = nock;
       this.weapon = w;
-      this.inner.addChild(w);
+      this.torso.addChild(w);
     } else if (kind === Kind.Priest) {
       const staff = new Graphics();
-      staff.moveTo(17, -18).lineTo(17, 14).stroke({ width: 2.5, color: BROWN });
-      this.inner.addChild(staff);
+      staff.moveTo(0, -18).lineTo(0, 14).stroke({ width: 2.5, color: BROWN });
+      staff.position.set(17, 0);
+      this.staff = staff;
+      this.torso.addChild(staff);
       const orb = new Graphics();
       orb.circle(0, 0, 4.5).fill(0xffe27a).stroke({ width: 1.2, color: 0xd4a017 });
       orb.position.set(17, -21);
       this.orb = orb;
-      this.inner.addChild(orb);
+      this.torso.addChild(orb);
     } else if (kind === Kind.Shield) {
-      // Kule kalkani onde (+x): saldirida one atilir.
       const sh = new Container();
       sh.position.set(17, 1);
       const plate = new Graphics();
@@ -164,10 +208,10 @@ export class UnitView {
       plate.rect(-6, -15, 12, 3).fill({ color: 0xffffff, alpha: 0.25 });
       sh.addChild(plate);
       this.shield = sh;
-      this.inner.addChild(sh);
+      this.torso.addChild(sh);
       const sword = new Graphics();
       sword.rect(-13.7, -4, 3, 15).fill(0xc9ced6).stroke({ width: 0.8, color: 0x6b7280 });
-      this.inner.addChild(sword);
+      this.torso.addChild(sword);
     } else if (kind === Kind.Brute) {
       const w = new Container();
       w.position.set(17, 3);
@@ -178,7 +222,7 @@ export class UnitView {
       w.addChild(hammer);
       w.rotation = 0.2;
       this.weapon = w;
-      this.inner.addChild(w);
+      this.torso.addChild(w);
     }
 
     const hands = new Graphics();
@@ -186,71 +230,144 @@ export class UnitView {
     const rx = kind === Kind.Warrior ? 15.5 : kind === Kind.Brute ? 17 : 16;
     const ry = kind === Kind.Warrior ? 4 : kind === Kind.Brute ? 3 : 0;
     hands.circle(rx, ry, 3.5).fill(SKIN).stroke({ width: 1, color: SKIN_D });
-    this.inner.addChild(hands);
+    this.torso.addChild(hands);
   }
 
   update(s: ViewState, time: number, dt: number): void {
     const alive = s.deathT < 0;
-    this.phase += dt * (s.moving ? 15 : 2.2);
+    this.age += dt;
+    if (dt === 0) this.faceCur = s.facing;
+    else this.faceCur += (s.facing - this.faceCur) * Math.min(1, dt * 14);
 
-    const bob = s.moving ? Math.abs(Math.sin(this.phase)) * 3.2 : Math.sin(this.phase) * 0.7;
-    this.inner.y = -16 - bob;
+    this.phase = s.phase !== undefined ? s.phase : this.phase + dt * (s.moving ? 13 : 2);
+    const sw = Math.sin(this.phase);
 
-    let offX = 0;
-    let squash = 1;
-    const p = s.swingProgress;
-    if (this.kind === Kind.Warrior) {
-      if (this.weapon) this.weapon.rotation = p >= 0 ? -0.9 + Math.sin(Math.min(1, p * 1.3) * Math.PI * 0.5) * 2.3 : 0.25;
-      if (p >= 0) offX = Math.sin(p * Math.PI) * 9;
-    } else if (this.kind === Kind.Archer) {
-      if (p >= 0) {
-        offX = -Math.sin(p * Math.PI) * 3;
-        if (this.weapon) this.weapon.scale.x = 1 + Math.sin(p * Math.PI) * 0.25;
-      } else if (this.weapon) this.weapon.scale.x = 1;
-    } else if (this.kind === Kind.Shield) {
-      if (this.shield) {
-        this.shield.x = 17 + (p >= 0 ? Math.sin(Math.min(1, p * 1.4) * Math.PI) * 12 : 0);
-        this.shield.rotation = p >= 0 ? Math.sin(p * Math.PI) * 0.18 : 0;
-      }
-      if (p >= 0) offX = Math.sin(p * Math.PI) * 6;
-    } else if (this.kind === Kind.Brute) {
-      // Cekic basin uzerinden yere iner.
-      if (this.weapon) this.weapon.rotation = p >= 0 ? -1.4 + Math.sin(Math.min(1, p * 1.2) * Math.PI * 0.5) * 2.7 : 0.2;
-      if (p >= 0) {
-        offX = Math.sin(p * Math.PI) * 4;
-        squash = 1 - Math.sin(p * Math.PI) * 0.1;
-      }
-    } else if (this.orb) {
-      const pulse = p >= 0 ? 1 + Math.sin(p * Math.PI) * 0.9 : 1 + Math.sin(time * 4 + this.phase) * 0.08;
-      this.orb.scale.set(pulse);
+    // Bacaklar: ayak degisimli yuruyus.
+    if (s.moving) {
+      this.legL.y = sw * 2.6;
+      this.legR.y = -sw * 2.6;
+      this.legL.x = -sw * 0.8;
+      this.legR.x = sw * 0.8;
+    } else {
+      this.legL.y = this.legR.y = this.legL.x = this.legR.x = 0;
     }
 
-    this.rig.x = offX * s.facing * this.base;
-    this.rig.scale.x = this.base * s.facing;
+    let bob = s.moving ? Math.abs(sw) * 2.8 : Math.sin(time * 2.2 + this.seed) * 0.5;
+    let lean = s.moving ? 0.09 + sw * 0.025 : 0;
+    let ox = 0;
+    let sx = 1;
+    let sy = 1;
+    const p = s.swingProgress;
+    const { wind, strike, recover } = attackPhases(p);
+    const rest = 1 - recover; // vurustan sonra geri donus
+
+    switch (this.kind) {
+      case Kind.Warrior: {
+        if (this.weapon) {
+          this.weapon.rotation =
+            p < 0 ? 0.25 : p < 0.4 ? lerp(0.25, -1.4, easeOut(wind)) : p < 0.6 ? lerp(-1.4, 1.3, strike) : lerp(1.3, 0.25, easeOut(recover));
+        }
+        if (p >= 0) {
+          ox = p < 0.4 ? -3 * wind : p < 0.6 ? lerp(-3, 10, strike) : lerp(10, 0, recover);
+          lean = p < 0.4 ? -0.12 * wind : p < 0.6 ? lerp(-0.12, 0.2, strike) : lerp(0.2, 0, recover);
+        }
+        break;
+      }
+      case Kind.Archer: {
+        const draw = clamp01(p / 0.55);
+        const released = p >= 0.55;
+        if (this.nock) this.nock.visible = p >= 0 && !released;
+        if (this.weapon) this.weapon.scale.x = p < 0 ? 1 : released ? lerp(1.15, 1, recover) : 1 + 0.35 * easeOut(draw);
+        if (p >= 0) {
+          ox = released ? -3 * rest : -2.5 * draw;
+          lean = released ? -0.05 * rest : -0.1 * draw;
+        }
+        break;
+      }
+      case Kind.Priest: {
+        if (this.orb) {
+          const up = p < 0 ? 0 : p < 0.6 ? easeOut(clamp01(p / 0.5)) : 1 - recover;
+          this.orb.y = -21 - 9 * up;
+          this.orb.scale.set(p >= 0 ? 1 + 0.9 * up : 1 + Math.sin(time * 4 + this.seed) * 0.08);
+        }
+        if (this.staff) this.staff.rotation = p >= 0 ? -0.22 * (p < 0.6 ? clamp01(p / 0.5) : 1 - recover) : 0;
+        break;
+      }
+      case Kind.Shield: {
+        if (this.shield) {
+          this.shield.x = p < 0 ? 17 : p < 0.4 ? lerp(17, 8, easeOut(wind)) : p < 0.6 ? lerp(8, 31, strike) : lerp(31, 17, easeOut(recover));
+          this.shield.rotation = p < 0.4 ? 0 : p < 0.6 ? 0.16 * strike : 0.16 * (1 - recover);
+        }
+        if (p >= 0) {
+          ox = p < 0.4 ? -2 * wind : p < 0.6 ? lerp(-2, 7, strike) : lerp(7, 0, recover);
+          lean = p < 0.4 ? -0.08 * wind : p < 0.6 ? lerp(-0.08, 0.14, strike) : lerp(0.14, 0, recover);
+        }
+        break;
+      }
+      case Kind.Brute: {
+        if (this.weapon) {
+          this.weapon.rotation =
+            p < 0 ? 0.2 : p < 0.4 ? lerp(0.2, -2.5, easeOut(wind)) : p < 0.6 ? lerp(-2.5, 1.2, strike) : lerp(1.2, 0.2, easeOut(recover));
+        }
+        if (p >= 0) {
+          sy = p < 0.4 ? 1 + 0.07 * wind : p < 0.6 ? lerp(1.07, 0.86, strike) : lerp(0.86, 1, recover);
+          sx = p < 0.4 ? 1 - 0.04 * wind : p < 0.6 ? lerp(0.96, 1.1, strike) : lerp(1.1, 1, recover);
+          ox = p < 0.6 ? 0 : 0;
+          if (p >= 0.4 && p < 0.7) bob -= 2.5 * strike;
+          lean = p < 0.4 ? -0.1 * wind : p < 0.6 ? lerp(-0.1, 0.18, strike) : lerp(0.18, 0, recover);
+        }
+        break;
+      }
+    }
+
+    // Vurus tepkisi: kisa squash.
+    if (s.flash && !this.prevFlash) this.hurtT = 0.2;
+    this.prevFlash = s.flash;
+    if (this.hurtT > 0) {
+      this.hurtT -= dt;
+      const k = clamp01(this.hurtT / 0.2);
+      sx *= 1 + 0.14 * k;
+      sy *= 1 - 0.12 * k;
+    }
+    // Bekleme nefesi.
+    if (!s.moving && p < 0) sy *= 1 + Math.sin(time * 2.2 + this.seed) * 0.012;
+
+    this.torso.position.set(ox, 15 - bob);
+    this.torso.rotation = lean;
+    this.torso.scale.set(sx, sy);
+
+    // Dogus: kisa pop-in.
+    const pop = this.age < 0.28 ? lerp(0.55, 1, easeOutBack(clamp01(this.age / 0.28))) : 1;
+
+    this.rig.x = 0;
+    this.rig.scale.x = this.base * this.faceCur * pop;
     this.rig.tint = s.flash ? 0xff9a9a : 0xffffff;
 
+    let squash = 1;
     if (!alive) {
       const k = Math.min(1, s.deathT / DEATH_FADE);
-      this.root.alpha = 1 - k;
-      this.rig.rotation = s.facing * k * 1.2;
-      squash = 1 - k * 0.2;
+      this.root.alpha = 1 - k * k;
+      this.rig.rotation = s.facing * easeOut(k) * 1.45;
+      squash = 1 - k * 0.25;
+      this.rig.y = k * 6;
     } else {
       this.root.alpha = 1;
       this.rig.rotation = 0;
+      this.rig.y = 0;
     }
-    this.rig.scale.y = this.base * squash;
+    this.rig.scale.y = this.base * squash * pop;
 
     const ratio = alive ? s.hp / s.maxHp : 1;
-    if (ratio !== this.lastHpRatio) {
+    const mode = UnitView.barMode;
+    const barVisible = alive && mode !== 'never' && (mode === 'always' || ratio < 1);
+    if (ratio !== this.lastHpRatio || (barVisible && this.bar.children.length === 0 && this.lastHpRatio < 0)) {
       this.lastHpRatio = ratio;
       const w = 34 * Math.sqrt(this.kScale);
       this.bar.clear();
-      if (ratio < 1) {
-        this.bar.rect(-w / 2 - 1, 0, w + 2, 5).fill(0x1a1a1a);
-        const col = ratio > 0.5 ? 0x4cc35b : ratio > 0.25 ? 0xe6b73a : 0xe0463b;
-        this.bar.rect(-w / 2, 1, (w - 0) * ratio, 3).fill(col);
-      }
+      this.bar.roundRect(-w / 2 - 1, 0, w + 2, 6, 2).fill({ color: 0x14181f, alpha: 0.9 });
+      const col = ratio > 0.5 ? 0x4cc35b : ratio > 0.25 ? 0xe6b73a : 0xe0463b;
+      if (ratio > 0) this.bar.roundRect(-w / 2, 1, w * ratio, 4, 1.5).fill(col);
     }
-    this.bar.visible = alive && ratio < 1;
+    this.bar.visible = barVisible;
   }
 }

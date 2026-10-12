@@ -12,6 +12,8 @@ export interface StudioDeps {
   onPaletteChange: () => void;
   onStart: () => void;
   onBench: (perTeam: number) => void;
+  /** Gorunum/ses secenekleri degisti (ses ve cubuk modu hemen uygulanir). */
+  onOptions: () => void;
 }
 
 const KIND_KEYS = ['1', '2', '3', '4', '5'];
@@ -70,6 +72,14 @@ export class Studio {
     <h2>Savaş</h2>
     <label class="row"><span>Vur-kaç <small>okçu, rahip kaçar</small></span><input type="checkbox" id="kite" role="switch" /></label>
     <div class="row"><span>Hız</span><div class="seg" id="speed" role="group" aria-label="Savaş hızı"></div></div>
+  </section>
+  <section>
+    <h2>Görünüm ve ses</h2>
+    <label class="row"><span>Ses efektleri</span><input type="checkbox" id="snd" role="switch" /></label>
+    <div class="row"><span>Ses düzeyi</span><input type="range" id="vol" min="0" max="100" step="5" aria-label="Ses düzeyi" /></div>
+    <div class="row stack"><span>Efektler</span><div class="seg" id="fxq" role="group" aria-label="Efekt kalitesi"></div></div>
+    <label class="row"><span>Hasar sayıları</span><input type="checkbox" id="nums" role="switch" /></label>
+    <div class="row stack"><span>Can çubuğu</span><div class="seg" id="bars" role="group" aria-label="Can çubuğu"></div></div>
   </section>
   <section>
     <h2>Birimler</h2>
@@ -175,6 +185,18 @@ export class Studio {
       this.render();
     });
     this.$('#bench').addEventListener('click', () => this.d.onBench(s.benchPerTeam));
+    $in('#snd').addEventListener('change', (e) => {
+      s.options.sound = (e.target as HTMLInputElement).checked;
+      this.optionsChanged();
+    });
+    $in('#vol').addEventListener('input', (e) => {
+      s.options.volume = Number((e.target as HTMLInputElement).value) / 100;
+      this.optionsChanged(false);
+    });
+    $in('#nums').addEventListener('change', (e) => {
+      s.options.numbers = (e.target as HTMLInputElement).checked;
+      this.optionsChanged();
+    });
     this.$('#units-btn').addEventListener('click', () => this.units.open());
     this.$('#start').addEventListener('click', () => {
       if (!this.canStart().ok) return;
@@ -182,6 +204,12 @@ export class Studio {
     });
     this.$('#tgl-left').addEventListener('click', () => this.$('#panel-left').classList.toggle('open'));
     this.$('#tgl-right').addEventListener('click', () => this.$('#panel-right').classList.toggle('open'));
+  }
+
+  private optionsChanged(rerender = true): void {
+    saveState(this.d.state);
+    this.d.onOptions();
+    if (rerender) this.render();
   }
 
   private setTeamCount(n: number): void {
@@ -237,6 +265,18 @@ export class Studio {
     this.seg(this.$('#benchsel'), [1000, 3000, 10000].map((v) => ({ id: v, label: `${v / 1000}k` })), s.benchPerTeam, (id) => {
       s.benchPerTeam = Number(id);
       this.changed(false);
+    });
+    const op = s.options;
+    $in('#snd').checked = op.sound;
+    if (document.activeElement !== $in('#vol')) $in('#vol').value = String(Math.round(op.volume * 100));
+    $in('#nums').checked = op.numbers;
+    this.seg(this.$('#fxq'), [{ id: 'auto', label: 'Otomatik' }, { id: 'high', label: 'Yüksek' }, { id: 'low', label: 'Düşük' }, { id: 'off', label: 'Kapalı' }], op.fx, (id) => {
+      op.fx = id as typeof op.fx;
+      this.optionsChanged();
+    });
+    this.seg(this.$('#bars'), [{ id: 'damaged', label: 'Hasarlıyken' }, { id: 'always', label: 'Her zaman' }, { id: 'never', label: 'Kapalı' }], op.bars, (id) => {
+      op.bars = id as typeof op.bars;
+      this.optionsChanged();
     });
     this.$('#tm-count').textContent = String(s.teamCount);
     const changed = this.units.changedCount();

@@ -5,7 +5,7 @@ import { isoX, isoY } from '../iso';
 import type { SimView } from '../sim/backend';
 import { SIM_DT } from '../sim/constants';
 import { Kind, MAX_TEAMS, STATS } from '../sim/units';
-import { DEATH_FADE } from './unitView';
+import { DEATH_FADE, POSES } from './unitView';
 
 const DEPTH_SCALE = 4;
 
@@ -118,9 +118,9 @@ export class MassRenderer {
     for (let i = 0; i < u.count; i++) {
       this.particles.push(
         new Particle({
-          texture: this.unitTex[(u.kind[i] * MAX_TEAMS + u.team[i]) * 2],
-          anchorX: this.unitAnchor[(u.kind[i] * MAX_TEAMS + u.team[i]) * 2].ax,
-          anchorY: this.unitAnchor[(u.kind[i] * MAX_TEAMS + u.team[i]) * 2].ay,
+          texture: this.unitTex[(u.kind[i] * MAX_TEAMS + u.team[i]) * POSES],
+          anchorX: this.unitAnchor[(u.kind[i] * MAX_TEAMS + u.team[i]) * POSES].ax,
+          anchorY: this.unitAnchor[(u.kind[i] * MAX_TEAMS + u.team[i]) * POSES].ay,
         }),
       );
     }
@@ -160,10 +160,14 @@ export class MassRenderer {
       p.x = sx + off * u.facing[i];
       p.y = sy - bob;
       p.scaleX = u.facing[i];
-      p.texture = this.unitTex[(kind * MAX_TEAMS + u.team[i]) * 2 + (swing && prog > 0.3 ? 1 : 0)];
+      // Poz: saldirida hazirlik/vurus, hareketteyse yuruyus A/B, degilse bekleme.
+      let pose = 0;
+      if (swing) pose = prog < 0.4 ? 3 : prog < 0.7 ? 4 : 0;
+      else if (moving) pose = (((time * 10 + i) | 0) & 1) === 0 ? 1 : 2;
+      p.texture = this.unitTex[(kind * MAX_TEAMS + u.team[i]) * POSES + pose];
       if (alive) {
         p.scaleY = 1;
-        p.rotation = 0;
+        p.rotation = moving ? 0.08 * u.facing[i] : 0;
         p.tint = u.flash[i] > 0 ? 0xff9a9a : 0xffffff;
         p.alpha = 1;
       } else {

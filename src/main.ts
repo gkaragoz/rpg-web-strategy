@@ -7,6 +7,8 @@ import { Studio } from './app/studio';
 import { WorldView } from './app/world';
 import { Camera } from './camera';
 import { bakeAtlas, type Atlas } from './render/atlas';
+import { AudioSystem } from './render/audio';
+import { UnitView } from './render/unitView';
 import type { BattleConfig } from './sim/battle';
 import { StatsPanel } from './ui/stats';
 
@@ -14,6 +16,25 @@ import { StatsPanel } from './ui/stats';
 //   ?bench=10000&auto=30  -> takim basina birim, otomatik rapor
 //   ?sim=main             -> sim'i worker yerine ana thread'de calistir
 //   ?env=off  ?kite=off  ?seed=3  -> stüdyo ayarlarini gecici olarak ezer
+const loading = document.getElementById('loading');
+
+/** Beklenmeyen hata: kullaniciya kisa, kapanan bir bildirim; konsola ayrinti. */
+function showError(msg: string): void {
+  const el = document.createElement('div');
+  el.className = 'err-toast';
+  el.textContent = `Beklenmeyen bir hata oluştu: ${msg.slice(0, 160)}`;
+  document.body.appendChild(el);
+  window.setTimeout(() => el.remove(), 6000);
+}
+window.addEventListener('error', (e) => {
+  console.error(e.error ?? e.message);
+  showError(e.message || 'bilinmeyen');
+});
+window.addEventListener('unhandledrejection', (e) => {
+  console.error(e.reason);
+  showError(String((e.reason as Error)?.message ?? e.reason));
+});
+
 const params = new URLSearchParams(location.search);
 const benchPer = params.has('bench') ? Math.max(10, Number(params.get('bench')) || 10000) : 0;
 const autoSeconds = Number(params.get('auto')) || 0;
@@ -33,6 +54,16 @@ await app.init({
 document.body.prepend(app.canvas);
 app.ticker.stop();
 
+// WebGL baglami kaybolursa (GPU sifirlama, bellek baskisi) sayfayi yenilemeyi oner.
+app.canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  const el = document.createElement('div');
+  el.className = 'fatal';
+  el.innerHTML = '<div>Grafik bağlamı kayboldu.<br /><button type="button" id="reload-btn">Sayfayı yenile</button></div>';
+  document.body.appendChild(el);
+  el.querySelector('#reload-btn')!.addEventListener('click', () => location.reload());
+});
+
 const state = loadState();
 if (params.get('env') === 'off') state.env = false;
 if (params.get('kite') === 'off') state.kite = false;
@@ -49,7 +80,33 @@ const hudRoot = document.getElementById('hud')!;
 let atlas: Atlas = bakeAtlas(app.renderer, teamColors(state.palette, state.teamCount));
 const getAtlas = (): Atlas => atlas;
 
-const battle = new BattleScene({ app, world, camera, getAtlas, stats, hudRoot, banner });
+const audio = new AudioSystem();
+function applyOptions(): void {
+  audio.enabled = state.options.sound;
+  audio.setVolume(state.options.volume);
+  UnitView.barMode = state.options.bars;
+}
+applyOptions();
+// Tarayici politikasi: ses baglami ilk kullanici hareketinde acilir.
+for (const ev of ['pointerdown', 'keydown'] as const) window.addEventListener(ev, () => audio.unlock());
+
+const battle = new BattleScene({
+  app,
+  world,
+  camera,
+  getAtlas,
+  stats,
+  hudRoot,
+  banner,
+  audio,
+  isSoundOn: () => state.options.sound,
+  toggleSound: () => {
+    state.options.sound = !state.options.sound;
+    saveState(state);
+    applyOptions();
+    return state.options.sound;
+  },
+});
 let mode: 'studio' | 'battle' = 'studio';
 
 function studioConfig(): BattleConfig {
@@ -115,6 +172,7 @@ studio = new Studio(studioRoot, {
   onMapChange,
   onPaletteChange,
   onStart: () => void startBattle(),
+  onOptions: applyOptions,
   onBench: (per) => {
     location.search = `?bench=${per}&auto=30`;
   },
@@ -131,6 +189,8 @@ async function startBattle(): Promise<void> {
     autoSeconds: 0,
     useWorker,
     seed: state.seed,
+    fx: state.options.fx,
+    numbers: state.options.numbers,
     onEdit: () => void backToStudio(),
   };
   studio.hide();
@@ -160,6 +220,8 @@ async function startBench(): Promise<void> {
     autoSeconds,
     useWorker,
     seed: 1,
+    fx: 'off',
+    numbers: false,
     onEdit: () => {
       location.search = '';
     },
@@ -184,7 +246,8 @@ function frame(now: number): void {
   app.render();
 }
 
-(window as unknown as { __camera: Camera }).__camera = camera;
+(window as unknown as { __camera: Camera; __audio: AudioSystem }).__camera = camera;
+(window as unknown as { __audio: AudioSystem }).__audio = audio;
 
 if (isBench) {
   await startBench();
@@ -199,4 +262,5 @@ if (isBench) {
   studio.show();
   editor.enter();
 }
+loading?.remove();
 requestAnimationFrame(frame);

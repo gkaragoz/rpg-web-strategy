@@ -1,6 +1,6 @@
 import { Grid } from './grid';
 import { Terrain, T_BLOCKED, T_WATER } from './terrain';
-import { KITE, Kind, MAX_TEAMS, STATS, TANK, Units, applyStats, isMelee, isTank, type StatOverrides } from './units';
+import { KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isMelee, isTank, type StatOverrides } from './units';
 import { Projectiles } from './projectiles';
 import { mulberry32 } from './random';
 
@@ -43,13 +43,20 @@ const DEMO_GAP_HALF = 9;
 const BENCH_GAP = 24;
 
 export interface SimEvent {
-  type: 'heal' | 'death' | 'bash' | 'slam';
+  /** hit: hasar aldi (value = hasar), shot: ok atildi, land: ok bos indi, heal: iyilesti (value = miktar). */
+  type: 'heal' | 'death' | 'bash' | 'slam' | 'hit' | 'shot' | 'land';
   x: number;
   y: number;
   unit: number;
   /** bash: itme yonu (radyan, dunya x/y duzleminde). */
   angle?: number;
+  value?: number;
+  /** Olay sahibi birimin turu (olum/vurus icin). */
+  kind?: number;
 }
+
+/** Adim basina uretilen olay ust siniri (cok kalabalikta mesaj/tahsis patlamasin). */
+const EVENT_CAP = 300;
 
 export interface BattleConfig {
   /** 'demo': 10v10 el yapimi dizilim, 'bench': takim basina perTeam birim blok dizilimi,
@@ -276,6 +283,8 @@ export class Battle {
       u.px[i] = u.x[i];
       u.py[i] = u.y[i];
       u.vx[i] = u.vy[i] = 0;
+      // Onceki adimda hareket etmediyse hiz hizla sonumlenir (aniden durma yerine kisa fren).
+      if (u.moving[i] === 0) u.spd[i] *= MOTION.brake;
       u.moving[i] = 0;
       u.flash[i] = Math.max(0, u.flash[i] - dt);
       const t = u.target[i];
@@ -400,6 +409,10 @@ export class Battle {
     if (this.time - this.lastDamageT > limit) this.winner = -2;
   }
 
+  private pushEvent(e: SimEvent): void {
+    if (this.events.length < EVENT_CAP) this.events.push(e);
+  }
+
   private startAttack(i: number): void {
     const u = this.units;
     const s = STATS[u.kind[i]];
@@ -478,8 +491,10 @@ export class Battle {
         const reach = s.range * 0.7;
         let gx = u.x[t] + Math.cos(base) * reach;
         let gy = u.y[t] + Math.sin(base) * reach;
-        // Yaklasma noktasi suya/engele dustuyse dogrudan hedefe yonel.
-        if (this.terrain && !this.terrain.walkable(gx, gy)) {
+        // Yaklasma noktasi suya/engele ya da harita kenarinin disina dustuyse dogrudan hedefe yonel.
+        const edge = this.mapSize - 0.5;
+        const outside = gx < 0.5 || gy < 0.5 || gx > edge || gy > edge;
+        if (outside || (this.terrain && !this.terrain.walkable(gx, gy))) {
           gx = u.x[t];
           gy = u.y[t];
         }
@@ -824,13 +839,14 @@ export class Battle {
       const tx = u.x[t] + u.vx[t] * flight;
       const ty = u.y[t] + u.vy[t] * flight;
       this.projectiles.spawn(u.x[i], u.y[i], tx, ty, flight, 18 + dist * 2.2, s.power, u.team[i]);
+      if (this.emitEvents) this.pushEvent({ type: 'shot', x: u.x[i], y: u.y[i], unit: i, angle: Math.atan2(ty - u.y[i], tx - u.x[i]) });
     } else if (dist <= s.range + 1 && u.hp[t] < u.maxHp[t]) {
       const before = u.hp[t];
       const stale = this.time - this.lastDeathTime - STALE_AFTER;
       const heal = stale > 0 ? s.power / (1 + stale * STALE_RAMP) : s.power;
       u.hp[t] = Math.min(u.maxHp[t], u.hp[t] + heal);
       this.counters.heal += u.hp[t] - before;
-      if (this.emitEvents) this.events.push({ type: 'heal', x: u.x[t], y: u.y[t], unit: t });
+      if (this.emitEvents) this.pushEvent({ type: 'heal', x: u.x[t], y: u.y[t], unit: t, value: heal, kind: u.kind[t] });
     }
   }
 
@@ -848,7 +864,7 @@ export class Battle {
       fy = -u.facing[i];
     }
     this.areaStrike(i, s.aoe, s.power, s.knockback, fx, fy, true);
-    if (this.emitEvents) this.events.push({ type: 'bash', x: u.x[i], y: u.y[i], unit: i, angle: Math.atan2(fy, fx) });
+    if (this.emitEvents) this.pushEvent({ type: 'bash', x: u.x[i], y: u.y[i], unit: i, angle: Math.atan2(fy, fx) });
   }
 
   /** Cekic Tanki: cevresinde daire darbe; hayatta kalanlar yariya kadar geri itilir. */
@@ -856,7 +872,7 @@ export class Battle {
     const u = this.units;
     const s = STATS[Kind.Brute];
     this.areaStrike(i, s.aoe, s.power, s.knockback, 0, 0, false);
-    if (this.emitEvents) this.events.push({ type: 'slam', x: u.x[i], y: u.y[i], unit: i });
+    if (this.emitEvents) this.pushEvent({ type: 'slam', x: u.x[i], y: u.y[i], unit: i });
   }
 
   /** Dusman gridlerinde tank cevresindeki hucreleri tarar: hasar + knockback (koni veya daire). */
@@ -955,6 +971,7 @@ export class Battle {
       }
     }
     if (best >= 0) this.damage(best, dmg);
+    else if (this.emitEvents) this.pushEvent({ type: 'land', x, y, unit: -1 });
   }
 
   private damage(j: number, amount: number): void {
@@ -964,6 +981,7 @@ export class Battle {
     if (stale > 0) amount *= 1 + stale * STALE_RAMP;
     amount *= 1 - STATS[u.kind[j]].armor;
     this.counters.damage += Math.min(amount, Math.max(0, u.hp[j]));
+    if (this.emitEvents) this.pushEvent({ type: 'hit', x: u.x[j], y: u.y[j], unit: j, value: amount, kind: u.kind[j] });
     u.hp[j] -= amount;
     u.flash[j] = 0.12;
     if (u.hp[j] <= 0) {
@@ -977,7 +995,7 @@ export class Battle {
         this.dbg.archerDeaths++;
         if (u.kiteState[j] === 1) this.dbg.archerDeathsKiting++;
       }
-      if (this.emitEvents) this.events.push({ type: 'death', x: u.x[j], y: u.y[j], unit: j });
+      if (this.emitEvents) this.pushEvent({ type: 'death', x: u.x[j], y: u.y[j], unit: j, kind: u.kind[j] });
     }
   }
 
@@ -1013,7 +1031,30 @@ export class Battle {
       ux /= m;
       uy /= m;
     }
-    const step = Math.min(speed * dt, d);
+    // Yumusak yon: kararli ilerleme icin yonu hedefe dogru yumusakca cevir; ters donuste fren yap.
+    const hl = Math.abs(u.hx[i]) + Math.abs(u.hy[i]);
+    if (hl < 0.01) {
+      u.hx[i] = ux;
+      u.hy[i] = uy;
+    } else {
+      const dot = u.hx[i] * ux + u.hy[i] * uy;
+      if (dot < -0.3) u.spd[i] *= MOTION.brake;
+      const k = Math.min(1, MOTION.turn * dt);
+      let hx = u.hx[i] + (ux - u.hx[i]) * k;
+      let hy = u.hy[i] + (uy - u.hy[i]) * k;
+      const hm = Math.sqrt(hx * hx + hy * hy) || 1;
+      hx /= hm;
+      hy /= hm;
+      u.hx[i] = hx;
+      u.hy[i] = hy;
+    }
+    // Ivmelen: duran birim hizli ama aninda degil kalkar; hedef hiz asilmaz.
+    u.spd[i] = Math.min(speed, u.spd[i] + MOTION.accel * dt);
+    // Guvenlik: hesaplanan hiz cok dusukse yine de ilerle (sikisma tespiti calissin).
+    const eff = Math.max(u.spd[i], speed * 0.25);
+    ux = u.hx[i];
+    uy = u.hy[i];
+    const step = Math.min(eff * dt, d);
     const ox = u.x[i];
     const oy = u.y[i];
     // Konumlar Float32 saklanir: yurunebilirlik testi yuvarlanmis degerle yapilmali.

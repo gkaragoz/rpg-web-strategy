@@ -71,6 +71,14 @@ export function applyStats(overrides: StatOverrides | undefined): void {
   }
 }
 
+/** Yumusak hareket: ivmelenme/frenleme (tile/sn^2) ve donus hizi (1/sn). */
+export const MOTION = {
+  accel: 16,
+  /** Durma/hizli donus sirasinda hiz bu oranda kalir (adim basina). */
+  brake: 0.6,
+  turn: 12,
+};
+
 /** Tank etki sabitleri. */
 export const TANK = {
   /** Kalkan itmesi yari acisi icin cos(60 derece). */
@@ -165,6 +173,10 @@ export class Units {
   winX: Float32Array;
   winY: Float32Array;
   winT: Float32Array;
+  /** Yumusak hareket: guncel hiz buyuklugu ve yon (birim vektor). */
+  spd: Float32Array;
+  hx: Float32Array;
+  hy: Float32Array;
 
   constructor(cap: number) {
     this.cap = cap;
@@ -213,6 +225,9 @@ export class Units {
     this.winX = new Float32Array(cap);
     this.winY = new Float32Array(cap);
     this.winT = new Float32Array(cap);
+    this.spd = new Float32Array(cap);
+    this.hx = new Float32Array(cap);
+    this.hy = new Float32Array(cap);
   }
 
   clear(): void {
@@ -257,6 +272,8 @@ export class Units {
     this.winX[i] = x;
     this.winY[i] = y;
     this.winT[i] = 0;
+    this.spd[i] = 0;
+    this.hx[i] = this.hy[i] = 0;
     return i;
   }
 }

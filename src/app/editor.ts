@@ -3,6 +3,7 @@ import type { Camera } from '../camera';
 import { isoX, isoY } from '../iso';
 import type { Atlas } from '../render/atlas';
 import { KIND_COUNT, Kind, MAX_TEAMS } from '../sim/units';
+import { POSES } from '../render/unitView';
 import { BRUSHES, MAX_PLACED, saveState, teamColors, type AppState, type PlacedUnit } from './state';
 import type { WorldView } from './world';
 
@@ -225,9 +226,9 @@ export class Editor {
 
   private spriteFor(u: PlacedUnit): Sprite {
     const atlas = this.d.getAtlas();
-    const idx = (u.kind * MAX_TEAMS + u.team) * 2;
-    const tex = atlas.unitTex[idx] ?? atlas.unitTex[(u.kind * MAX_TEAMS) * 2];
-    const anc = atlas.unitAnchor[idx] ?? atlas.unitAnchor[(u.kind * MAX_TEAMS) * 2];
+    const idx = (u.kind * MAX_TEAMS + u.team) * POSES;
+    const tex = atlas.unitTex[idx] ?? atlas.unitTex[u.kind * MAX_TEAMS * POSES];
+    const anc = atlas.unitAnchor[idx] ?? atlas.unitAnchor[u.kind * MAX_TEAMS * POSES];
     const spr = new Sprite(tex);
     spr.anchor.set(anc.ax, anc.ay);
     spr.position.set(isoX(u.x, u.y), isoY(u.x, u.y));

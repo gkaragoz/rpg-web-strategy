@@ -37,6 +37,19 @@ export interface PlacedUnit {
   y: number;
 }
 
+/** Gorunum ve ses secenekleri. */
+export interface Options {
+  sound: boolean;
+  volume: number;
+  fx: 'auto' | 'high' | 'low' | 'off';
+  numbers: boolean;
+  bars: 'damaged' | 'always' | 'never';
+}
+
+export function defaultOptions(): Options {
+  return { sound: true, volume: 0.6, fx: 'auto', numbers: true, bars: 'damaged' };
+}
+
 export interface AppState {
   mapSize: number;
   env: boolean;
@@ -52,6 +65,7 @@ export interface AppState {
   benchPerTeam: number;
   /** Birim istatistik ayarlari (yalniz degistirilenler). */
   stats: StatOverrides;
+  options: Options;
   units: PlacedUnit[];
   /** Hic kaydedilmis kurulum yoksa ilk acilista hizli dizilim kurulur. */
   fresh: boolean;
@@ -74,6 +88,7 @@ export function defaultState(): AppState {
     tool: 'place',
     benchPerTeam: 10000,
     stats: Array.from({ length: KIND_COUNT }, () => ({})),
+    options: defaultOptions(),
     units: [],
     fresh: true,
   };
@@ -126,9 +141,18 @@ export function loadState(): AppState {
       tool: 'place',
       benchPerTeam: [1000, 3000, 10000].includes(o.benchPerTeam as number) ? (o.benchPerTeam as number) : d.benchPerTeam,
       stats: Array.from({ length: KIND_COUNT }, () => ({})),
+      options: defaultOptions(),
       units: [],
       fresh: false,
     };
+    if (o.options && typeof o.options === 'object') {
+      const op = o.options as Partial<Options>;
+      if (typeof op.sound === 'boolean') s.options.sound = op.sound;
+      if (typeof op.volume === 'number' && Number.isFinite(op.volume)) s.options.volume = Math.min(1, Math.max(0, op.volume));
+      if (op.fx === 'auto' || op.fx === 'high' || op.fx === 'low' || op.fx === 'off') s.options.fx = op.fx;
+      if (typeof op.numbers === 'boolean') s.options.numbers = op.numbers;
+      if (op.bars === 'damaged' || op.bars === 'always' || op.bars === 'never') s.options.bars = op.bars;
+    }
     if (Array.isArray(o.stats)) {
       o.stats.slice(0, KIND_COUNT).forEach((row, k) => {
         if (!row || typeof row !== 'object') return;

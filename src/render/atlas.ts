@@ -1,7 +1,7 @@
 import { Container, Graphics, Rectangle, Texture, type Renderer } from 'pixi.js';
 import type { DecorKind } from '../sim/terrain';
 import { KIND_COUNT, MAX_TEAMS, STATS } from '../sim/units';
-import { UnitView, type TeamColors } from './unitView';
+import { POSES, POSE_STATES, UnitView, type TeamColors } from './unitView';
 
 const SHEET_W = 1024;
 const PAD = 3;
@@ -14,13 +14,15 @@ export interface Sprite9 {
 }
 
 export interface Atlas {
-  /** [(kind*MAX_TEAMS + team)*2 + pose] */
+  /** [(kind*MAX_TEAMS + team)*POSES + poz] (0 bekleme, 1-2 yuruyus, 3 hazirlik, 4 vurus) */
   unitTex: Texture[];
   /** unitTex ile ayni indeks: dokunun yere bastigi nokta (0..1). */
   unitAnchor: Array<{ ax: number; ay: number }>;
   arrowTex: Texture;
   pixelTex: Texture;
   decor: Record<DecorKind, Sprite9[]>;
+  /** Efekt parcacik dokulari (beyaz; calisma aninda renklendirilir). */
+  fx: Record<'puff' | 'spark' | 'star' | 'ring', Sprite9>;
   /** Atlas dokusunu GPU'dan birakir (palet degisince eskisi icin). */
   dispose: () => void;
 }
@@ -130,6 +132,7 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[]): Atlas {
   const decor: Record<DecorKind, Sprite9[]> = { tree: [], rock: [], boulder: [], house: [], wall: [], rubble: [] };
   let arrowTex!: Texture;
   let pixelTex!: Texture;
+  const fx = {} as Record<'puff' | 'spark' | 'star' | 'ring', Sprite9>;
 
   // Birimler: (kind*MAX_TEAMS + team)*2 + poz. Tanklar 2x buyuk hucre kullanir.
   const teams = Math.min(MAX_TEAMS, Math.max(1, teamColors.length));
@@ -140,8 +143,8 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[]): Atlas {
     const ax = 32 * k;
     const ay = 80 * k;
     for (let team = 0; team < teams; team++) {
-      for (let pose = 0; pose < 2; pose++) {
-        const idx = (kind * MAX_TEAMS + team) * 2 + pose;
+      for (let pose = 0; pose < POSES; pose++) {
+        const idx = (kind * MAX_TEAMS + team) * POSES + pose;
         items.push({
           w,
           h,
@@ -149,7 +152,7 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[]): Atlas {
           ay,
           draw: (c, x, y) => {
             const view = new UnitView(kind, teamColors[team], 0);
-            view.update({ hp: 1, maxHp: 1, facing: 1, moving: false, swingProgress: pose ? 0.55 : -1, flash: false, deathT: -1 }, 0, 0);
+            view.update(POSE_STATES[pose], 0, 0);
             view.root.position.set(x + ax, y + ay);
             c.addChild(view.root);
           },
@@ -182,6 +185,38 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[]): Atlas {
     ay: 2,
     draw: (c, x, y) => c.addChild(new Graphics().rect(x, y, 4, 4).fill(0xffffff)),
     done: (t) => (pixelTex = t),
+  });
+
+  // Efekt dokulari (beyaz, merkez anchor): yumusak toz, kivilcim, 4 uclu yildiz, elips halka.
+  const addFx = (name: 'puff' | 'spark' | 'star' | 'ring', w: number, h: number, paint: (g: Graphics) => void): void => {
+    items.push({
+      w,
+      h,
+      ax: w / 2,
+      ay: h / 2,
+      draw: (c, x, y) => {
+        const g = new Graphics();
+        g.position.set(x + w / 2, y + h / 2);
+        paint(g);
+        c.addChild(g);
+      },
+      done: (t) => (fx[name] = { texture: t, ax: 0.5, ay: 0.5 }),
+    });
+  };
+  addFx('puff', 24, 24, (g) => {
+    g.circle(0, 0, 11).fill({ color: 0xffffff, alpha: 0.18 });
+    g.circle(0, 0, 8.5).fill({ color: 0xffffff, alpha: 0.28 });
+    g.circle(0, 0, 6).fill({ color: 0xffffff, alpha: 0.42 });
+    g.circle(0, 0, 3.2).fill({ color: 0xffffff, alpha: 0.6 });
+  });
+  addFx('spark', 14, 22, (g) => {
+    g.poly([0, -10, 2.6, 0, 0, 10, -2.6, 0]).fill(0xffffff);
+  });
+  addFx('star', 24, 24, (g) => {
+    g.poly([0, -11, 2.6, -2.6, 11, 0, 2.6, 2.6, 0, 11, -2.6, 2.6, -11, 0, -2.6, -2.6]).fill(0xffffff);
+  });
+  addFx('ring', 72, 38, (g) => {
+    g.ellipse(0, 0, 32, 16).stroke({ width: 3.5, color: 0xffffff });
   });
 
   const add = (kind: DecorKind, w: number, h: number, ax: number, ay: number, paint: (g: Graphics) => void): void => {
@@ -245,5 +280,5 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[]): Atlas {
   for (const { item, x: px, y: py } of placed) {
     item.done(new Texture({ source: atlas.source, frame: new Rectangle(px, py, item.w, item.h) }));
   }
-  return { unitTex, unitAnchor, arrowTex, pixelTex, decor, dispose: () => atlas.destroy(true) };
+  return { unitTex, unitAnchor, arrowTex, pixelTex, decor, fx, dispose: () => atlas.destroy(true) };
 }
