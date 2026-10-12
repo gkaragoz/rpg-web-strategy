@@ -1,4 +1,4 @@
-import { DEFAULT_STATS, KIND_COUNT, STATS, TUNABLE, isTank, type StatKey } from '../sim/units';
+import { DEFAULT_STATS, KIND_COUNT, LEGACY_COUNT, STATS, TUNABLE, isTank, type StatKey } from '../sim/units';
 import { saveState, type AppState } from './state';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -37,9 +37,9 @@ export class UnitSettings {
   }
 
   private render(): void {
-    const head = Array.from({ length: KIND_COUNT }, (_, k) => `<th scope="col"><div>${esc(STATS[k].name)}</div><button type="button" class="mini" data-reset-kind="${k}" ${Object.keys(this.state.stats[k]).length ? '' : 'disabled'}>Sıfırla</button></th>`).join('');
+    const head = Array.from({ length: LEGACY_COUNT }, (_, k) => `<th scope="col"><div>${esc(STATS[k].name)}</div><button type="button" class="mini" data-reset-kind="${k}" ${Object.keys(this.state.stats[k]).length ? '' : 'disabled'}>Sıfırla</button></th>`).join('');
     const rows = TUNABLE.map((t) => {
-      const cells = Array.from({ length: KIND_COUNT }, (_, k) => {
+      const cells = Array.from({ length: LEGACY_COUNT }, (_, k) => {
         if (t.tankOnly && !isTank(k)) return '<td class="na">–</td>';
         const v = this.value(k, t.key);
         const changed = this.state.stats[k][t.key] !== undefined;
@@ -48,7 +48,7 @@ export class UnitSettings {
       return `<tr><th scope="row" title="${esc(t.hint)}">${esc(t.label)}<small>${esc(t.hint)}</small></th>${cells}</tr>`;
     }).join('');
     const derived = (label: string, hint: string, fn: (k: number) => string): string =>
-      `<tr class="derived"><th scope="row" title="${esc(hint)}">${esc(label)}<small>${esc(hint)}</small></th>${Array.from({ length: KIND_COUNT }, (_, k) => `<td data-derived="${esc(label)}" data-k="${k}">${fn(k)}</td>`).join('')}</tr>`;
+      `<tr class="derived"><th scope="row" title="${esc(hint)}">${esc(label)}<small>${esc(hint)}</small></th>${Array.from({ length: LEGACY_COUNT }, (_, k) => `<td data-derived="${esc(label)}" data-k="${k}">${fn(k)}</td>`).join('')}</tr>`;
 
     this.dlg.innerHTML = `
 <form method="dialog">

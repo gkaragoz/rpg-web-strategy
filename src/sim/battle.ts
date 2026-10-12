@@ -1,7 +1,7 @@
 import { Grid } from './grid';
 import { Terrain, T_BLOCKED, T_WATER } from './terrain';
 import type { MapSpec } from './mapSpec';
-import { KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isMelee, isTank, type StatOverrides } from './units';
+import { KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides } from './units';
 import { Projectiles } from './projectiles';
 import { mulberry32 } from './random';
 
@@ -292,7 +292,7 @@ export class Battle {
       u.flash[i] = Math.max(0, u.flash[i] - dt);
       const t = u.target[i];
       if (t >= 0 && u.alive[t]) {
-        if (u.kind[i] === Kind.Priest) u.healers[t]++;
+        if (isHealer(u.kind[i])) u.healers[t]++;
         else u.attackers[t]++;
       } else if (t >= 0) {
         // Hedef oldu: kisa, birime ozel bir gecikmeyle yeni hedef ara (hepsi ayni karede degil).
@@ -303,7 +303,7 @@ export class Battle {
       this.centroidX[tm] += u.x[i];
       this.centroidY[tm] += u.y[i];
       n[tm]++;
-      if (u.kind[i] !== Kind.Priest) this.damagerCount[tm]++;
+      if (!isHealer(u.kind[i])) this.damagerCount[tm]++;
       if (isMelee(u.kind[i])) {
         wx[tm] += u.x[i];
         wy[tm] += u.y[i];
@@ -394,7 +394,7 @@ export class Battle {
     if (aliveTeams < 2) return;
     let damager = false;
     for (let i = 0; i < u.count; i++) {
-      if (u.alive[i] && u.kind[i] !== Kind.Priest) {
+      if (u.alive[i] && !isHealer(u.kind[i])) {
         damager = true;
         break;
       }
@@ -471,7 +471,7 @@ export class Battle {
 
     const t = u.target[i];
     if (t < 0) {
-      if (kind === Kind.Priest) this.followArmy(i, dt);
+      if (isHealer(kind)) this.followArmy(i, dt);
       else this.marchToEnemy(i, dt);
       return;
     }
@@ -505,7 +505,7 @@ export class Battle {
         return;
       }
     } else if (dist > s.range * 0.95) {
-      if (kind === Kind.Priest && this.kiteOn) {
+      if (isHealer(kind) && this.kiteOn) {
         // Hastaya arkasindan yaklas: dusmandan uzakta dur.
         const en = this.nearestEnemy[u.team[i]];
         if (en >= 0) {
@@ -534,7 +534,7 @@ export class Battle {
   private updateThreat(i: number): void {
     if ((i + this.stepNo) % KITE.scanEvery !== 0) return;
     const u = this.units;
-    const danger = u.kind[i] === Kind.Archer ? KITE.archerDanger : KITE.priestDanger;
+    const danger = isRanged(u.kind[i]) ? KITE.archerDanger : KITE.priestDanger;
     const d2max = danger * danger;
     const enemies = this.enemyList[u.team[i]];
     const g0 = this.grids[0];
@@ -583,7 +583,7 @@ export class Battle {
    */
   private tryKite(i: number, dt: number): boolean {
     const u = this.units;
-    const archer = u.kind[i] === Kind.Archer;
+    const archer = isRanged(u.kind[i]);
     const danger = archer ? KITE.archerDanger : KITE.priestDanger;
     const safe = archer ? KITE.archerSafe : KITE.priestSafe;
     const td = u.threatDist[i];
@@ -601,7 +601,7 @@ export class Battle {
         if (u.cooldown[i] <= 0 && td >= KITE.archerSnapMin && t >= 0 && u.alive[t]) {
           const ex = u.x[t] - u.x[i];
           const ey = u.y[t] - u.y[i];
-          if (ex * ex + ey * ey <= STATS[Kind.Archer].range * STATS[Kind.Archer].range) {
+          if (ex * ex + ey * ey <= STATS[u.kind[i]].range * STATS[u.kind[i]].range) {
             this.faceTo(i, ex, ey);
             this.startAttack(i);
             this.dbg.snapShots++;
@@ -656,8 +656,8 @@ export class Battle {
     if (u.chaseT[i] < CHASE_TIMEOUT) return false;
     u.banTarget[i] = t;
     u.banT[i] = BAN_TIME;
-    if (u.attackers[t] > 0 && !(u.kind[i] === Kind.Priest)) u.attackers[t]--;
-    if (u.healers[t] > 0 && u.kind[i] === Kind.Priest) u.healers[t]--;
+    if (u.attackers[t] > 0 && !(isHealer(u.kind[i]))) u.attackers[t]--;
+    if (u.healers[t] > 0 && isHealer(u.kind[i])) u.healers[t]--;
     u.target[i] = -1;
     u.retarget[i] = 0;
     u.chaseT[i] = 0;
@@ -704,7 +704,7 @@ export class Battle {
     const kind = u.kind[i];
     const team = u.team[i];
     const cur = u.target[i];
-    const isPriest = kind === Kind.Priest;
+    const isPriest = isHealer(kind);
     const melee = isMelee(kind);
     // Priest muttefik, digerleri tum dusman takimlari tarar.
     const searchTeams = isPriest ? this.selfList[team] : this.enemyList[team];
@@ -754,7 +754,7 @@ export class Battle {
                 const att = u.attackers[j] - (j === cur ? 1 : 0);
                 score = dist + att * 3.5 + jitter * 2 + (att >= (tank ? TANK.meleeSlots : MELEE_SLOTS) ? 100 : 0);
                 if (tank) score -= TANK.tauntBonus; // tank dusmani uzerine ceker
-              } else if (kind === Kind.Archer) {
+              } else if (isRanged(kind)) {
                 const att = u.attackers[j] - (j === cur ? 1 : 0);
                 score = dist + att * 2 + (u.hp[j] / u.maxHp[j]) * 3 + jitter * 2;
               } else {
@@ -818,7 +818,7 @@ export class Battle {
     const gy = this.centroidY[tm] + ay * 2.5;
     const gdx = gx - u.x[i];
     const gdy = gy - u.y[i];
-    if (gdx * gdx + gdy * gdy > 2.25) this.moveToward(i, gx, gy, STATS[Kind.Priest].speed, dt);
+    if (gdx * gdx + gdy * gdy > 2.25) this.moveToward(i, gx, gy, STATS[u.kind[i]].speed, dt);
   }
 
   private resolveHit(i: number): void {
@@ -830,13 +830,13 @@ export class Battle {
     const dy = u.y[t] - u.y[i];
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    if (u.kind[i] === Kind.Warrior) {
+    if (isMelee(u.kind[i]) && !isTank(u.kind[i])) {
       if (dist <= s.range + 0.6) this.damage(t, s.power);
     } else if (u.kind[i] === Kind.Shield) {
       this.shieldBash(i, dx, dy, dist);
     } else if (u.kind[i] === Kind.Brute) {
       this.bruteSlam(i);
-    } else if (u.kind[i] === Kind.Archer) {
+    } else if (isRanged(u.kind[i])) {
       const flight = Math.max(0.25, dist / ARROW_SPEED);
       // Hareketli hedefe on tahminle atar; tahmin tutmazsa ok kacirir.
       const tx = u.x[t] + u.vx[t] * flight;
@@ -994,7 +994,7 @@ export class Battle {
       u.alive[j] = 0;
       u.deathT[j] = 0;
       u.target[j] = -1;
-      if (u.kind[j] === Kind.Archer) {
+      if (isRanged(u.kind[j])) {
         this.dbg.archerDeaths++;
         if (u.kiteState[j] === 1) this.dbg.archerDeathsKiting++;
       }
@@ -1193,7 +1193,7 @@ export class Battle {
         if (tg >= 0) {
           u.banTarget[i] = tg;
           u.banT[i] = BAN_TIME;
-          if (u.kind[i] === Kind.Priest) {
+          if (isHealer(u.kind[i])) {
             if (u.healers[tg] > 0) u.healers[tg]--;
           } else if (u.attackers[tg] > 0) u.attackers[tg]--;
           u.target[i] = -1;

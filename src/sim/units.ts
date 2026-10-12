@@ -1,15 +1,12 @@
-export const MAX_TEAMS = 6;
-export const Kind = { Warrior: 0, Archer: 1, Priest: 2, Shield: 3, Brute: 4 } as const;
-export const KIND_COUNT = 5;
+import { TROOPS, type MoveClass, type SkillId, type TroopDef } from './data/troops';
 
-/** Yakin-dovus birimleri: Savasci, Kalkan Tanki, Cekic Tanki. */
-export function isMelee(kind: number): boolean {
-  return kind === Kind.Warrior || kind >= Kind.Shield;
-}
-/** Tanklar (2x boyut, alan etkili). */
-export function isTank(kind: number): boolean {
-  return kind >= Kind.Shield;
-}
+export const MAX_TEAMS = 6;
+/** Ilk 5 tur (klasik): sabit kimlikler. Sonrakiler roster birimleri (TROOPS sirasiyla). */
+export const Kind = { Warrior: 0, Archer: 1, Priest: 2, Shield: 3, Brute: 4 } as const;
+export const LEGACY_COUNT = 5;
+
+/** Savas rolu: hedefleme/vur-kac/iyilestirme davranisini belirler. */
+export const Role = { Melee: 0, Ranged: 1, Healer: 2, Tank: 3 } as const;
 
 export interface KindStats {
   name: string;
@@ -31,37 +28,133 @@ export interface KindStats {
   aoe: number;
   /** Alan etkisiyle geri itme mesafesi (tile). Cekic = Kalkan'in yarisi. */
   knockback: number;
+  role: number;
+  /** Temel saldirinin alan hasari yaricapi (tile; 0: tek hedef). */
+  splash: number;
+  /** Buyulu hasar (gorsel/ses ipucu). */
+  magical: boolean;
+  /** Roster birim kimligi (klasik turlerde yok) ve yetenegi. */
+  troop?: string;
+  skill: SkillId | null;
 }
 
+const classic = (s: Omit<KindStats, 'role' | 'splash' | 'magical' | 'skill'> & { role: number }): KindStats => ({ ...s, splash: 0, magical: false, skill: null });
+
 export const STATS: KindStats[] = [
-  { name: 'Savaşçı', hp: 160, speed: 3.0, range: 1.0, power: 16, cooldown: 0.9, swing: 0.35, hitAt: 0.2, armor: 0, scale: 1, aoe: 0, knockback: 0 },
-  { name: 'Okçu', hp: 80, speed: 2.4, range: 9, power: 13, cooldown: 1.4, swing: 0.4, hitAt: 0.25, armor: 0, scale: 1, aoe: 0, knockback: 0 },
-  { name: 'Rahip', hp: 90, speed: 2.6, range: 6.5, power: 14, cooldown: 1.8, swing: 0.5, hitAt: 0.3, armor: 0, scale: 1, aoe: 0, knockback: 0 },
+  classic({ name: 'Savaşçı', role: Role.Melee, hp: 160, speed: 3.0, range: 1.0, power: 16, cooldown: 0.9, swing: 0.35, hitAt: 0.2, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
+  classic({ name: 'Okçu', role: Role.Ranged, hp: 80, speed: 2.4, range: 9, power: 13, cooldown: 1.4, swing: 0.4, hitAt: 0.25, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
+  classic({ name: 'Rahip', role: Role.Healer, hp: 90, speed: 2.6, range: 6.5, power: 14, cooldown: 1.8, swing: 0.5, hitAt: 0.3, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
   // Kalkan Tanki: onundeki konide itme (guclu knockback).
-  { name: 'Kalkan Tankı', hp: 520, speed: 1.9, range: 1.5, power: 12, cooldown: 1.6, swing: 0.5, hitAt: 0.28, armor: 0.35, scale: 2, aoe: 2.6, knockback: 3.0 },
+  classic({ name: 'Kalkan Tankı', role: Role.Tank, hp: 520, speed: 1.9, range: 1.5, power: 12, cooldown: 1.6, swing: 0.5, hitAt: 0.28, armor: 0.35, scale: 2, aoe: 2.6, knockback: 3.0 }),
   // Cekic Tanki: cevresinde daire darbe; knockback Kalkan'in yarisi.
-  { name: 'Çekiç Tankı', hp: 460, speed: 2.1, range: 1.8, power: 22, cooldown: 2.0, swing: 0.6, hitAt: 0.35, armor: 0.2, scale: 2, aoe: 2.2, knockback: 1.5 },
+  classic({ name: 'Çekiç Tankı', role: Role.Tank, hp: 460, speed: 2.1, range: 1.8, power: 22, cooldown: 2.0, swing: 0.6, hitAt: 0.35, armor: 0.2, scale: 2, aoe: 2.2, knockback: 1.5 }),
 ];
+
+// ---- Roster birimleri: seviyeye gore, oyun olcegine normalize edilir ----
+
+/** Roster can/saldiri degerlerini oyun olcegine indirgeyen bolenler. */
+export const HP_DIV = 5;
+export const ATK_DIV = 6.5;
+/** Savunma -> zirh orani: def / (def + ARMOR_K). */
+export const ARMOR_K = 220;
+export const MOVE_SPEED: Record<MoveClass, number> = { 0: 2.2, 1: 2.6, 2: 3.0, 3: 3.6, 4: 4.4 };
+export const DEFAULT_LEVEL = 5;
+export const MAX_LEVEL = 10;
+
+/** Roster birim kimligi -> tur numarasi. */
+export const KIND_OF_TROOP: Record<string, number> = {};
+
+function troopStats(t: TroopDef, level: number): KindStats {
+  const [hp, atk, def] = t.levels[Math.min(MAX_LEVEL, Math.max(1, level)) - 1];
+  const big = t.id === 'granite-colossus' || t.id === 'cinder-golem' || t.id === 'war-barge' || t.id === 'hill-brute' ? 1.8 : t.levels[0][0] >= 2000 ? 1.4 : 1;
+  const heal = t.skill === 'cleanse';
+  return {
+    name: t.name,
+    role: heal ? Role.Healer : t.ranged ? Role.Ranged : Role.Melee,
+    hp: Math.round(hp / HP_DIV),
+    speed: MOVE_SPEED[t.move],
+    range: t.reach,
+    power: Math.max(1, Math.round(atk / ATK_DIV)),
+    cooldown: Math.min(5, Math.max(0.4, 1 / Math.max(0.2, t.atkSpd))),
+    swing: t.ranged ? (t.magical ? 0.5 : 0.4) : 0.35,
+    hitAt: t.ranged ? (t.magical ? 0.3 : 0.25) : 0.2,
+    armor: Math.min(0.85, def / (def + ARMOR_K)),
+    scale: big,
+    aoe: 0,
+    knockback: 0,
+    splash: t.aoe,
+    magical: t.magical,
+    troop: t.id,
+    skill: t.skill,
+  };
+}
+
+TROOPS.forEach((t, i) => {
+  KIND_OF_TROOP[t.id] = LEGACY_COUNT + i;
+  STATS.push(troopStats(t, DEFAULT_LEVEL));
+});
+
+export const KIND_COUNT = STATS.length;
+
+/** Rol sorgulari (sicak donguler icin tip dizileri). */
+const ROLE_OF = new Uint8Array(KIND_COUNT);
+STATS.forEach((s, i) => (ROLE_OF[i] = s.role));
+
+/** Yakin-dovus birimleri: melee ve tanklar. */
+export function isMelee(kind: number): boolean {
+  const r = ROLE_OF[kind];
+  return r === Role.Melee || r === Role.Tank;
+}
+/** Tanklar (2x boyut, alan etkili): yalniz klasik Kalkan/Cekic. */
+export function isTank(kind: number): boolean {
+  return ROLE_OF[kind] === Role.Tank;
+}
+/** Dost iyilestiren (hasar vermeyen) rol: Rahip, Nun. */
+export function isHealer(kind: number): boolean {
+  return ROLE_OF[kind] === Role.Healer;
+}
+/** Uzaktan saldiran (okcu benzeri): vur-kac yapar. */
+export function isRanged(kind: number): boolean {
+  return ROLE_OF[kind] === Role.Ranged;
+}
 
 export type StatKey = 'hp' | 'speed' | 'power' | 'cooldown' | 'range' | 'armor' | 'knockback';
 export type StatOverrides = Array<Partial<Record<StatKey, number>>>;
 
 /** Arayuzde ayarlanabilen alanlar: sinirlar ve adimlar. */
 export const TUNABLE: Array<{ key: StatKey; label: string; hint: string; min: number; max: number; step: number; tankOnly?: boolean }> = [
-  { key: 'hp', label: 'Can', hint: 'Başlangıç canı', min: 10, max: 5000, step: 10 },
+  { key: 'hp', label: 'Can', hint: 'Başlangıç canı', min: 10, max: 20000, step: 10 },
   { key: 'speed', label: 'Hız', hint: 'Hareket hızı (tile/sn)', min: 0.5, max: 8, step: 0.1 },
-  { key: 'power', label: 'Güç', hint: 'Hasar (rahipte şifa miktarı)', min: 1, max: 300, step: 1 },
+  { key: 'power', label: 'Güç', hint: 'Hasar (rahipte şifa miktarı)', min: 1, max: 1000, step: 1 },
   { key: 'cooldown', label: 'Bekleme', hint: 'İki saldırı arası (sn)', min: 0.2, max: 6, step: 0.1 },
   { key: 'range', label: 'Menzil', hint: 'Saldırı menzili (tile)', min: 0.5, max: 16, step: 0.1 },
   { key: 'armor', label: 'Zırh', hint: 'Gelen hasarı azaltma (0 - 0.9)', min: 0, max: 0.9, step: 0.05 },
   { key: 'knockback', label: 'İtme', hint: 'Tank itme mesafesi (tile)', min: 0, max: 8, step: 0.5, tankOnly: true },
 ];
 
-/** Varsayilan degerler (arayuzdeki "sifirla" icin). */
+/** Varsayilan degerler (arayuzdeki "sifirla" icin); seviye degisince roster birimleri yenilenir. */
 export const DEFAULT_STATS: KindStats[] = STATS.map((s) => ({ ...s }));
 
+let currentLevel = DEFAULT_LEVEL;
+
+/** Roster birimlerinin istatistiklerini verilen seviyeye ayarlar (STATS ve DEFAULT_STATS). */
+export function setUnitLevel(level: number): void {
+  const lv = Math.min(MAX_LEVEL, Math.max(1, Math.round(level)));
+  currentLevel = lv;
+  TROOPS.forEach((t, i) => {
+    const k = LEGACY_COUNT + i;
+    Object.assign(STATS[k], troopStats(t, lv));
+    Object.assign(DEFAULT_STATS[k], troopStats(t, lv));
+  });
+}
+
+export function unitLevel(): number {
+  return currentLevel;
+}
+
 /** Kullanici ayarlarini STATS'a uygular; eksik alanlar varsayilana doner. Sim baslamadan once cagrilir. */
-export function applyStats(overrides: StatOverrides | undefined): void {
+export function applyStats(overrides: StatOverrides | undefined, level: number = DEFAULT_LEVEL): void {
+  setUnitLevel(level);
   for (let k = 0; k < STATS.length; k++) {
     const o = overrides?.[k] ?? {};
     for (const t of TUNABLE) {

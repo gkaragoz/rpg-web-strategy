@@ -1,4 +1,4 @@
-import { KIND_COUNT, MAX_TEAMS, STATS } from '../sim/units';
+import { KIND_COUNT, LEGACY_COUNT, MAX_TEAMS, STATS } from '../sim/units';
 import type { Editor } from './editor';
 import { MapPicker } from './mapPicker';
 import { UnitSettings } from './unitSettings';
@@ -349,7 +349,7 @@ export class Studio {
         this.render();
       }),
     );
-    this.$('#kinds').innerHTML = Array.from({ length: KIND_COUNT }, (_, k) => {
+    this.$('#kinds').innerHTML = Array.from({ length: LEGACY_COUNT }, (_, k) => {
       const sel = k === s.selKind;
       return `<button type="button" class="kind${sel ? ' sel' : ''}" role="radio" aria-checked="${sel}" data-kind="${k}" title="${esc(STATS[k].name)} (${KIND_KEYS[k]})"><kbd>${KIND_KEYS[k]}</kbd>${esc(STATS[k].name)}</button>`;
     }).join('');

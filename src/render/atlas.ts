@@ -1,7 +1,7 @@
 import { Container, Graphics, Rectangle, Texture, type Renderer } from 'pixi.js';
 import type { Biome } from '../sim/mapSpec';
 import type { DecorKind } from '../sim/terrain';
-import { KIND_COUNT, MAX_TEAMS, STATS } from '../sim/units';
+import { LEGACY_COUNT, MAX_TEAMS, STATS } from '../sim/units';
 import { POSES, POSE_STATES, UnitView, type TeamColors } from './unitView';
 
 const SHEET_W = 1024;
@@ -239,7 +239,7 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
 
   // Birimler: (kind*MAX_TEAMS + team)*2 + poz. Tanklar 2x buyuk hucre kullanir.
   const teams = Math.min(MAX_TEAMS, Math.max(1, teamColors.length));
-  for (let kind = 0; kind < KIND_COUNT; kind++) {
+  for (let kind = 0; kind < LEGACY_COUNT; kind++) {
     const k = STATS[kind].scale;
     const w = 64 * k;
     const h = 96 * k;

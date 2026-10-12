@@ -1,7 +1,7 @@
 import type { BattleConfig } from '../battle';
 import { randomSpec } from '../mapSpec';
 import { mulberry32 } from '../random';
-import { DEFAULT_STATS, KIND_COUNT, Kind, TUNABLE, type StatOverrides } from '../units';
+import { DEFAULT_STATS, LEGACY_COUNT as KIND_COUNT, Kind, TUNABLE, type StatOverrides } from '../units';
 
 export interface Scenario {
   id: number;
