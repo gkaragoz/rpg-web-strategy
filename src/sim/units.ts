@@ -314,6 +314,11 @@ export class Units {
   owner: Int32Array;
   /** Gorsel durum maskesi (ST_*): renderer renklendirmek icin okur. */
   status: Uint8Array;
+  /** Ayrisma itmesi (yumusatilmis hiz, tile/adim). */
+  sepX: Float32Array;
+  sepY: Float32Array;
+  /** Hedef menzilinde kesintisiz gecen sure (ilerleme bekcisi sifirlamasi icin). */
+  rangeT: Float32Array;
 
   constructor(cap: number) {
     this.cap = cap;
@@ -387,6 +392,9 @@ export class Units {
     this.flags = new Uint8Array(cap);
     this.owner = new Int32Array(cap).fill(-1);
     this.status = new Uint8Array(cap);
+    this.sepX = new Float32Array(cap);
+    this.sepY = new Float32Array(cap);
+    this.rangeT = new Float32Array(cap);
   }
 
   clear(): void {
@@ -441,6 +449,8 @@ export class Units {
     this.skillT[i] = this.stackT[i] = 0;
     this.owner[i] = -1;
     this.status[i] = 0;
+    this.sepX[i] = this.sepY[i] = 0;
+    this.rangeT[i] = 0;
     return i;
   }
 }

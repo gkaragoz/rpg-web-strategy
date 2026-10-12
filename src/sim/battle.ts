@@ -16,7 +16,11 @@ const GRID_CELL = 4;
 /** Ayrisma icin ince grid: hucre ~ ayrisma yaricapi, 3x3 komsuluk yeterli. */
 const SEP_CELL = 1;
 /** Ayrisma her adimda birimlerin 1/SEP_STRIDE'ini isler; itme gucu ayni oranda artar. */
-const SEP_STRIDE = 2;
+const SEP_STRIDE = 3;
+/** Itme hizi: kazanc, adim basina en buyuk yer degistirme (tile), adim basina sonumleme. */
+const SEP_GAIN = 1.5;
+const SEP_MAX_STEP = 0.08;
+const SEP_DECAY = 0.82;
 /** Dusman bu kadar hucre halkasi icinde yoksa orduya dogru yuru. */
 const MAX_RING = 6;
 const PRIEST_RING = 2;
@@ -31,6 +35,8 @@ const SWITCH_BONUS = 6;
 const ENGAGE_LOCK = 1.25;
 /** Melee saldirisi menzil toleransi (kalabalikta itilen birim de vurabilsin). */
 const MELEE_SLACK = 0.4;
+/** Tank hedefe yakin dovus menzili ek payi (tank itmesi yaricapi 1.8 > 1.4). */
+const TANK_REACH = 0.6;
 /** Ilerleme bekcisi: hedefe yaklasamayan birim bu sure sonra hedefi yasaklar. */
 const CHASE_TIMEOUT = 6;
 const BAN_TIME = 8;
@@ -384,7 +390,7 @@ export class Battle {
       tn = performance.now();
       pf.units += tn - tp;
       tp = tn;
-      this.separate(dt);
+      this.separate();
       tn = performance.now();
       pf.separate += tn - tp;
       tp = tn;
@@ -534,16 +540,23 @@ export class Battle {
     const dx = u.x[t] - u.x[i];
     const dy = u.y[t] - u.y[i];
     const dist = Math.sqrt(dx * dx + dy * dy);
+    // Buyuk (tank) hedefin govdesi daha genis: yakin dovusculer onu bu kadar fazla uzaktan vurabilir.
+    const tr = isTank(u.kind[t]) && !isTank(kind) ? TANK_REACH : 0;
 
-    if (dist <= (isMelee(kind) ? s.range + MELEE_SLACK : s.range * 0.95)) {
-      u.chaseT[i] = 0;
-      u.chaseBest[i] = Infinity;
-    } else if (this.chaseWatchdog(i, t, dist, dt)) {
-      return;
+    if (dist <= (isMelee(kind) ? s.range + MELEE_SLACK + tr : s.range * 0.95)) {
+      // Menzile giris anlik sayilmaz: kalabalikta menzil kenarinda gidip gelen birim sayaci sifirlayamaz.
+      u.rangeT[i] += dt;
+      if (u.rangeT[i] > 0.5) {
+        u.chaseT[i] = 0;
+        u.chaseBest[i] = Infinity;
+      }
+    } else {
+      u.rangeT[i] = 0;
+      if (this.chaseWatchdog(i, t, dist, dt)) return;
     }
 
     if (isMelee(kind)) {
-      if (dist > s.range + MELEE_SLACK) {
+      if (dist > s.range + MELEE_SLACK + tr) {
         // Hedefin etrafinda kisiye ozel bir aciya kosar: herkes ayni noktaya yigilmaz.
         const base = Math.atan2(-dy, -dx) + u.slotAngle[i];
         const reach = s.range * 0.7;
@@ -1376,7 +1389,7 @@ export class Battle {
       this.explode(i);
       return;
     }
-    if (dist > s.range + 0.6) return;
+    if (dist > s.range + 0.6 + (isTank(u.kind[t]) && !isTank(u.kind[i]) ? TANK_REACH : 0)) return;
     const nx = dist > 0.01 ? dx / dist : u.facing[i];
     const ny = dist > 0.01 ? dy / dist : 0;
     const out = this.scratch;
@@ -2030,9 +2043,8 @@ export class Battle {
   }
 
   /** Komsu hucrelerdeki birimlerle ittirme: her cift bir kez islenir (j > i). */
-  private separate(dt: number): void {
+  private separate(): void {
     const u = this.units;
-    const push = Math.min(1, dt * 10 * SEP_STRIDE);
     const phase = this.sepTick++ % SEP_STRIDE;
     const lim = this.mapSize - 0.5;
     const r2 = SEPARATION_RADIUS * SEPARATION_RADIUS;
@@ -2055,47 +2067,85 @@ export class Battle {
       const gy = Math.fround(oy);
       return (gx | 0) !== (fx | 0) && (gy | 0) !== (fy | 0) && (isBad(fx, gy) || isBad(gx, fy));
     };
+    // Yumusak ayrisma: her adimda 1/SEP_STRIDE'i komsu ciftlerden (j > i) itme hizi biriktirir
+    // (i'ye +, j'ye -); tum birimler itme hizini HER adim uygular ve hiz sonumlenir. Karsilikli
+    // sert itmeyle olusan kare-kare titreme boylece olmaz.
+    const maxStep = SEP_MAX_STEP;
+    const sx = u.sepX;
+    const sy = u.sepY;
     for (let i = 0; i < u.count; i++) {
       if (!u.alive[i]) continue;
-      if (i % SEP_STRIDE !== phase) {
-        u.x[i] = Math.min(lim, Math.max(0.5, u.x[i]));
-        u.y[i] = Math.min(lim, Math.max(0.5, u.y[i]));
-        continue;
-      }
-      const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / grid.cell) | 0));
-      const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / grid.cell) | 0));
-      // Itme gecersiz konuma sokarsa yalniz itmeyi geri al (adimdaki hareketi silme).
-      const bx = u.x[i];
-      const by = u.y[i];
-      for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
-        for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
-          const c = gy * cols + gx;
-          for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
-            const j = grid.items[k];
-            if (j <= i || !u.alive[j]) continue;
-            const dx = u.x[j] - u.x[i];
-            const dy = u.y[j] - u.y[i];
-            const d2 = dx * dx + dy * dy;
-            if (d2 >= r2) continue;
-            const d = Math.sqrt(d2) || 0.001;
-            const kk = ((SEPARATION_RADIUS - d) * 0.5 * push) / d;
-            const nx = d2 === 0 ? 1 : dx;
-            u.x[i] -= nx * kk;
-            u.y[i] -= dy * kk;
-            const jx = Math.min(lim, Math.max(0.5, u.x[j] + nx * kk));
-            const jy = Math.min(lim, Math.max(0.5, u.y[j] + dy * kk));
-            if (bad(u.x[j], u.y[j], jx, jy)) continue; // j'yi suya/engele itme
-            u.x[j] = jx;
-            u.y[j] = jy;
+      if (i % SEP_STRIDE === phase) {
+        const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / grid.cell) | 0));
+        const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / grid.cell) | 0));
+        const xi = u.x[i];
+        const yi = u.y[i];
+        // Saldiran birim yerinde durur: komsulari onu az iter (vurus animasyonu oynamayi surdurur).
+        const wi = u.swing[i] > 0 ? 0.35 : 1;
+        for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
+          for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
+            const c = gy * cols + gx;
+            for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
+              const j = grid.items[k];
+              if (j <= i || !u.alive[j]) continue;
+              const dx = xi - u.x[j];
+              const dy = yi - u.y[j];
+              const d2 = dx * dx + dy * dy;
+              if (d2 >= r2) continue;
+              let fx: number;
+              let fy: number;
+              if (d2 < 1e-6) {
+                // Tam ust uste: indekse gore sabit, deterministik bir yon.
+                const a = (i * 2.399963) % 6.283185;
+                fx = Math.cos(a) * SEPARATION_RADIUS * 0.5;
+                fy = Math.sin(a) * SEPARATION_RADIUS * 0.5;
+              } else {
+                const d = Math.sqrt(d2);
+                const f = ((SEPARATION_RADIUS - d) * 0.5) / d;
+                fx = dx * f;
+                fy = dy * f;
+              }
+              const wj = u.swing[j] > 0 ? 0.35 : 1;
+              sx[i] += fx * SEP_GAIN * wi;
+              sy[i] += fy * SEP_GAIN * wi;
+              sx[j] -= fx * SEP_GAIN * wj;
+              sy[j] -= fy * SEP_GAIN * wj;
+            }
           }
         }
       }
-      u.x[i] = Math.min(lim, Math.max(0.5, u.x[i]));
-      u.y[i] = Math.min(lim, Math.max(0.5, u.y[i]));
-      if (bad(bx, by, u.x[i], u.y[i])) {
-        u.x[i] = bx;
-        u.y[i] = by;
+    }
+    for (let i = 0; i < u.count; i++) {
+      if (!u.alive[i]) continue;
+      let vx = sx[i];
+      let vy = sy[i];
+      const m = vx * vx + vy * vy;
+      if (m < 1e-7) {
+        sx[i] = sy[i] = 0;
+        if (u.x[i] > lim || u.y[i] > lim || u.x[i] < 0.5 || u.y[i] < 0.5) {
+          u.x[i] = Math.min(lim, Math.max(0.5, u.x[i]));
+          u.y[i] = Math.min(lim, Math.max(0.5, u.y[i]));
+        }
+        continue;
       }
+      if (m > maxStep * maxStep) {
+        const q = maxStep / Math.sqrt(m);
+        vx *= q;
+        vy *= q;
+      }
+      const bx = u.x[i];
+      const by = u.y[i];
+      let nx = Math.min(lim, Math.max(0.5, bx + vx));
+      let ny = Math.min(lim, Math.max(0.5, by + vy));
+      if (bad(bx, by, nx, ny)) {
+        nx = bx;
+        ny = by;
+        sx[i] = sy[i] = 0;
+      }
+      u.x[i] = nx;
+      u.y[i] = ny;
+      sx[i] *= SEP_DECAY;
+      sy[i] *= SEP_DECAY;
     }
     this.pushAroundTanks(bad);
   }

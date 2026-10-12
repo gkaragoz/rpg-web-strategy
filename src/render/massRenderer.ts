@@ -17,6 +17,8 @@ export interface MassViewport {
   top: number;
   right: number;
   bottom: number;
+  /** Kamera yakinlastirmasi (1 = normal); uzakta animasyon sakinlestirilir. */
+  zoom?: number;
 }
 
 export interface MassOptions {
@@ -53,6 +55,13 @@ export class MassRenderer {
   private arrowParticles: Particle[] = [];
   private barBg: Particle[] = [];
   private barFill: Particle[] = [];
+  /** Birim basina: yuruyus fazi, hareket miktari (0..1, yumusak), son siralama anahtari, suzulmus ekran konumu. */
+  private phase = new Float32Array(0);
+  private moveAmt = new Float32Array(0);
+  private lastKey = new Int32Array(0);
+  private fsx = new Float32Array(0);
+  private fsy = new Float32Array(0);
+  private lastTime = -1;
   private keys = new Int32Array(0);
   private order = new Int32Array(0);
   private counts = new Int32Array(0);
@@ -129,6 +138,13 @@ export class MassRenderer {
         }),
       );
     }
+    this.phase = new Float32Array(u.count);
+    this.moveAmt = new Float32Array(u.count);
+    this.lastKey = new Int32Array(u.count).fill(-1);
+    this.fsx = new Float32Array(u.count);
+    this.fsy = new Float32Array(u.count);
+    for (let i = 0; i < u.count; i++) this.phase[i] = (i * 2.399963) % 6.283185;
+    this.lastTime = -1;
     this.keys = new Int32Array(u.count + this.decorParticles.length);
     this.order = new Int32Array(u.count + this.decorParticles.length);
     this.counts = new Int32Array(Math.ceil(this.sim.mapSize * 2 * DEPTH_SCALE) + 4);
@@ -143,6 +159,13 @@ export class MassRenderer {
     const keys = this.keys;
     const order = this.order;
     let n = 0;
+    const dt = this.lastTime < 0 ? 0 : Math.min(0.1, Math.max(0, time - this.lastTime));
+    this.lastTime = time;
+    const zoom = view.zoom ?? 1;
+    // Uzakta (kucuk piksel) sekme ve poz degisimi titreme gibi gorunur: sakinlestir.
+    const calm = Math.min(1, Math.max(0, (zoom - 0.3) / 0.5));
+    const follow = 1 - Math.exp(-dt * 30);
+    const ease = 1 - Math.exp(-dt * 9);
 
     // 1) Gorunur birimleri topla, konumlari yaz.
     for (let i = 0; i < u.count; i++) {
@@ -150,14 +173,30 @@ export class MassRenderer {
       if (!alive && u.deathT[i] > DEATH_FADE) continue;
       const wx = u.px[i] + (u.x[i] - u.px[i]) * alpha;
       const wy = u.py[i] + (u.y[i] - u.py[i]) * alpha;
-      const sx = isoX(wx, wy);
-      const sy = isoY(wx, wy);
+      let sx = isoX(wx, wy);
+      let sy = isoY(wx, wy);
+      // Hafif alcak gecirgen konum filtresi: sim-ici kucuk titresimler gorunmez (isinlanma: dogrudan).
+      if (this.lastKey[i] >= 0 && dt > 0) {
+        const jx = sx - this.fsx[i];
+        const jy = sy - this.fsy[i];
+        if (jx * jx + jy * jy < 900) {
+          sx = this.fsx[i] + jx * follow;
+          sy = this.fsy[i] + jy * follow;
+        }
+      }
+      this.fsx[i] = sx;
+      this.fsy[i] = sy;
       if (opt.cull && (sx < view.left || sx > view.right || sy < view.top || sy > view.bottom)) continue;
 
       const p = this.particles[i];
       const kind = u.kind[i];
-      const moving = u.moving[i] === 1;
-      const bob = moving ? Math.abs(Math.sin(time * 15 + i)) * 4 : 0;
+      // Hareket miktari yumusak (histerezis): durup kalkan birim her karede poz degistirmez.
+      const target = u.moving[i] === 1 ? 1 : 0;
+      this.moveAmt[i] += (target - this.moveAmt[i]) * ease;
+      const amt = this.moveAmt[i];
+      const moving = amt > 0.55;
+      if (moving) this.phase[i] += dt * 11;
+      const bob = moving ? Math.abs(Math.sin(this.phase[i])) * 4 * calm * amt : 0;
       const swing = u.swing[i] > 0;
       const prog = swing ? 1 - u.swing[i] / STATS[kind].swing : 0;
       let off = 0;
@@ -168,11 +207,11 @@ export class MassRenderer {
       // Poz: saldirida hazirlik/vurus, hareketteyse yuruyus A/B, degilse bekleme.
       let pose = 0;
       if (swing) pose = prog < 0.4 ? 3 : prog < 0.7 ? 4 : 0;
-      else if (moving) pose = (((time * 10 + i) | 0) & 1) === 0 ? 1 : 2;
+      else if (moving && calm > 0.25) pose = Math.sin(this.phase[i]) >= 0 ? 1 : 2;
       p.texture = this.unitTex[(kind * MAX_TEAMS + u.team[i]) * POSES + pose];
       if (alive) {
         p.scaleY = 1;
-        p.rotation = moving ? 0.08 * u.facing[i] : 0;
+        p.rotation = moving ? 0.08 * u.facing[i] * calm * amt : 0;
         p.tint = u.flash[i] > 0 ? 0xff9a9a : u.status[i] !== 0 ? statusTint(u.status[i]) : 0xffffff;
         p.alpha = 1;
       } else {
@@ -181,7 +220,12 @@ export class MassRenderer {
         p.rotation = u.facing[i] * k * 1.2;
         p.scaleY = 1 - k * 0.2;
       }
-      keys[n] = Math.min(this.counts.length - 2, Math.max(0, ((wx + wy) * DEPTH_SCALE) | 0));
+      // Derinlik anahtari histerezisi: kucuk degisimde sira ayni kalir (ust uste birimler titremez).
+      let key = Math.min(this.counts.length - 2, Math.max(0, ((wx + wy) * DEPTH_SCALE) | 0));
+      const lk = this.lastKey[i];
+      if (lk >= 0 && Math.abs(key - lk) < 2) key = lk;
+      this.lastKey[i] = key;
+      keys[n] = key;
       order[n] = i;
       n++;
     }
@@ -251,7 +295,7 @@ export class MassRenderer {
 
   private syncBars(alpha: number, view: MassViewport, enabled: boolean): void {
     const out = this.bars.particleChildren;
-    if (!enabled) {
+    if (!enabled || (view.zoom ?? 1) < 0.3) {
       out.length = 0;
       return;
     }

@@ -410,7 +410,7 @@ export class BattleScene {
     const { camera, app } = this.d;
     const w = app.screen.width / camera.zoom;
     const h = app.screen.height / camera.zoom;
-    return { left: camera.x - w / 2 - 60, right: camera.x + w / 2 + 60, top: camera.y - h / 2 - 100, bottom: camera.y + h / 2 + 40 };
+    return { left: camera.x - w / 2 - 60, right: camera.x + w / 2 + 60, top: camera.y - h / 2 - 100, bottom: camera.y + h / 2 + 40, zoom: camera.zoom };
   }
 
   private wallSeconds(): number {
