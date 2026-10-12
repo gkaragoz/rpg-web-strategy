@@ -609,3 +609,33 @@ input[type='range'] {
   flex: 1;
   padding-inline: 4px;
 }
+
+#debug-panel {
+  position: fixed;
+  left: 8px;
+  top: 8px;
+  z-index: 30;
+  width: 330px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(10, 14, 20, 0.88);
+  color: #d8e2ee;
+  font: 11.5px/1.45 ui-monospace, Consolas, monospace;
+  pointer-events: none;
+}
+#debug-panel .dbg-title {
+  color: #ffa500;
+  margin-bottom: 4px;
+}
+#debug-panel .dbg-sub {
+  color: #9fb0c4;
+  margin-bottom: 4px;
+}
+#debug-panel .dbg-flag {
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ffb3ae;
+}

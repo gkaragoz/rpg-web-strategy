@@ -15,6 +15,7 @@ import { StatsPanel } from './ui/stats';
 // Benchmark ve hata ayiklama parametreleri (stüdyoyu atlar):
 //   ?bench=10000&auto=30  -> takim basina birim, otomatik rapor
 //   ?sim=main             -> sim'i worker yerine ana thread'de calistir
+//   ?debug=1              -> takilma izleme katmani (H/T/P/G tuslari)
 //   ?env=off  ?kite=off  ?seed=3  -> stüdyo ayarlarini gecici olarak ezer
 const loading = document.getElementById('loading');
 
@@ -40,7 +41,9 @@ const benchPer = params.has('bench') ? Math.max(10, Number(params.get('bench')) 
 const autoSeconds = Number(params.get('auto')) || 0;
 const isBench = benchPer > 0;
 const canUseWorker = typeof SharedArrayBuffer !== 'undefined' && self.crossOriginIsolated;
-const useWorker = params.get('sim') !== 'main' && canUseWorker;
+// ?debug=1: takilma izleme katmani sim'e dogrudan erisim ister, bu yuzden sim ana thread'de calisir.
+const debug = params.get('debug') === '1';
+const useWorker = params.get('sim') !== 'main' && canUseWorker && !debug;
 
 const app = new Application();
 await app.init({
@@ -191,6 +194,7 @@ async function startBattle(): Promise<void> {
     seed: state.seed,
     fx: state.options.fx,
     numbers: state.options.numbers,
+    debug,
     onEdit: () => void backToStudio(),
   };
   studio.hide();

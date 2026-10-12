@@ -30,7 +30,12 @@ paleti, asker yerleştirme ve benchmark.
 | Tekerlek, WASD, orta tuş | Yakınlaş, kaydır |
 | Space · R · Esc · 1-2-3 · F3 | (savaşta) duraklat · yeniden başlat · düzenle · hız · istatistik |
 
-**URL parametreleri:** `?bench=10000&auto=30` (benchmark, 30 sn sonra rapor), `?sim=main` (sim ana thread),
+**Debug katmanı (`?debug=1`):** sim ana thread'de çalışır ve test paketindeki takılma dedektörü savaşı canlı izler.
+Sorunlu birim kırmızı nabızlı halka, sıkışan birim turuncu halka, hedefi yasaklanan mor halka alır; sol üstteki panel
+sayaçları (takılan, aktif A* yolu, yasak, leash kırılması) ve son bayrakları (`idleChaser`, `cannotHit`, `oscillation`,
+`noProgress`...) gösterir. Tuşlar: `H` katmanı aç/kapat · `T` hedef çizgileri · `P` A* yolları · `G` kapalı bölgeler.
+
+**URL parametreleri:** `?debug=1`, `?bench=10000&auto=30` (benchmark, 30 sn sonra rapor), `?sim=main` (sim ana thread),
 `?env=off` (çevresiz), `?kite=off` (vur-kaç kapalı), `?seed=3`.
 
 ## Birimler

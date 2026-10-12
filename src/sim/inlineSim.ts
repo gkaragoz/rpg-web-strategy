@@ -9,7 +9,9 @@ const SIM_BUDGET_MS = 12;
 /** Sim'i ana thread'de calistirir (karsilastirma ve worker'siz ortam icin). */
 export class InlineSim implements SimBackend {
   readonly kind = 'inline' as const;
-  private readonly battle: Battle;
+  /** Hata ayiklama: dogrudan Battle erisimi ve her adimdan sonra cagrilan kanca. */
+  readonly battle: Battle;
+  onStep: (() => void) | null = null;
   private acc = 0;
   private speed = 1;
   private paused = false;
@@ -61,6 +63,7 @@ export class InlineSim implements SimBackend {
       while (this.acc >= SIM_DT && steps < MAX_STEPS_PER_FRAME) {
         const s0 = performance.now();
         this.battle.step(SIM_DT);
+        this.onStep?.();
         const ms = performance.now() - s0;
         this.totalMs += ms;
         this.steps++;

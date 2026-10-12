@@ -3,6 +3,7 @@ import type { Camera } from '../camera';
 import { isoX, isoY } from '../iso';
 import type { Atlas } from '../render/atlas';
 import { AudioSystem } from '../render/audio';
+import { DebugOverlay } from '../render/debugOverlay';
 import { FxSystem, type FxQuality } from '../render/fx';
 import { MassRenderer, type MassOptions, type MassViewport } from '../render/massRenderer';
 import { DEATH_FADE, UnitView, type TeamColors } from '../render/unitView';
@@ -32,6 +33,8 @@ export interface BattleOptions {
   /** Efekt kalitesi ('auto': birim sayisina gore) ve yuzen hasar sayilari. */
   fx: 'auto' | FxQuality;
   numbers: boolean;
+  /** ?debug=1: takilma izleme katmani (sim ana thread'de calisir). */
+  debug?: boolean;
   /** Savastan stüdyoya don. */
   onEdit: () => void;
 }
@@ -70,6 +73,7 @@ export class BattleScene {
   private lastHud = 0;
   private resultShown = false;
   private hiddenPaused = false;
+  private debug: DebugOverlay | null = null;
   private initialAlive: number[] = [];
   private initialHp: number[] = [];
   private visHandler: (() => void) | null = null;
@@ -129,6 +133,11 @@ export class BattleScene {
       world.fxLayer.addChild(this.fx.layer, this.fx.numbers);
     }
 
+    if (opts.debug && this.sim instanceof InlineSim) {
+      this.debug = new DebugOverlay(this.sim.battle, world);
+      this.sim.onStep = () => this.debug?.onStep();
+    }
+
     this.buildHud();
     this.keyHandler = (e) => this.onKey(e);
     window.addEventListener('keydown', this.keyHandler);
@@ -162,6 +171,10 @@ export class BattleScene {
       a.shadow.destroy();
     }
     this.arrowViews = [];
+    if (this.debug) {
+      this.debug.destroy();
+      this.debug = null;
+    }
     if (this.fx) {
       this.fx.layer.destroy();
       this.fx.numbers.destroy({ children: true });
@@ -336,6 +349,7 @@ export class BattleScene {
     this.sim.events.length = 0;
     if (this.mass) this.syncMass(info.alpha);
     else this.syncViews(dt, info.alpha);
+    this.debug?.update(info.alpha);
     app.render();
     const t2 = performance.now();
 
