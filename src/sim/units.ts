@@ -1,5 +1,15 @@
-export const Team = { Blue: 0, Red: 1 } as const;
-export const Kind = { Warrior: 0, Archer: 1, Priest: 2 } as const;
+export const MAX_TEAMS = 6;
+export const Kind = { Warrior: 0, Archer: 1, Priest: 2, Shield: 3, Brute: 4 } as const;
+export const KIND_COUNT = 5;
+
+/** Yakin-dovus birimleri: Savasci, Kalkan Tanki, Cekic Tanki. */
+export function isMelee(kind: number): boolean {
+  return kind === Kind.Warrior || kind >= Kind.Shield;
+}
+/** Tanklar (2x boyut, alan etkili). */
+export function isTank(kind: number): boolean {
+  return kind >= Kind.Shield;
+}
 
 export interface KindStats {
   name: string;
@@ -13,13 +23,39 @@ export interface KindStats {
   swing: number;
   /** Animasyonun basindan etkinin uygulandigi ana kadar gecen sure. */
   hitAt: number;
+  /** Gelen hasari bu oranda azaltir (0..1). */
+  armor: number;
+  /** Cizim olcegi carpani (tank = 2). */
+  scale: number;
+  /** Alan etkisi: Kalkan = koni uzunlugu, Cekic = daire yaricapi (tile). */
+  aoe: number;
+  /** Alan etkisiyle geri itme mesafesi (tile). Cekic = Kalkan'in yarisi. */
+  knockback: number;
 }
 
 export const STATS: KindStats[] = [
-  { name: 'Warrior', hp: 160, speed: 3.0, range: 1.0, power: 16, cooldown: 0.9, swing: 0.35, hitAt: 0.2 },
-  { name: 'Archer', hp: 80, speed: 2.4, range: 9, power: 13, cooldown: 1.4, swing: 0.4, hitAt: 0.25 },
-  { name: 'Priest', hp: 90, speed: 2.6, range: 6.5, power: 14, cooldown: 1.8, swing: 0.5, hitAt: 0.3 },
+  { name: 'Savaşçı', hp: 160, speed: 3.0, range: 1.0, power: 16, cooldown: 0.9, swing: 0.35, hitAt: 0.2, armor: 0, scale: 1, aoe: 0, knockback: 0 },
+  { name: 'Okçu', hp: 80, speed: 2.4, range: 9, power: 13, cooldown: 1.4, swing: 0.4, hitAt: 0.25, armor: 0, scale: 1, aoe: 0, knockback: 0 },
+  { name: 'Rahip', hp: 90, speed: 2.6, range: 6.5, power: 14, cooldown: 1.8, swing: 0.5, hitAt: 0.3, armor: 0, scale: 1, aoe: 0, knockback: 0 },
+  // Kalkan Tanki: onundeki konide itme (guclu knockback).
+  { name: 'Kalkan Tankı', hp: 520, speed: 1.9, range: 1.5, power: 12, cooldown: 1.6, swing: 0.5, hitAt: 0.28, armor: 0.35, scale: 2, aoe: 2.6, knockback: 3.0 },
+  // Cekic Tanki: cevresinde daire darbe; knockback Kalkan'in yarisi.
+  { name: 'Çekiç Tankı', hp: 460, speed: 2.1, range: 1.8, power: 22, cooldown: 2.0, swing: 0.6, hitAt: 0.35, armor: 0.2, scale: 2, aoe: 2.2, knockback: 1.5 },
 ];
+
+/** Tank etki sabitleri. */
+export const TANK = {
+  /** Kalkan itmesi yari acisi icin cos(60 derece). */
+  coneCos: 0.5,
+  stun: 0.3,
+  /** Itme hizi adim basina bu oranda soner (30 Hz). */
+  kbDecay: 0.7,
+  /** Hedef puaninda tank bonusu (daha kucuk = daha cekici) ve tank icin melee yuva sayisi. */
+  tauntBonus: 5,
+  meleeSlots: 5,
+  /** Tank yakinindaki birimleri itme yaricapi. */
+  pushRadius: 1.8,
+};
 
 /** Vur-kac (kite) ve yol bulma ayarlari: tek yerde, kolay ayar. */
 export const KITE = {
@@ -84,6 +120,10 @@ export class Units {
   stuckT: Float32Array;
   sideT: Float32Array;
   sideDir: Int8Array;
+  /** Geri itme hizi (tile/sn) ve sersemleme suresi. */
+  kbVx: Float32Array;
+  kbVy: Float32Array;
+  stunT: Float32Array;
 
   constructor(cap: number) {
     this.cap = cap;
@@ -120,6 +160,9 @@ export class Units {
     this.stuckT = new Float32Array(cap);
     this.sideT = new Float32Array(cap);
     this.sideDir = new Int8Array(cap);
+    this.kbVx = new Float32Array(cap);
+    this.kbVy = new Float32Array(cap);
+    this.stunT = new Float32Array(cap);
   }
 
   clear(): void {
@@ -145,7 +188,7 @@ export class Units {
     this.hitPending[i] = 0;
     this.flash[i] = 0;
     this.deathT[i] = 0;
-    this.facing[i] = team === Team.Blue ? 1 : -1;
+    this.facing[i] = team % 2 === 0 ? 1 : -1;
     this.moving[i] = 0;
     this.slotAngle[i] = (rand() * 2 - 1) * 1.3;
     this.stamina[i] = 1;
@@ -156,6 +199,8 @@ export class Units {
     this.routePhase[i] = 0;
     this.stuckT[i] = this.sideT[i] = 0;
     this.sideDir[i] = 1;
+    this.kbVx[i] = this.kbVy[i] = 0;
+    this.stunT[i] = 0;
     return i;
   }
 }

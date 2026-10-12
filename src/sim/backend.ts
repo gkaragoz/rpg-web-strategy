@@ -45,7 +45,7 @@ export interface SimBackend {
   readonly units: UnitsView;
   readonly projectiles: ProjView;
   readonly events: SimEvent[];
-  readonly alivePerTeam: [number, number];
+  readonly alivePerTeam: number[];
   winner: number;
   time: number;
   /** Her render karesinde cagrilir: inline'da sim'i ilerletir, worker'da son goruntuyu baglar. */
@@ -55,6 +55,8 @@ export interface SimBackend {
   setPaused(paused: boolean): void;
   resetStats(): void;
   stats(): SimStats;
+  /** Worker'i sonlandirir / kaynaklari birakir. */
+  dispose(): void;
 }
 
 export type SimView = Pick<SimBackend, 'units' | 'projectiles' | 'mapSize'>;

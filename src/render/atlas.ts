@@ -1,6 +1,7 @@
 import { Container, Graphics, Rectangle, Texture, type Renderer } from 'pixi.js';
 import type { DecorKind } from '../sim/terrain';
-import { UnitView } from './unitView';
+import { KIND_COUNT, MAX_TEAMS, STATS } from '../sim/units';
+import { UnitView, type TeamColors } from './unitView';
 
 const SHEET_W = 1024;
 const PAD = 3;
@@ -13,11 +14,15 @@ export interface Sprite9 {
 }
 
 export interface Atlas {
-  /** [kind*4 + team*2 + pose] */
+  /** [(kind*MAX_TEAMS + team)*2 + pose] */
   unitTex: Texture[];
+  /** unitTex ile ayni indeks: dokunun yere bastigi nokta (0..1). */
+  unitAnchor: Array<{ ax: number; ay: number }>;
   arrowTex: Texture;
   pixelTex: Texture;
   decor: Record<DecorKind, Sprite9[]>;
+  /** Atlas dokusunu GPU'dan birakir (palet degisince eskisi icin). */
+  dispose: () => void;
 }
 
 interface Item {
@@ -118,30 +123,40 @@ function drawRubble(g: Graphics, style: number): void {
 }
 
 /** Birim, ok ve dekor dokularini tek bir atlas dokusunda pisirir (ParticleContainer tek doku ister). */
-export function bakeAtlas(renderer: Renderer): Atlas {
+export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[]): Atlas {
   const items: Item[] = [];
   const unitTex: Texture[] = [];
+  const unitAnchor: Array<{ ax: number; ay: number }> = [];
   const decor: Record<DecorKind, Sprite9[]> = { tree: [], rock: [], boulder: [], house: [], wall: [], rubble: [] };
   let arrowTex!: Texture;
   let pixelTex!: Texture;
 
-  // Birimler: kind*4 + team*2 + pose
-  for (let kind = 0; kind < 3; kind++) {
-    for (let team = 0; team < 2; team++) {
+  // Birimler: (kind*MAX_TEAMS + team)*2 + poz. Tanklar 2x buyuk hucre kullanir.
+  const teams = Math.min(MAX_TEAMS, Math.max(1, teamColors.length));
+  for (let kind = 0; kind < KIND_COUNT; kind++) {
+    const k = STATS[kind].scale;
+    const w = 64 * k;
+    const h = 96 * k;
+    const ax = 32 * k;
+    const ay = 80 * k;
+    for (let team = 0; team < teams; team++) {
       for (let pose = 0; pose < 2; pose++) {
-        const idx = kind * 4 + team * 2 + pose;
+        const idx = (kind * MAX_TEAMS + team) * 2 + pose;
         items.push({
-          w: 64,
-          h: 96,
-          ax: 32,
-          ay: 80,
+          w,
+          h,
+          ax,
+          ay,
           draw: (c, x, y) => {
-            const view = new UnitView(kind, team, 0);
+            const view = new UnitView(kind, teamColors[team], 0);
             view.update({ hp: 1, maxHp: 1, facing: 1, moving: false, swingProgress: pose ? 0.55 : -1, flash: false, deathT: -1 }, 0, 0);
-            view.root.position.set(x + 32, y + 80);
+            view.root.position.set(x + ax, y + ay);
             c.addChild(view.root);
           },
-          done: (t) => (unitTex[idx] = t),
+          done: (t) => {
+            unitTex[idx] = t;
+            unitAnchor[idx] = { ax: ax / w, ay: ay / h };
+          },
         });
       }
     }
@@ -223,10 +238,12 @@ export function bakeAtlas(renderer: Renderer): Atlas {
     rowH = Math.max(rowH, item.h);
   }
   const sheetH = y + rowH + PAD;
-  const atlas = renderer.generateTexture({ target: sheet, frame: new Rectangle(0, 0, SHEET_W, sheetH), resolution: 2, antialias: true });
+  // GPU doku siniri: cok yuksek atlas'ta cozunurluk 1'e iner.
+  const resolution = sheetH * 2 > 4096 ? 1 : 2;
+  const atlas = renderer.generateTexture({ target: sheet, frame: new Rectangle(0, 0, SHEET_W, sheetH), resolution, antialias: true });
   sheet.destroy({ children: true });
   for (const { item, x: px, y: py } of placed) {
     item.done(new Texture({ source: atlas.source, frame: new Rectangle(px, py, item.w, item.h) }));
   }
-  return { unitTex, arrowTex, pixelTex, decor };
+  return { unitTex, unitAnchor, arrowTex, pixelTex, decor, dispose: () => atlas.destroy(true) };
 }

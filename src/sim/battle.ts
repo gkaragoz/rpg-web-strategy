@@ -1,6 +1,6 @@
 import { Grid } from './grid';
 import { Terrain, T_BLOCKED, T_WATER } from './terrain';
-import { KITE, Kind, STATS, Team, Units } from './units';
+import { KITE, Kind, MAX_TEAMS, STATS, TANK, Units, isMelee, isTank } from './units';
 import { Projectiles } from './projectiles';
 import { mulberry32 } from './random';
 
@@ -26,16 +26,25 @@ const DEMO_GAP_HALF = 9;
 const BENCH_GAP = 24;
 
 export interface SimEvent {
-  type: 'heal' | 'death';
+  type: 'heal' | 'death' | 'bash' | 'slam';
   x: number;
   y: number;
   unit: number;
+  /** bash: itme yonu (radyan, dunya x/y duzleminde). */
+  angle?: number;
 }
 
 export interface BattleConfig {
-  /** 'demo': 10v10 el yapimi dizilim, 'bench': takim basina perTeam birim blok dizilimi. */
-  mode: 'demo' | 'bench';
+  /** 'demo': 10v10 el yapimi dizilim, 'bench': takim basina perTeam birim blok dizilimi,
+   *  'custom': kullanicinin yerlestirdigi `layout`. */
+  mode: 'demo' | 'bench' | 'custom';
   perTeam: number;
+  /** Takim sayisi (2..6); varsayilan 2. */
+  teamCount?: number;
+  /** custom: harita boyutu (tile). */
+  mapSize?: number;
+  /** custom: birimler, 4'lu gruplar halinde (takim, tur, x, y). */
+  layout?: Float32Array;
   /** false: cevre (nehir, engeller) yok, eski cıplak harita. Varsayilan true. */
   env?: boolean;
   /** Harita tohumu. */
@@ -67,20 +76,25 @@ export class Battle {
     stuck: 0,
     cornered: 0,
   };
-  readonly alivePerTeam = [0, 0];
+  readonly alivePerTeam: number[] = new Array(MAX_TEAMS).fill(0);
   private rng: () => number = Math.random;
   private get kiteOn(): boolean {
     return this.config.kite !== false;
   }
   private stepNo = 0;
   private lastDeathTime = 0;
-  private readonly centroidX = [0, 0];
-  private readonly centroidY = [0, 0];
-  /** Warrior merkezi (cizgi sinirı); warrior yoksa takim merkezi. */
-  private readonly frontX = [0, 0];
-  private readonly frontY = [0, 0];
-  private readonly hasFront = [false, false];
-  private readonly grids: [Grid, Grid];
+  private readonly centroidX: number[] = new Array(MAX_TEAMS).fill(0);
+  private readonly centroidY: number[] = new Array(MAX_TEAMS).fill(0);
+  /** Yakin-dovus merkezi (cizgi siniri); melee yoksa takim merkezi. */
+  private readonly frontX: number[] = new Array(MAX_TEAMS).fill(0);
+  private readonly frontY: number[] = new Array(MAX_TEAMS).fill(0);
+  private readonly hasFront: boolean[] = new Array(MAX_TEAMS).fill(false);
+  /** Takim basina en yakin canli dusman takim (-1: yok) ve canli dusman takim listesi. */
+  private readonly nearestEnemy = new Int8Array(MAX_TEAMS).fill(-1);
+  private readonly enemyList: number[][] = Array.from({ length: MAX_TEAMS }, () => []);
+  private readonly teamCount: number;
+  private readonly selfList: number[][] = Array.from({ length: MAX_TEAMS }, (_, t) => [t]);
+  private readonly grids: Grid[];
   private readonly sepGrid: Grid;
   private sepTick = 0;
   private rx = 0;
@@ -95,14 +109,15 @@ export class Battle {
     this.terrain = terrainFor(config);
     this.units = new Units(total);
     this.projectiles = new Projectiles(projectileCapacity(config));
-    this.grids = [new Grid(this.mapSize, GRID_CELL, total), new Grid(this.mapSize, GRID_CELL, total)];
+    this.teamCount = Math.min(MAX_TEAMS, Math.max(2, config.teamCount ?? 2));
+    this.grids = Array.from({ length: this.teamCount }, () => new Grid(this.mapSize, GRID_CELL, total));
     this.sepGrid = new Grid(this.mapSize, SEP_CELL, total);
     this.reset(seed);
   }
 
   /** Bench modunda olum/iyilestirme olaylari uretilmez (render bunlari kullanmaz). */
   private get emitEvents(): boolean {
-    return this.config.mode === 'demo';
+    return this.config.mode !== 'bench';
   }
 
   reset(seed: number): void {
@@ -115,14 +130,35 @@ export class Battle {
     this.stepNo = 0;
     this.lastDeathTime = 0;
     for (const k of DBG_KEYS) this.dbg[k] = 0;
-    if (this.config.mode === 'bench') {
-      this.spawnBenchArmy(Team.Blue, -1);
-      this.spawnBenchArmy(Team.Red, 1);
+    if (this.config.mode === 'custom') {
+      this.spawnLayout();
+    } else if (this.config.mode === 'bench') {
+      this.spawnBenchArmy(0, -1);
+      this.spawnBenchArmy(1, 1);
     } else {
-      this.spawnArmy(Team.Blue, -1);
-      this.spawnArmy(Team.Red, 1);
+      this.spawnArmy(0, -1);
+      this.spawnArmy(1, 1);
     }
     this.countAlive();
+  }
+
+  /** Kullanicinin yerlestirdigi birimler. */
+  private spawnLayout(): void {
+    const L = this.config.layout;
+    if (!L) return;
+    for (let k = 0; k + 3 < L.length; k += 4) {
+      let x = L[k + 2];
+      let y = L[k + 3];
+      // Tohum degisince su/engel altinda kalan birim en yakin yurunebilir noktaya tasinir.
+      if (this.terrain && !this.terrain.walkable(x, y)) {
+        const p = this.terrain.nearestWalkable(x, y);
+        if (!p) continue;
+        x = p.x;
+        y = p.y;
+      }
+      const i = this.units.spawn(L[k] | 0, L[k + 1] | 0, x, y, this.rng);
+      this.units.retarget[i] = this.rng() * 1.5;
+    }
   }
 
   /** Ordular ekranda yatay (x-y ekseni) boyunca karsilikli dizilir; nehir aralarindadir. */
@@ -170,7 +206,7 @@ export class Battle {
 
   private countAlive(): void {
     const u = this.units;
-    this.alivePerTeam[0] = this.alivePerTeam[1] = 0;
+    this.alivePerTeam.fill(0);
     for (let i = 0; i < u.count; i++) if (u.alive[i]) this.alivePerTeam[u.team[i]]++;
   }
 
@@ -183,11 +219,12 @@ export class Battle {
 
     u.attackers.fill(0, 0, u.count);
     u.healers.fill(0, 0, u.count);
-    this.centroidX[0] = this.centroidX[1] = this.centroidY[0] = this.centroidY[1] = 0;
-    const n = [0, 0];
-    const wx = [0, 0];
-    const wy = [0, 0];
-    const wn = [0, 0];
+    this.centroidX.fill(0);
+    this.centroidY.fill(0);
+    const n = new Array(MAX_TEAMS).fill(0);
+    const wx = new Array(MAX_TEAMS).fill(0);
+    const wy = new Array(MAX_TEAMS).fill(0);
+    const wn = new Array(MAX_TEAMS).fill(0);
     for (let i = 0; i < u.count; i++) {
       if (!u.alive[i]) {
         u.deathT[i] += dt;
@@ -211,13 +248,13 @@ export class Battle {
       this.centroidX[tm] += u.x[i];
       this.centroidY[tm] += u.y[i];
       n[tm]++;
-      if (u.kind[i] === Kind.Warrior) {
+      if (isMelee(u.kind[i])) {
         wx[tm] += u.x[i];
         wy[tm] += u.y[i];
         wn[tm]++;
       }
     }
-    for (let tm = 0; tm < 2; tm++) {
+    for (let tm = 0; tm < this.teamCount; tm++) {
       if (n[tm] > 0) {
         this.centroidX[tm] /= n[tm];
         this.centroidY[tm] /= n[tm];
@@ -226,12 +263,30 @@ export class Battle {
       this.frontX[tm] = wn[tm] > 0 ? wx[tm] / wn[tm] : this.centroidX[tm];
       this.frontY[tm] = wn[tm] > 0 ? wy[tm] / wn[tm] : this.centroidY[tm];
     }
+    // Canli dusman takim listesi ve en yakin dusman takim (merkez uzakligina gore).
+    for (let tm = 0; tm < this.teamCount; tm++) {
+      const list = this.enemyList[tm];
+      list.length = 0;
+      let best = -1;
+      let bestD = Infinity;
+      for (let e = 0; e < this.teamCount; e++) {
+        if (e === tm || n[e] === 0) continue;
+        list.push(e);
+        const dx = this.centroidX[e] - this.centroidX[tm];
+        const dy = this.centroidY[e] - this.centroidY[tm];
+        const d = dx * dx + dy * dy;
+        if (d < bestD) {
+          bestD = d;
+          best = e;
+        }
+      }
+      this.nearestEnemy[tm] = best;
+    }
 
     let tn = performance.now();
     pf.prep += tn - tp;
     tp = tn;
-    this.grids[0].build(u, 0);
-    this.grids[1].build(u, 1);
+    for (let tm = 0; tm < this.teamCount; tm++) this.grids[tm].build(u, tm);
     this.sepGrid.build(u, -1);
     tn = performance.now();
     pf.grid += tn - tp;
@@ -259,8 +314,17 @@ export class Battle {
     pf.steps++;
     this.countAlive();
     if (this.winner < 0) {
-      if (this.alivePerTeam[Team.Blue] === 0) this.winner = Team.Red;
-      else if (this.alivePerTeam[Team.Red] === 0) this.winner = Team.Blue;
+      // Kazanan: canli birimi olan son takim (hepsi olurse -2: berabere).
+      let alive = 0;
+      let last = -1;
+      for (let tm = 0; tm < this.teamCount; tm++) {
+        if (this.alivePerTeam[tm] > 0) {
+          alive++;
+          last = tm;
+        }
+      }
+      if (alive === 1) this.winner = last;
+      else if (alive === 0) this.winner = -2;
     }
   }
 
@@ -276,10 +340,19 @@ export class Battle {
     const u = this.units;
     const kind = u.kind[i];
     const s = STATS[kind];
-    const ranged = kind !== Kind.Warrior;
+    const ranged = !isMelee(kind);
     u.cooldown[i] -= dt;
     u.retarget[i] -= dt;
     if (u.sideT[i] > 0) u.sideT[i] -= dt;
+
+    // Geri itilen/sersemleyen birim bu adimda eylem yapamaz.
+    if (u.kbVx[i] !== 0 || u.kbVy[i] !== 0) this.applyKnockback(i, dt);
+    if (u.stunT[i] > 0) {
+      u.stunT[i] -= dt;
+      u.swing[i] = 0;
+      u.hitPending[i] = 0;
+      return;
+    }
 
     if (ranged && this.kiteOn) {
       this.updateThreat(i);
@@ -317,7 +390,7 @@ export class Battle {
     const dy = u.y[t] - u.y[i];
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    if (kind === Kind.Warrior) {
+    if (isMelee(kind)) {
       if (dist > s.range) {
         // Hedefin etrafinda kisiye ozel bir aciya kosar: herkes ayni noktaya yigilmaz.
         const base = Math.atan2(-dy, -dx) + u.slotAngle[i];
@@ -328,13 +401,17 @@ export class Battle {
     } else if (dist > s.range * 0.95) {
       if (kind === Kind.Priest && this.kiteOn) {
         // Hastaya arkasindan yaklas: dusmandan uzakta dur.
-        const en = 1 - u.team[i];
-        let ax = u.x[t] - this.centroidX[en];
-        let ay = u.y[t] - this.centroidY[en];
-        const len = Math.sqrt(ax * ax + ay * ay) || 1;
-        ax /= len;
-        ay /= len;
-        this.moveToward(i, u.x[t] + ax * 3, u.y[t] + ay * 3, s.speed, dt);
+        const en = this.nearestEnemy[u.team[i]];
+        if (en >= 0) {
+          let ax = u.x[t] - this.centroidX[en];
+          let ay = u.y[t] - this.centroidY[en];
+          const len = Math.sqrt(ax * ax + ay * ay) || 1;
+          ax /= len;
+          ay /= len;
+          this.moveToward(i, u.x[t] + ax * 3, u.y[t] + ay * 3, s.speed, dt);
+        } else {
+          this.moveToward(i, u.x[t], u.y[t], s.speed, dt);
+        }
       } else if (this.beyondLeash(i)) {
         this.faceTo(i, dx, dy);
       } else {
@@ -353,29 +430,33 @@ export class Battle {
     const u = this.units;
     const danger = u.kind[i] === Kind.Archer ? KITE.archerDanger : KITE.priestDanger;
     const d2max = danger * danger;
-    const grid = this.grids[1 - u.team[i]];
-    const cols = grid.cols;
-    const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / grid.cell) | 0));
-    const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / grid.cell) | 0));
+    const enemies = this.enemyList[u.team[i]];
+    const g0 = this.grids[0];
+    const cols = g0.cols;
+    const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / g0.cell) | 0));
+    const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / g0.cell) | 0));
     const xi = u.x[i];
     const yi = u.y[i];
     let best = Infinity;
     let ax = 0;
     let ay = 0;
-    for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
-      for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
-        const c = gy * cols + gx;
-        for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
-          const j = grid.items[k];
-          if (u.kind[j] !== Kind.Warrior) continue;
-          const dx = xi - u.x[j];
-          const dy = yi - u.y[j];
-          const d2 = dx * dx + dy * dy;
-          if (d2 >= d2max) continue;
-          const w = 1 / (d2 + 0.5);
-          ax += dx * w;
-          ay += dy * w;
-          if (d2 < best) best = d2;
+    for (let e = 0; e < enemies.length; e++) {
+      const grid = this.grids[enemies[e]];
+      for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
+        for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
+          const c = gy * cols + gx;
+          for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
+            const j = grid.items[k];
+            if (!isMelee(u.kind[j])) continue;
+            const dx = xi - u.x[j];
+            const dy = yi - u.y[j];
+            const d2 = dx * dx + dy * dy;
+            if (d2 >= d2max) continue;
+            const w = 1 / (d2 + 0.5);
+            ax += dx * w;
+            ay += dy * w;
+            if (d2 < best) best = d2;
+          }
         }
       }
     }
@@ -459,7 +540,8 @@ export class Battle {
     const u = this.units;
     const tm = u.team[i];
     if (!this.kiteOn || !this.hasFront[tm]) return false;
-    const en = 1 - tm;
+    const en = this.nearestEnemy[tm];
+    if (en < 0) return false;
     let ex = this.centroidX[en] - this.frontX[tm];
     let ey = this.centroidY[en] - this.frontY[tm];
     const len = Math.sqrt(ex * ex + ey * ey);
@@ -475,11 +557,14 @@ export class Battle {
     const team = u.team[i];
     const cur = u.target[i];
     const isPriest = kind === Kind.Priest;
-    const grid = this.grids[isPriest ? team : 1 - team];
+    const melee = isMelee(kind);
+    // Priest muttefik, digerleri tum dusman takimlari tarar.
+    const searchTeams = isPriest ? this.selfList[team] : this.enemyList[team];
     const maxRing = isPriest ? PRIEST_RING : MAX_RING;
-    const cols = grid.cols;
-    const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / grid.cell) | 0));
-    const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / grid.cell) | 0));
+    const g0 = this.grids[0];
+    const cols = g0.cols;
+    const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / g0.cell) | 0));
+    const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / g0.cell) | 0));
     const terrain = this.terrain;
     const sideI = terrain ? terrain.sideAt(u.x[i], u.y[i]) : 0;
     const reach = STATS[kind].range * 0.95;
@@ -496,34 +581,39 @@ export class Battle {
         for (let gx = cx - r; gx <= cx + r; gx += step) {
           if (gx < 0 || gx >= cols) continue;
           const c = gy * cols + gx;
-          for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
-            const j = grid.items[k];
-            if (j === i || (isPriest && u.hp[j] >= u.maxHp[j])) continue;
-            const ddx = u.x[j] - u.x[i];
-            const ddy = u.y[j] - u.y[i];
-            const dist = Math.sqrt(ddx * ddx + ddy * ddy);
-            const jitter = this.rng();
-            let score: number;
-            if (kind === Kind.Warrior) {
-              const att = u.attackers[j] - (j === cur ? 1 : 0);
-              score = dist + att * 3.5 + jitter * 2 + (att >= MELEE_SLOTS ? 100 : 0);
-            } else if (kind === Kind.Archer) {
-              const att = u.attackers[j] - (j === cur ? 1 : 0);
-              score = dist + att * 2 + (u.hp[j] / u.maxHp[j]) * 3 + jitter * 2;
-            } else {
-              const heal = u.healers[j] - (j === cur ? 1 : 0);
-              score = (u.hp[j] / u.maxHp[j]) * 10 + dist * 0.3 + heal * 4 + jitter;
+          for (let ti = 0; ti < searchTeams.length; ti++) {
+            const grid = this.grids[searchTeams[ti]];
+            for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
+              const j = grid.items[k];
+              if (j === i || (isPriest && u.hp[j] >= u.maxHp[j])) continue;
+              const ddx = u.x[j] - u.x[i];
+              const ddy = u.y[j] - u.y[i];
+              const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+              const jitter = this.rng();
+              const tank = isTank(u.kind[j]);
+              let score: number;
+              if (melee) {
+                const att = u.attackers[j] - (j === cur ? 1 : 0);
+                score = dist + att * 3.5 + jitter * 2 + (att >= (tank ? TANK.meleeSlots : MELEE_SLOTS) ? 100 : 0);
+                if (tank) score -= TANK.tauntBonus; // tank dusmani uzerine ceker
+              } else if (kind === Kind.Archer) {
+                const att = u.attackers[j] - (j === cur ? 1 : 0);
+                score = dist + att * 2 + (u.hp[j] / u.maxHp[j]) * 3 + jitter * 2;
+              } else {
+                const heal = u.healers[j] - (j === cur ? 1 : 0);
+                score = (u.hp[j] / u.maxHp[j]) * 10 + dist * 0.3 + heal * 4 + jitter;
+              }
+              // Nehrin karsisindaki hedefe sadece gerekirse: okcu menzildeyse nehir uzerinden vurur.
+              if (terrain && (melee || isPriest || dist > reach) && terrain.sideAt(u.x[j], u.y[j]) !== sideI) {
+                score += OTHER_BANK_PENALTY;
+              }
+              if (j === cur) score -= 2.5;
+              if (score < bestScore) {
+                bestScore = score;
+                best = j;
+              }
+              if (foundRing < 0) foundRing = r;
             }
-            // Nehrin karsisindaki hedefe sadece gerekirse: okcu menzildeyse nehir uzerinden vurur.
-            if (terrain && (kind === Kind.Warrior || isPriest || dist > reach) && terrain.sideAt(u.x[j], u.y[j]) !== sideI) {
-              score += OTHER_BANK_PENALTY;
-            }
-            if (j === cur) score -= 2.5;
-            if (score < bestScore) {
-              bestScore = score;
-              best = j;
-            }
-            if (foundRing < 0) foundRing = r;
           }
         }
       }
@@ -542,16 +632,17 @@ export class Battle {
 
   private marchToEnemy(i: number, dt: number): void {
     const u = this.units;
-    const en = 1 - u.team[i];
-    if (this.alivePerTeam[en] === 0) return;
-    if (u.kind[i] !== Kind.Warrior && this.beyondLeash(i)) return;
+    const en = this.nearestEnemy[u.team[i]];
+    if (en < 0) return;
+    if (!isMelee(u.kind[i]) && this.beyondLeash(i)) return;
     this.moveToward(i, this.centroidX[en], this.centroidY[en], STATS[u.kind[i]].speed, dt);
   }
 
   private followArmy(i: number, dt: number): void {
     const u = this.units;
     const tm = u.team[i];
-    const en = 1 - tm;
+    const en = this.nearestEnemy[tm];
+    if (en < 0) return;
     let ax = this.centroidX[tm] - this.centroidX[en];
     let ay = this.centroidY[tm] - this.centroidY[en];
     const len = Math.sqrt(ax * ax + ay * ay) || 1;
@@ -575,6 +666,10 @@ export class Battle {
 
     if (u.kind[i] === Kind.Warrior) {
       if (dist <= s.range + 0.6) this.damage(t, s.power);
+    } else if (u.kind[i] === Kind.Shield) {
+      this.shieldBash(i, dx, dy, dist);
+    } else if (u.kind[i] === Kind.Brute) {
+      this.bruteSlam(i);
     } else if (u.kind[i] === Kind.Archer) {
       const flight = Math.max(0.25, dist / ARROW_SPEED);
       // Hareketli hedefe on tahminle atar; tahmin tutmazsa ok kacirir.
@@ -587,26 +682,122 @@ export class Battle {
     }
   }
 
+  /** Kalkan Tanki: onundeki konide hasar + guclu geri itme. */
+  private shieldBash(i: number, dx: number, dy: number, dist: number): void {
+    const u = this.units;
+    const s = STATS[Kind.Shield];
+    let fx = dx;
+    let fy = dy;
+    if (dist > 0.01) {
+      fx /= dist;
+      fy /= dist;
+    } else {
+      fx = u.facing[i];
+      fy = -u.facing[i];
+    }
+    this.areaStrike(i, s.aoe, s.power, s.knockback, fx, fy, true);
+    if (this.emitEvents) this.events.push({ type: 'bash', x: u.x[i], y: u.y[i], unit: i, angle: Math.atan2(fy, fx) });
+  }
+
+  /** Cekic Tanki: cevresinde daire darbe; hayatta kalanlar yariya kadar geri itilir. */
+  private bruteSlam(i: number): void {
+    const u = this.units;
+    const s = STATS[Kind.Brute];
+    this.areaStrike(i, s.aoe, s.power, s.knockback, 0, 0, false);
+    if (this.emitEvents) this.events.push({ type: 'slam', x: u.x[i], y: u.y[i], unit: i });
+  }
+
+  /** Dusman gridlerinde tank cevresindeki hucreleri tarar: hasar + knockback (koni veya daire). */
+  private areaStrike(i: number, radius: number, power: number, push: number, fx: number, fy: number, cone: boolean): void {
+    const u = this.units;
+    const ax = u.x[i];
+    const ay = u.y[i];
+    const enemies = this.enemyList[u.team[i]];
+    const g0 = this.grids[0];
+    const cols = g0.cols;
+    const cx = Math.min(cols - 1, Math.max(0, (ax / g0.cell) | 0));
+    const cy = Math.min(cols - 1, Math.max(0, (ay / g0.cell) | 0));
+    const victims: number[] = [];
+    for (let e = 0; e < enemies.length; e++) {
+      const grid = this.grids[enemies[e]];
+      for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
+        for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
+          const c = gy * cols + gx;
+          for (let k = grid.start[c]; k < grid.start[c + 1]; k++) victims.push(grid.items[k]);
+        }
+      }
+    }
+    for (const j of victims) {
+      if (!u.alive[j]) continue;
+      const dx = u.x[j] - ax;
+      const dy = u.y[j] - ay;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d > radius) continue;
+      let ux = d > 0.01 ? dx / d : 1;
+      let uy = d > 0.01 ? dy / d : 0;
+      if (cone && d > 0.01 && (dx * fx + dy * fy) / d < TANK.coneCos) continue;
+      this.damage(j, power);
+      if (!u.alive[j]) continue;
+      if (cone) {
+        ux = fx;
+        uy = fy;
+      }
+      // Tank olan kurban iki kat daha az itilir.
+      const amount = isTank(u.kind[j]) ? push * 0.5 : push;
+      u.kbVx[j] = ux * amount * 9;
+      u.kbVy[j] = uy * amount * 9;
+      u.stunT[j] = TANK.stun;
+    }
+  }
+
+  /** Geri itme hizini uygular: yurunemez karoya itilmez, hiz adim basina soner. */
+  private applyKnockback(i: number, dt: number): void {
+    const u = this.units;
+    const t = this.terrain;
+    const ox = u.x[i];
+    const oy = u.y[i];
+    let nx = Math.fround(Math.min(this.mapSize - 0.5, Math.max(0.5, ox + u.kbVx[i] * dt)));
+    let ny = Math.fround(Math.min(this.mapSize - 0.5, Math.max(0.5, oy + u.kbVy[i] * dt)));
+    if (t && !t.walkable(nx, ny)) {
+      if (t.walkable(nx, oy)) ny = oy;
+      else if (t.walkable(ox, ny)) nx = ox;
+      else {
+        nx = ox;
+        ny = oy;
+      }
+    }
+    u.x[i] = nx;
+    u.y[i] = ny;
+    u.moving[i] = 1;
+    u.kbVx[i] *= TANK.kbDecay;
+    u.kbVy[i] *= TANK.kbDecay;
+    if (Math.abs(u.kbVx[i]) + Math.abs(u.kbVy[i]) < 0.3) u.kbVx[i] = u.kbVy[i] = 0;
+  }
+
   private arrowLanded(x: number, y: number, team: number, dmg: number): void {
     const u = this.units;
-    const grid = this.grids[1 - team];
-    const cols = grid.cols;
-    const cx = Math.min(cols - 1, Math.max(0, (x / grid.cell) | 0));
-    const cy = Math.min(cols - 1, Math.max(0, (y / grid.cell) | 0));
+    const g0 = this.grids[0];
+    const cols = g0.cols;
+    const cx = Math.min(cols - 1, Math.max(0, (x / g0.cell) | 0));
+    const cy = Math.min(cols - 1, Math.max(0, (y / g0.cell) | 0));
     let best = -1;
     let bestD = LANDING_RADIUS;
-    for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
-      for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
-        const c = gy * cols + gx;
-        for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
-          const j = grid.items[k];
-          if (!u.alive[j]) continue;
-          const ex = u.x[j] - x;
-          const ey = u.y[j] - y;
-          const d = Math.sqrt(ex * ex + ey * ey);
-          if (d < bestD) {
-            bestD = d;
-            best = j;
+    const enemies = this.enemyList[team];
+    for (let e = 0; e < enemies.length; e++) {
+      const grid = this.grids[enemies[e]];
+      for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
+        for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
+          const c = gy * cols + gx;
+          for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
+            const j = grid.items[k];
+            if (!u.alive[j]) continue;
+            const ex = u.x[j] - x;
+            const ey = u.y[j] - y;
+            const d = Math.sqrt(ex * ex + ey * ey);
+            if (d < bestD) {
+              bestD = d;
+              best = j;
+            }
           }
         }
       }
@@ -619,6 +810,7 @@ export class Battle {
     // Uzun suredir kimse olmediyse hasar kademeli artar: iyilestirme dengesi savasi kilitleyemez.
     const stale = this.time - this.lastDeathTime - STALE_AFTER;
     if (stale > 0) amount *= 1 + stale * STALE_RAMP;
+    amount *= 1 - STATS[u.kind[j]].armor;
     u.hp[j] -= amount;
     u.flash[j] = 0.12;
     if (u.hp[j] <= 0) {
@@ -667,8 +859,9 @@ export class Battle {
     const step = Math.min(speed * dt, d);
     const ox = u.x[i];
     const oy = u.y[i];
-    let nx = ox + ux * step;
-    let ny = oy + uy * step;
+    // Konumlar Float32 saklanir: yurunebilirlik testi yuvarlanmis degerle yapilmali.
+    let nx = Math.fround(ox + ux * step);
+    let ny = Math.fround(oy + uy * step);
     if (t && !t.walkable(nx, ny)) {
       if (t.walkable(nx, oy)) ny = oy;
       else if (t.walkable(ox, ny)) nx = ox;
@@ -803,7 +996,7 @@ export class Battle {
     const n = this.mapSize;
     const bad = (x: number, y: number): boolean => {
       if (!flags) return false;
-      const f = flags[(y | 0) * n + (x | 0)];
+      const f = flags[(Math.fround(y) | 0) * n + (Math.fround(x) | 0)];
       return f === T_WATER || f === T_BLOCKED;
     };
     for (let i = 0; i < u.count; i++) {
@@ -845,6 +1038,46 @@ export class Battle {
         u.y[i] = u.py[i];
       }
     }
+    this.pushAroundTanks(bad);
+  }
+
+  /** Tanklar (2x boyut) yakinlarindaki birimleri belirgin sekilde iter. */
+  private pushAroundTanks(bad: (x: number, y: number) => boolean): void {
+    const u = this.units;
+    const R = TANK.pushRadius;
+    const g0 = this.grids[0];
+    const cols = g0.cols;
+    for (let i = 0; i < u.count; i++) {
+      if (!u.alive[i] || !isTank(u.kind[i])) continue;
+      const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / g0.cell) | 0));
+      const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / g0.cell) | 0));
+      for (let t = 0; t < this.teamCount; t++) {
+        const grid = this.grids[t];
+        for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
+          for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
+            const c = gy * cols + gx;
+            for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
+              const j = grid.items[k];
+              if (j === i || !u.alive[j]) continue;
+              const dx = u.x[j] - u.x[i];
+              const dy = u.y[j] - u.y[i];
+              const d2 = dx * dx + dy * dy;
+              if (d2 >= R * R) continue;
+              const d = Math.sqrt(d2) || 0.001;
+              const share = isTank(u.kind[j]) ? 0.5 : 1;
+              const k2 = ((R - d) * 0.35 * share) / d;
+              const nx = d2 === 0 ? 1 : dx;
+              const jx = u.x[j] + nx * k2;
+              const jy = u.y[j] + dy * k2;
+              if (!bad(jx, jy)) {
+                u.x[j] = jx;
+                u.y[j] = jy;
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
 
@@ -863,14 +1096,17 @@ function benchMapSize(perTeam: number): number {
 }
 
 export function unitCapacity(config: BattleConfig): number {
+  if (config.mode === 'custom') return Math.floor((config.layout?.length ?? 0) / 4) + 16;
   return config.perTeam * 2 + 16;
 }
 
 export function projectileCapacity(config: BattleConfig): number {
+  if (config.mode === 'custom') return 4096;
   return config.mode === 'bench' ? 16384 : 1024;
 }
 
 export function mapSizeFor(config: BattleConfig): number {
+  if (config.mode === 'custom') return config.mapSize ?? MAP_SIZE;
   if (config.mode !== 'bench') return MAP_SIZE;
   // Cevre aciksa ordu blogunun cevresinde orman/koy icin pay birakilir.
   return Math.ceil(benchMapSize(config.perTeam) * (config.env === false ? 1 : 1.3));
@@ -878,6 +1114,8 @@ export function mapSizeFor(config: BattleConfig): number {
 
 /** Doguslarin kapladigi bolge: engel/dekor bu bolgeye konmaz. */
 function spawnZone(config: BattleConfig): { spawnD0: number; spawnD1: number; spawnHalfS: number } {
+  // custom: kullanici serbest yerlestirir, doguş bolgesi rezerve edilmez.
+  if (config.mode === 'custom') return { spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 };
   if (config.mode === 'bench') {
     const { cols, rows, spacing } = benchLayout(config.perTeam);
     return {

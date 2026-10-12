@@ -36,8 +36,8 @@ export class InlineSim implements SimBackend {
   get events(): SimEvent[] {
     return this.battle.events;
   }
-  get alivePerTeam(): [number, number] {
-    return this.battle.alivePerTeam as [number, number];
+  get alivePerTeam(): number[] {
+    return this.battle.alivePerTeam;
   }
   get winner(): number {
     return this.battle.winner;
@@ -101,6 +101,8 @@ export class InlineSim implements SimBackend {
     p.prep = p.grid = p.units = p.pick = p.separate = p.arrows = p.steps = 0;
     for (const k of DBG_KEYS) this.battle.dbg[k] = 0;
   }
+
+  dispose(): void {}
 
   stats(): SimStats {
     return { steps: this.steps, totalMs: this.totalMs, maxMs: this.maxMs, prof: { ...this.battle.prof }, dbg: { ...this.battle.dbg } };

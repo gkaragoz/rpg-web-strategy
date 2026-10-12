@@ -125,6 +125,32 @@ export class Terrain {
     return f !== T_WATER && f !== T_BLOCKED;
   }
 
+  /** (x,y) yurunemezse en yakin yurunebilir tile merkezini dondurur (halka halka arama). */
+  nearestWalkable(x: number, y: number, maxR = 14): { x: number; y: number } | null {
+    if (this.walkable(x, y)) return { x, y };
+    const cx = Math.floor(x);
+    const cy = Math.floor(y);
+    for (let r = 1; r <= maxR; r++) {
+      let best: { x: number; y: number } | null = null;
+      let bestD = Infinity;
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const px = cx + dx + 0.5;
+          const py = cy + dy + 0.5;
+          if (!this.walkable(px, py)) continue;
+          const d = (px - x) * (px - x) + (py - y) * (py - y);
+          if (d < bestD) {
+            bestD = d;
+            best = { x: px, y: py };
+          }
+        }
+      }
+      if (best) return best;
+    }
+    return null;
+  }
+
   /** (x,y) -> nehir koordinatlari: s (nehir boyunca), d (nehre dik, u ekseni). */
   toS(x: number, y: number): number {
     return (x - this.cx) * V_X + (y - this.cy) * V_Y;

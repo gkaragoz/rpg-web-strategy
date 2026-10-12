@@ -2,8 +2,7 @@ import type { FrameInfo, ProjView, SimBackend, SimStats, UnitsView } from './bac
 import { DBG_KEYS, mapSizeFor, projectileCapacity, unitCapacity, type BattleConfig, type SimEvent } from './battle';
 import { SIM_DT } from './constants';
 import {
-  F_ALIVE_BLUE,
-  F_ALIVE_RED,
+  F_ALIVE_BASE,
   F_DBG,
   F_MAX_MS,
   F_PREV_PUBLISH,
@@ -29,7 +28,7 @@ export class WorkerSim implements SimBackend {
   readonly kind = 'worker' as const;
   readonly mapSize: number;
   readonly events: SimEvent[] = [];
-  readonly alivePerTeam: [number, number] = [0, 0];
+  readonly alivePerTeam: number[] = [0, 0, 0, 0, 0, 0];
   winner = -1;
   time = 0;
   readonly units: UnitsView;
@@ -133,8 +132,7 @@ export class WorkerSim implements SimBackend {
     const f = sh.ctrlF;
     this.winner = f[F_WINNER];
     this.time = f[F_SIM_TIME];
-    this.alivePerTeam[0] = f[F_ALIVE_BLUE];
-    this.alivePerTeam[1] = f[F_ALIVE_RED];
+    for (let tm = 0; tm < this.alivePerTeam.length; tm++) this.alivePerTeam[tm] = f[F_ALIVE_BASE + tm];
 
     // Son iki yayin arasindaki gercek aralikla interpolasyon: bir adim gecikmeli ama puruzsuz.
     const interval = Math.max(1, f[F_PUBLISH] - f[F_PREV_PUBLISH]);
@@ -160,6 +158,10 @@ export class WorkerSim implements SimBackend {
 
   resetStats(): void {
     this.worker.postMessage({ type: 'resetStats' } satisfies WorkerCommand);
+  }
+
+  dispose(): void {
+    this.worker.terminate();
   }
 
   stats(): SimStats {

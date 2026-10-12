@@ -41,15 +41,14 @@ export const F_PUBLISH = 0;
 export const F_PREV_PUBLISH = 1;
 export const F_SIM_TIME = 2;
 export const F_WINNER = 3;
-export const F_ALIVE_BLUE = 4;
-export const F_ALIVE_RED = 5;
 export const F_STEPS = 6;
 export const F_TOTAL_MS = 7;
 export const F_MAX_MS = 8;
 export const F_LAST_MS = 9;
 export const F_PROF = 10; // prep, grid, units, pick, separate, arrows, steps (7 deger)
 export const F_DBG = 17; // DBG_KEYS sirasiyla (7 deger)
-export const F_LEN = 24;
+export const F_ALIVE_BASE = 24; // takim basina canli sayisi (6 deger)
+export const F_LEN = 32;
 
 export const PROF_KEYS = ['prep', 'grid', 'units', 'pick', 'separate', 'arrows', 'steps'] as const;
 

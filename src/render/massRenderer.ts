@@ -4,11 +4,9 @@ import type { Atlas } from './atlas';
 import { isoX, isoY } from '../iso';
 import type { SimView } from '../sim/backend';
 import { SIM_DT } from '../sim/constants';
-import { Kind, STATS } from '../sim/units';
+import { Kind, MAX_TEAMS, STATS } from '../sim/units';
 import { DEATH_FADE } from './unitView';
 
-const CELL_H = 96;
-const FEET_Y = 80;
 const DEPTH_SCALE = 4;
 
 export interface MassViewport {
@@ -40,7 +38,8 @@ export class MassRenderer {
   private readonly bars = new ParticleContainer({
     dynamicProperties: { vertex: true, position: true, rotation: false, uvs: false, color: true },
   });
-  private readonly unitTex: Texture[]; // [kind*4 + team*2 + pose]
+  private readonly unitTex: Texture[]; // [(kind*MAX_TEAMS + team)*2 + poz]
+  private readonly unitAnchor: Array<{ ax: number; ay: number }>;
   private readonly arrowTex: Texture;
   private readonly pixelTex: Texture;
   private particles: Particle[] = [];
@@ -67,6 +66,7 @@ export class MassRenderer {
   ) {
     this.layer = new Container();
     this.unitTex = atlas.unitTex;
+    this.unitAnchor = atlas.unitAnchor;
     this.arrowTex = atlas.arrowTex;
     this.pixelTex = atlas.pixelTex;
     this.buildDecor(atlas);
@@ -117,7 +117,11 @@ export class MassRenderer {
     this.particles = [];
     for (let i = 0; i < u.count; i++) {
       this.particles.push(
-        new Particle({ texture: this.unitTex[u.kind[i] * 4 + u.team[i] * 2], anchorX: 0.5, anchorY: FEET_Y / CELL_H }),
+        new Particle({
+          texture: this.unitTex[(u.kind[i] * MAX_TEAMS + u.team[i]) * 2],
+          anchorX: this.unitAnchor[(u.kind[i] * MAX_TEAMS + u.team[i]) * 2].ax,
+          anchorY: this.unitAnchor[(u.kind[i] * MAX_TEAMS + u.team[i]) * 2].ay,
+        }),
       );
     }
     this.keys = new Int32Array(u.count + this.decorParticles.length);
@@ -156,7 +160,7 @@ export class MassRenderer {
       p.x = sx + off * u.facing[i];
       p.y = sy - bob;
       p.scaleX = u.facing[i];
-      p.texture = this.unitTex[kind * 4 + u.team[i] * 2 + (swing && prog > 0.3 ? 1 : 0)];
+      p.texture = this.unitTex[(kind * MAX_TEAMS + u.team[i]) * 2 + (swing && prog > 0.3 ? 1 : 0)];
       if (alive) {
         p.scaleY = 1;
         p.rotation = 0;
@@ -245,22 +249,25 @@ export class MassRenderer {
       const wx = u.px[i] + (u.x[i] - u.px[i]) * alpha;
       const wy = u.py[i] + (u.y[i] - u.py[i]) * alpha;
       const sx = isoX(wx, wy);
-      const sy = isoY(wx, wy) - 72;
+      const k = STATS[u.kind[i]].scale;
+      const barW = 34 * Math.sqrt(k);
+      const sy = isoY(wx, wy) - 72 * k;
       if (sx < view.left || sx > view.right || sy < view.top || sy > view.bottom) continue;
       const ratio = u.hp[i] / u.maxHp[i];
       let bg = this.barBg[n];
       let fill = this.barFill[n];
       if (!bg) {
-        bg = new Particle({ texture: this.pixelTex, anchorX: 0.5, anchorY: 0.5, scaleX: 34 / 4, scaleY: 5 / 4, tint: 0x1a1a1a });
+        bg = new Particle({ texture: this.pixelTex, anchorX: 0.5, anchorY: 0.5, scaleY: 5 / 4, tint: 0x1a1a1a });
         fill = new Particle({ texture: this.pixelTex, anchorX: 0.5, anchorY: 0.5, scaleY: 3 / 4 });
         this.barBg[n] = bg;
         this.barFill[n] = fill;
       }
       bg.x = sx;
       bg.y = sy;
-      fill.x = sx - 16 + 16 * ratio;
+      bg.scaleX = (barW + 2) / 4;
+      fill.x = sx - barW / 2 + (barW * ratio) / 2;
       fill.y = sy;
-      fill.scaleX = (32 * ratio) / 4;
+      fill.scaleX = (barW * ratio) / 4;
       fill.tint = ratio > 0.5 ? 0x4cc35b : ratio > 0.25 ? 0xe6b73a : 0xe0463b;
       out[2 * n] = bg;
       out[2 * n + 1] = fill;

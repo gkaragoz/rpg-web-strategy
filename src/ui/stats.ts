@@ -23,6 +23,8 @@ export class StatsPanel {
   private samples = 0;
   private lastUpdate = 0;
   visible = true;
+  /** Sahne panelin gosterilmesini istiyor mu (studyoda gizli). */
+  private shown = true;
 
   constructor(el: HTMLElement) {
     this.el = el;
@@ -34,7 +36,16 @@ export class StatsPanel {
 
   toggle(): void {
     this.visible = !this.visible;
-    this.el.style.display = this.visible ? '' : 'none';
+    this.apply();
+  }
+
+  setShown(show: boolean): void {
+    this.shown = show;
+    this.apply();
+  }
+
+  private apply(): void {
+    this.el.style.display = this.visible && this.shown ? '' : 'none';
   }
 
   push(frameMs: number, simMs: number, renderMs: number): void {
@@ -47,7 +58,7 @@ export class StatsPanel {
   }
 
   update(now: number, info: StatsInfo): void {
-    if (!this.visible || now - this.lastUpdate < 250) return;
+    if (!this.visible || !this.shown || now - this.lastUpdate < 250) return;
     this.lastUpdate = now;
 
     const n = this.filled;

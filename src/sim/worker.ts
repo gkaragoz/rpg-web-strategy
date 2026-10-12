@@ -1,9 +1,8 @@
 /// <reference lib="webworker" />
-import { Battle, DBG_KEYS, type BattleConfig, projectileCapacity, unitCapacity } from './battle';
+import { Battle, DBG_KEYS, type BattleConfig, type SimEvent, projectileCapacity, unitCapacity } from './battle';
 import { SIM_DT } from './constants';
 import {
-  F_ALIVE_BLUE,
-  F_ALIVE_RED,
+  F_ALIVE_BASE,
   F_DBG,
   F_LAST_MS,
   F_MAX_MS,
@@ -34,7 +33,7 @@ export type WorkerCommand =
 export type WorkerEvent =
   | { type: 'ready'; count: number }
   | { type: 'reset'; count: number }
-  | { type: 'events'; events: Array<{ type: 'heal' | 'death'; x: number; y: number; unit: number }> };
+  | { type: 'events'; events: SimEvent[] };
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -95,8 +94,7 @@ function publish(): void {
   f[F_PUBLISH] = epochNow();
   f[F_SIM_TIME] = battle.time;
   f[F_WINNER] = battle.winner;
-  f[F_ALIVE_BLUE] = battle.alivePerTeam[0];
-  f[F_ALIVE_RED] = battle.alivePerTeam[1];
+  for (let tm = 0; tm < battle.alivePerTeam.length; tm++) f[F_ALIVE_BASE + tm] = battle.alivePerTeam[tm];
   Atomics.store(sh.ctrlI, I_LATEST, step);
 }
 

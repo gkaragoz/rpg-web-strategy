@@ -19,7 +19,7 @@ export class Camera {
 
   constructor(
     canvas: HTMLCanvasElement,
-    private readonly mapSize: number,
+    public mapSize: number,
   ) {
     this.y = (mapSize * TILE_H) / 2;
     window.addEventListener('keydown', (e) => this.enabled && this.keys.add(e.code));
@@ -59,6 +59,13 @@ export class Camera {
       },
       { passive: false },
     );
+  }
+
+  /** Harita boyutu degisince kameranin sinirlarini gunceller. */
+  setMap(size: number): void {
+    this.mapSize = size;
+    this.x = 0;
+    this.y = (size * TILE_H) / 2;
   }
 
   /** Tum haritayi ekrana sigdirir. */
