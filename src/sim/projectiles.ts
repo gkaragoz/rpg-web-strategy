@@ -19,6 +19,8 @@ export class Projectiles {
   src: Int32Array;
   splash: Float32Array;
   flags: Uint8Array;
+  /** Gorunum etiketi (units.ts PROJ_TAG). */
+  tag: Uint8Array;
   private cursor = 0;
 
   constructor(cap: number) {
@@ -36,6 +38,7 @@ export class Projectiles {
     this.src = new Int32Array(cap).fill(-1);
     this.splash = new Float32Array(cap);
     this.flags = new Uint8Array(cap);
+    this.tag = new Uint8Array(cap);
   }
 
   clear(): void {
@@ -44,7 +47,7 @@ export class Projectiles {
     this.cursor = 0;
   }
 
-  spawn(sx: number, sy: number, tx: number, ty: number, dur: number, height: number, dmg: number, team: number, src = -1, splash = 0, flags = 0): void {
+  spawn(sx: number, sy: number, tx: number, ty: number, dur: number, height: number, dmg: number, team: number, src = -1, splash = 0, flags = 0, tag = 0): void {
     // Donen imlecle bos yuva ara: tum diziyi her seferinde taramaz.
     let i = this.cursor;
     let tries = 0;
@@ -67,6 +70,7 @@ export class Projectiles {
     this.src[i] = src;
     this.splash[i] = splash;
     this.flags[i] = flags;
+    this.tag[i] = tag;
     if (i >= this.count) this.count = i + 1;
   }
 

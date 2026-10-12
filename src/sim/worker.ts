@@ -86,6 +86,7 @@ function publish(): void {
     s.pT[pn] = p.t[i];
     s.pDur[pn] = p.dur[i];
     s.pH[pn] = p.height[i];
+    s.pTag[pn] = p.tag[i];
     pn++;
   }
   sh.ctrlI[I_PCOUNT + (step % SNAP_SLOTS)] = pn;

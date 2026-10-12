@@ -19,6 +19,7 @@ export interface SnapSlot {
   pT: Float32Array;
   pDur: Float32Array;
   pH: Float32Array;
+  pTag: Uint8Array;
 }
 
 export interface Shared {
@@ -93,6 +94,7 @@ function build(sab: SharedArrayBuffer | null, cap: number, pcap: number): { shar
       pT: f32(pcap),
       pDur: f32(pcap),
       pH: f32(pcap),
+      pTag: u8(pcap),
     });
   }
   return { shared: { ctrlI, ctrlF, kind, team, maxHp, pActive, slots }, size: off };

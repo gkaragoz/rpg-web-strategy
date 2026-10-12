@@ -75,6 +75,7 @@ export class WorkerSim implements SimBackend {
       t: s0.pT,
       dur: s0.pDur,
       height: s0.pH,
+      tag: s0.pTag,
     };
     worker.onmessage = (e: MessageEvent<WorkerEvent>) => {
       const m = e.data;
@@ -130,6 +131,7 @@ export class WorkerSim implements SimBackend {
     pr.t = c.pT;
     pr.dur = c.pDur;
     pr.height = c.pH;
+    pr.tag = c.pTag;
 
     const f = sh.ctrlF;
     this.winner = f[F_WINNER];

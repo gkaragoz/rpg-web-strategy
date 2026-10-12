@@ -1,7 +1,7 @@
 import { Grid } from './grid';
 import { Terrain, T_BLOCKED, T_WATER } from './terrain';
 import type { MapSpec } from './mapSpec';
-import { DEFAULT_LEVEL, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides } from './units';
+import { DEFAULT_LEVEL, PROJ_TAG, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides } from './units';
 import { PF_PIERCE, PF_SKILL, Projectiles } from './projectiles';
 import { SKILL_ELEMENT, skillParams, type SkillParams } from './data/skills';
 import type { SkillId } from './data/troops';
@@ -1541,7 +1541,7 @@ export class Battle {
     const tx = u.x[t] + u.vx[t] * flight;
     const ty = u.y[t] + u.vy[t] * flight;
     const height = lob ? 30 + dist * 3 : 18 + dist * 2.2;
-    this.projectiles.spawn(u.x[i], u.y[i], tx, ty, flight, height, dmg, team, i, s.splash, flags);
+    this.projectiles.spawn(u.x[i], u.y[i], tx, ty, flight, height, dmg, team, i, s.splash, flags, PROJ_TAG[u.kind[i]]);
     if (this.emitEvents) this.pushEvent({ type: 'shot', x: u.x[i], y: u.y[i], unit: i, angle: Math.atan2(ty - u.y[i], tx - u.x[i]) });
   }
 
@@ -1554,7 +1554,7 @@ export class Battle {
     for (let k = 0; k < out.length && n > 0; k++, n--) {
       const j = out[k];
       const d = Math.hypot(u.x[j] - u.x[i], u.y[j] - u.y[i]);
-      this.projectiles.spawn(u.x[i], u.y[i], u.x[j], u.y[j], Math.max(0.3, d / ARROW_SPEED), 20 + d * 2, p.dmg, u.team[i], i, 0, 0);
+      this.projectiles.spawn(u.x[i], u.y[i], u.x[j], u.y[j], Math.max(0.3, d / ARROW_SPEED), 20 + d * 2, p.dmg, u.team[i], i, 0, 0, 1);
     }
   }
 
@@ -1658,7 +1658,7 @@ export class Battle {
       for (let k = 0; k < p.count && near.length > 0; k++) {
         const j = near[Math.floor(this.rng() * near.length)];
         if (j === first && near.length > 1) continue;
-        this.projectiles.spawn(x, y, u.x[j], u.y[j], 0.3, 14, p.dmg, team, src, 0, 0);
+        this.projectiles.spawn(x, y, u.x[j], u.y[j], 0.3, 14, p.dmg, team, src, 0, 0, 1);
       }
     }
   }

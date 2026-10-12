@@ -7,6 +7,7 @@ import type { SimView } from '../sim/backend';
 import { SIM_DT } from '../sim/constants';
 import { MAX_TEAMS, STATS, isMelee, isRanged, isTank } from '../sim/units';
 import { DEATH_FADE, POSES, statusTint } from './unitView';
+import { projStyle } from './projectileStyle';
 
 const DEPTH_SCALE = 4;
 
@@ -42,6 +43,7 @@ export class MassRenderer {
   private readonly unitTex: Texture[]; // [(kind*MAX_TEAMS + team)*2 + poz]
   private readonly unitAnchor: Array<{ ax: number; ay: number }>;
   private readonly arrowTex: Texture;
+  private readonly orbTex: Texture;
   private readonly pixelTex: Texture;
   private particles: Particle[] = [];
   private decorParticles: Particle[] = [];
@@ -69,6 +71,7 @@ export class MassRenderer {
     this.unitTex = atlas.unitTex;
     this.unitAnchor = atlas.unitAnchor;
     this.arrowTex = atlas.arrowTex;
+    this.orbTex = atlas.fx.puff.texture;
     this.pixelTex = atlas.pixelTex;
     this.buildDecor(atlas);
     this.layer.addChild(this.units, this.arrows, this.bars);
@@ -235,7 +238,11 @@ export class MassRenderer {
       }
       part.x = x;
       part.y = y;
-      part.rotation = Math.atan2(isoY(wx2, wy2, 4 * p.height[i] * k2 * (1 - k2)) - y, isoX(wx2, wy2) - x);
+      const st = projStyle(p.tag[i]);
+      part.texture = st.orb ? this.orbTex : this.arrowTex;
+      part.tint = st.color;
+      part.scaleX = part.scaleY = st.scale;
+      part.rotation = st.orb ? 0 : Math.atan2(isoY(wx2, wy2, 4 * p.height[i] * k2 * (1 - k2)) - y, isoX(wx2, wy2) - x);
       out[n++] = part;
     }
     out.length = n;

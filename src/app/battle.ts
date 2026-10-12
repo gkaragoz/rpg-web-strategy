@@ -1,3 +1,4 @@
+import { drawProjectile, projStyle } from '../render/projectileStyle';
 import { Graphics, type Application } from 'pixi.js';
 import type { Camera } from '../camera';
 import { isoX, isoY } from '../iso';
@@ -62,7 +63,7 @@ export class BattleScene {
   private opts!: BattleOptions;
   private mass: MassRenderer | null = null;
   private views: UnitView[] = [];
-  private arrowViews: Array<{ shadow: Graphics; arrow: Graphics }> = [];
+  private arrowViews: Array<{ shadow: Graphics; arrow: Graphics; tag: number }> = [];
   private fx: FxSystem | null = null;
   private massOpts: MassOptions = { bars: true, sort: true, cull: true };
   private speed = 1;
@@ -437,18 +438,16 @@ export class BattleScene {
     }
   }
 
-  private arrowView(i: number): { shadow: Graphics; arrow: Graphics } {
+  private arrowView(i: number): { shadow: Graphics; arrow: Graphics; tag: number } {
     let v = this.arrowViews[i];
     if (!v) {
       const shadow = new Graphics();
       shadow.ellipse(0, 0, 4, 2).fill({ color: 0x000000, alpha: 0.25 });
       const arrow = new Graphics();
-      arrow.moveTo(-9, 0).lineTo(7, 0).stroke({ width: 2, color: 0x6b4a2b });
-      arrow.poly([7, -3, 12, 0, 7, 3]).fill(0xcfd4dc);
-      arrow.poly([-9, 0, -12, -3, -6, 0, -12, 3]).fill(0xf2f2f2);
+      drawProjectile(arrow, 0);
       this.d.world.shadowLayer.addChild(shadow);
       this.d.world.fxLayer.addChild(arrow);
-      v = { shadow, arrow };
+      v = { shadow, arrow, tag: 0 };
       this.arrowViews[i] = v;
     }
     return v;
@@ -502,8 +501,12 @@ export class BattleScene {
       const pos = arcPoint(p, i, k);
       const next = arcPoint(p, i, Math.min(1, k + 0.03));
       v.arrow.visible = v.shadow.visible = true;
+      if (v.tag !== p.tag[i]) {
+        v.tag = p.tag[i];
+        drawProjectile(v.arrow, v.tag);
+      }
       v.arrow.position.set(pos.sx, pos.sy);
-      v.arrow.rotation = Math.atan2(next.sy - pos.sy, next.sx - pos.sx);
+      v.arrow.rotation = projStyle(v.tag).orb ? 0 : Math.atan2(next.sy - pos.sy, next.sx - pos.sx);
       v.shadow.position.set(pos.gx, pos.gy);
       v.shadow.scale.set(1 - pos.z / 120);
     }

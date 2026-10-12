@@ -17,6 +17,7 @@ export interface ProjView {
   t: Float32Array;
   dur: Float32Array;
   height: Float32Array;
+  tag: Uint8Array;
 }
 
 export interface SimStats {

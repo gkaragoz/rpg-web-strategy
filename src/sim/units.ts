@@ -444,3 +444,27 @@ export class Units {
     return i;
   }
 }
+
+/** Mermi gorunumu: 0 ok, 1 ates topu, 2 buz, 3 bomba, 4 kaya, 5 kutsal kure, 6 karanlik kure, 7 gulle, 8 mizrak, 9 balta, 10 enerji. */
+const TAG_OF: Record<string, number> = {
+  'ember-adept': 1,
+  'sun-priest': 1,
+  'horned-seer': 1,
+  'flame-herald': 1,
+  pyre-sling: 4,
+  'cinder-golem': 4,
+  'frost-adept': 2,
+  'rime-archers': 2,
+  grenadier: 3,
+  lorekeeper: 5,
+  nun: 5,
+  bone-caller: 6,
+  'hex-witch': 6,
+  'war-barge': 7,
+  javelineers: 8,
+  bolt-thrower: 8,
+  'axe-warden': 9,
+  sand-king: 10,
+};
+export const PROJ_TAG = new Uint8Array(KIND_COUNT);
+STATS.forEach((s, i) => (PROJ_TAG[i] = s.troop ? (TAG_OF[s.troop] ?? 0) : 0));
