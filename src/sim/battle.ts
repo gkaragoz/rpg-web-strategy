@@ -1,5 +1,6 @@
 import { Grid } from './grid';
 import { Terrain, T_BLOCKED, T_WATER } from './terrain';
+import type { MapSpec } from './mapSpec';
 import { KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isMelee, isTank, type StatOverrides } from './units';
 import { Projectiles } from './projectiles';
 import { mulberry32 } from './random';
@@ -73,6 +74,8 @@ export interface BattleConfig {
   stats?: StatOverrides;
   /** false: cevre (nehir, engeller) yok, eski cıplak harita. Varsayilan true. */
   env?: boolean;
+  /** Harita tarifi (biyom, nehir, orman, koy, gecit); yoksa varsayilan orman haritasi. */
+  map?: MapSpec;
   /** Harita tohumu. */
   terrainSeed?: number;
   /** false: okcu/priest vur-kac ve cizgi siniri kapali (eski davranis, karsilastirma icin). */
@@ -1458,5 +1461,5 @@ function spawnZone(config: BattleConfig): { spawnD0: number; spawnD1: number; sp
 /** Sim (worker) ve renderer (ana thread) ayni haritayi bununla uretir. */
 export function terrainFor(config: BattleConfig): Terrain | null {
   if (config.env === false) return null;
-  return new Terrain(mapSizeFor(config), { seed: config.terrainSeed ?? 1, ...spawnZone(config) });
+  return new Terrain(mapSizeFor(config), { seed: config.terrainSeed ?? 1, spec: config.map, ...spawnZone(config) });
 }

@@ -1,3 +1,4 @@
+import { DEFAULT_MAP, type MapSpec } from './mapSpec';
 import { mulberry32 } from './random';
 
 export const T_GRASS = 0;
@@ -41,6 +42,8 @@ export interface TerrainOptions {
   spawnD0: number;
   spawnD1: number;
   spawnHalfS: number;
+  /** Harita tarifi (yoksa ilk surumdeki orman haritasi). */
+  spec?: MapSpec;
 }
 
 function hash2(ix: number, iy: number, seed: number): number {
@@ -72,6 +75,9 @@ export class Terrain {
   readonly decor: Decor[] = [];
   /** Toprak yol karolari (indeks). */
   readonly pathTiles: number[] = [];
+  /** Nehir icindeki kara (ada) karolari (indeks). */
+  readonly landTiles: number[] = [];
+  readonly spec: MapSpec;
   /** Yurunebilir karolarin bagli bilesen numarasi (-1: yurunemez) ve en buyuk bilesen. */
   region: Int32Array = new Int32Array(0);
   mainRegion = -1;
@@ -88,6 +94,7 @@ export class Terrain {
   constructor(size: number, opts: TerrainOptions) {
     this.size = size;
     this.opts = opts;
+    this.spec = opts.spec ?? DEFAULT_MAP;
     this.cx = this.cy = size / 2;
     this.flags = new Uint8Array(size * size);
     this.occ = new Uint8Array(size * size);
@@ -105,19 +112,29 @@ export class Terrain {
     const k1 = 0.24 + this.rng() * 0.1;
     const k2 = 0.6 + this.rng() * 0.2;
     const k3 = 0.35 + this.rng() * 0.2;
+    const rv = this.spec.river;
+    const lakeL = size * 0.24;
     for (let i = 0; i < n; i++) {
       const s = this.sMin + i * step;
       // Ordu genisliginde nehir duz kalir (iki taraf icin adil); disarida kivrilir.
       const t = Math.min(1, Math.max(0, (Math.abs(s) - (opts.spawnHalfS + 2)) / 10));
-      this.offTab[i] = (a1 * Math.sin(s * k1) + a2 * Math.sin(s * k2)) * t * t * (3 - 2 * t);
-      this.widTab[i] = 5.2 + 0.6 * Math.cos(s * k3);
+      const wind = (a1 * Math.sin(s * k1) + a2 * Math.sin(s * k2)) * t * t * (3 - 2 * t);
+      this.offTab[i] = rv === 'straight' || rv === 'none' ? 0 : wind;
+      // Genislik cift fonksiyon (nokta simetri): gol, |s| = lakeL civarinda iki yana sismis.
+      if (rv === 'none') this.widTab[i] = 0;
+      else if (rv === 'straight') this.widTab[i] = 5 + 0.3 * Math.cos(s * k3);
+      else if (rv === 'islands') this.widTab[i] = 8 + 0.8 * Math.cos(s * k3);
+      else if (rv === 'lake') this.widTab[i] = 3.6 + 10 * Math.exp(-(((Math.abs(s) - lakeL) / 5.5) ** 2));
+      else this.widTab[i] = 5.2 + 0.6 * Math.cos(s * k3);
     }
 
     this.buildRiver();
-    this.buildBridges();
+    if (rv !== 'none') this.buildBridges();
+    if (rv === 'islands') this.carveIslands();
     this.placeVillages();
     this.placeForest();
     this.mirror();
+    this.collectLand();
     this.computeRegions();
   }
 
@@ -423,7 +440,7 @@ export class Terrain {
     for (let k = -Math.floor(limit / spacing); k <= Math.floor(limit / spacing); k++) {
       const s = k * spacing;
       const w = this.widthAt(s);
-      this.bridges.push({ s, o: this.offsetAt(s), w, halfLen: w / 2 + 2.5, halfW: 1.8 });
+      this.bridges.push({ s, o: this.offsetAt(s), w, halfLen: w / 2 + 2.5, halfW: this.spec.crossing === 'ford' ? 2.4 : 1.8 });
     }
     for (let ty = 0; ty < n; ty++) {
       for (let tx = 0; tx < n; tx++) {
@@ -437,6 +454,46 @@ export class Terrain {
             break;
           }
         }
+      }
+    }
+  }
+
+  /** Nehirde kopru aralarina kucuk adalar (yalniz d < 0 yarisi; mirror digerini uretir). */
+  private carveIslands(): void {
+    const n = this.size;
+    const spacing = n < 90 ? 16 : 28;
+    const limit = n * 0.5 - 3;
+    const K = Math.floor(limit / spacing);
+    for (let k = -K - 1; k <= K; k++) {
+      const sc = (k + 0.5) * spacing;
+      if (Math.abs(sc) > limit - 2) continue;
+      const o = this.offsetAt(sc);
+      const rd = this.widthAt(sc) * 0.3;
+      for (let ty = 0; ty < n; ty++) {
+        for (let tx = 0; tx < n; tx++) {
+          const i = ty * n + tx;
+          if (this.flags[i] !== T_WATER) continue;
+          const x = tx + 0.5;
+          const y = ty + 0.5;
+          if (this.toD(x, y) >= 0) continue;
+          const a = (this.toS(x, y) - sc) / 3.4;
+          const b = (this.toD(x, y) - o) / rd;
+          if (a * a + b * b < 1) this.flags[i] = T_GRASS;
+        }
+      }
+    }
+  }
+
+  /** Nehir icinde kalan kara karolari (ada): cizim icin. */
+  private collectLand(): void {
+    this.landTiles.length = 0;
+    if (this.spec.river === 'none') return;
+    const n = this.size;
+    for (let ty = 0; ty < n; ty++) {
+      for (let tx = 0; tx < n; tx++) {
+        const i = ty * n + tx;
+        if (this.flags[i] !== T_GRASS) continue;
+        if (this.riverEdgeDist(tx + 0.5, ty + 0.5) < 0) this.landTiles.push(i);
       }
     }
   }
@@ -474,7 +531,11 @@ export class Terrain {
   private placeVillages(): void {
     const n = this.size;
     const rng = this.rng;
-    const sites = Math.max(1, Math.round((n * n) / 2200));
+    const vt = this.spec.village;
+    if (vt === 'none') return;
+    const sites =
+      vt === 'scattered' ? Math.max(2, Math.round((n * n) / 900)) : vt === 'ruins' ? Math.max(1, Math.round((n * n) / 3600)) : vt === 'camp' ? Math.max(1, Math.round((n * n) / 3000)) : Math.max(1, Math.round((n * n) / 2200));
+    const spacing = vt === 'scattered' ? 11 : vt === 'village' ? 16 : 20;
     const centers: Array<{ x: number; y: number; side: number }> = [];
     const sizes: Array<[number, number]> = [
       [2, 2],
@@ -490,7 +551,7 @@ export class Terrain {
         const x = this.worldX(s, side * dd);
         const y = this.worldY(s, side * dd);
         if (!this.inMap(x, y, 8) || this.reserved(x, y, 4)) continue;
-        if (centers.some((c) => Math.hypot(c.x - x, c.y - y) < 16)) continue;
+        if (centers.some((c) => Math.hypot(c.x - x, c.y - y) < spacing)) continue;
         if (this.flags[this.tileIdx(x, y)] !== T_GRASS) continue;
         centers.push({ x, y, side });
         break;
@@ -498,11 +559,11 @@ export class Terrain {
     }
 
     for (const c of centers) {
-      const count = 3 + Math.floor(rng() * 4);
+      const count = vt === 'scattered' ? 1 + Math.floor(rng() * 2) : vt === 'ruins' ? 2 + Math.floor(rng() * 2) : vt === 'camp' ? 2 : 3 + Math.floor(rng() * 4);
       let placed = 0;
       for (let attempt = 0; attempt < 40 && placed < count; attempt++) {
         const a = rng() * Math.PI * 2;
-        const r = 2.5 + rng() * 5.5;
+        const r = vt === 'camp' ? rng() * 2.2 : 2.5 + rng() * 5.5;
         const [w, h] = sizes[Math.floor(rng() * sizes.length)];
         const tx = Math.floor(c.x + Math.cos(a) * r);
         const ty = Math.floor(c.y + Math.sin(a) * r);
@@ -527,7 +588,33 @@ export class Terrain {
           }
         }
       }
+      if (vt === 'camp') this.wallRing(c.x, c.y, 5, 16, 5);
+      if (vt === 'ruins') {
+        this.wallRing(c.x, c.y, 7.5, 28, 7);
+        for (let q = 0; q < 10; q++) {
+          const a = rng() * Math.PI * 2;
+          const r = 3 + rng() * 5;
+          const x = c.x + Math.cos(a) * r;
+          const y = c.y + Math.sin(a) * r;
+          if (this.freeRect(Math.floor(x), Math.floor(y), 1, 1, 0)) this.decor.push({ kind: 'rubble', variant: rng() < 0.5 ? 0 : 1, x, y });
+        }
+      }
       this.carvePath(c.x, c.y, c.side);
+    }
+  }
+
+  /** Merkez etrafinda aralikli duvar halkasi (giris boslugu birakir). */
+  private wallRing(cx: number, cy: number, radius: number, segs: number, gapEvery: number): void {
+    const n = this.size;
+    for (let k = 0; k < segs; k++) {
+      if (k % gapEvery === 0) continue;
+      const a = (k / segs) * Math.PI * 2;
+      const tx = Math.floor(cx + Math.cos(a) * radius);
+      const ty = Math.floor(cy + Math.sin(a) * radius);
+      if (!this.freeRect(tx, ty, 1, 1, 0)) continue;
+      this.flags[ty * n + tx] = T_BLOCKED;
+      this.occ[ty * n + tx] = 1;
+      this.decor.push({ kind: 'wall', variant: k % 2, x: tx + 0.5, y: ty + 0.5 });
     }
   }
 
@@ -536,7 +623,9 @@ export class Terrain {
     const n = this.size;
     for (let ty = 0; ty < n; ty++) {
       for (let tx = 0; tx < n; tx++) {
-        if (this.toD(tx + 0.5, ty + 0.5) >= 0) continue;
+        const d = this.toD(tx + 0.5, ty + 0.5);
+        // Eksen uzerindeki (d = 0) karolar kendi aralarinda: kucuk indeks kaynak olur.
+        if (d > 1e-9 || (d >= -1e-9 && ty * n + tx > (n - 1 - ty) * n + (n - 1 - tx))) continue;
         this.flags[(n - 1 - ty) * n + (n - 1 - tx)] = this.flags[ty * n + tx];
       }
     }
@@ -595,6 +684,12 @@ export class Terrain {
     const n = this.size;
     const rng = this.rng;
     const seed = this.opts.seed;
+    const ft = this.spec.forest;
+    const hasRiver = this.spec.river !== 'none';
+    // Orman tipi: esik (thr), agac olasiligi ve kaya bandi ust siniri.
+    const thr = ft === 'none' ? 99 : ft === 'sparse' ? 0.66 : ft === 'grove' ? 0.64 : 0.6;
+    const prob = ft === 'sparse' ? 0.3 : ft === 'grove' ? 0.55 : 0.4;
+    const rockHi = ft === 'none' ? 0.6 : Math.min(thr, 0.66);
     const blockedNear = (tx: number, ty: number): boolean => {
       for (let y = ty - 1; y <= ty + 1; y++) {
         for (let x = tx - 1; x <= tx + 1; x++) {
@@ -613,14 +708,16 @@ export class Terrain {
         if (this.reserved(x, y, 1)) continue;
         const edge = Math.min(tx, ty, n - tx, n - ty);
         const bias = 0.3 * (1 - Math.min(1, edge / 10));
-        const v = 0.65 * noise(x / 9, y / 9, seed) + 0.35 * noise(x / 4, y / 4, seed + 7) + bias;
-        const riverDist = this.riverEdgeDist(x, y);
-        if (v > 0.6 && riverDist > 4) {
-          if (rng() < 0.4 && !blockedNear(tx, ty)) {
+        let v = 0.65 * noise(x / 9, y / 9, seed) + 0.35 * noise(x / 4, y / 4, seed + 7) + bias;
+        if (ft === 'grove') v = 0.85 * noise(x / 17, y / 17, seed + 3) + 0.15 * noise(x / 5, y / 5, seed + 7);
+        else if (ft === 'ring') v = edge < 9 ? 0.62 + 0.12 * (1 - edge / 9) + 0.1 * noise(x / 4, y / 4, seed + 7) : 0.3 * noise(x / 9, y / 9, seed);
+        const riverDist = hasRiver ? this.riverEdgeDist(x, y) : 99;
+        if (v > thr && riverDist > 4) {
+          if (rng() < prob && !blockedNear(tx, ty)) {
             this.flags[i] = T_BLOCKED;
             this.decor.push({ kind: 'tree', variant: Math.floor(rng() * 3), x: x + (rng() - 0.5) * 0.4, y: y + (rng() - 0.5) * 0.4 });
           }
-        } else if ((riverDist > 0.4 && riverDist < 2.5 && rng() < 0.05) || (v > 0.5 && v <= 0.6 && rng() < 0.03)) {
+        } else if ((riverDist > 0.4 && riverDist < 2.5 && rng() < 0.05) || (v > 0.5 && v <= rockHi && rng() < 0.03)) {
           const boulder = rng() < 0.25 && !blockedNear(tx, ty);
           if (boulder) this.flags[i] = T_BLOCKED;
           this.decor.push({ kind: boulder ? 'boulder' : 'rock', variant: Math.floor(rng() * 3), x: x + (rng() - 0.5) * 0.5, y: y + (rng() - 0.5) * 0.5 });
