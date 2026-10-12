@@ -6,6 +6,10 @@ import {
   CROSSING_NAMES,
   FORESTS,
   FOREST_NAMES,
+  LAYOUTS,
+  LAYOUT_NAMES,
+  RELIEFS,
+  RELIEF_NAMES,
   PRESETS,
   RIVERS,
   RIVER_NAMES,
@@ -53,7 +57,18 @@ export function drawMinimap(canvas: HTMLCanvasElement, spec: MapSpec, seed: numb
       if (f === T_WATER) c = hex(pal.water);
       else if (f === T_BRIDGE) c = spec.crossing === 'ford' ? hex(pal.waterShine) : spec.crossing === 'stone' ? hex(pal.stoneDeck) : hex(pal.deck);
       else if (f === T_PATH) c = hex(pal.path);
-      else c = (tx + ty) % 2 === 0 ? grassA : grassB;
+      else {
+        c = (tx + ty) % 2 === 0 ? grassA : grassB;
+        if (t.hasRelief) {
+          // Yukseklik golgesi: yuksek yerler acik, dik yamaclar (ucurum) koyu.
+          const h = (t.vertexH(tx, ty) + t.vertexH(tx + 1, ty + 1)) / 2;
+          const gx = t.vertexH(tx + 1, ty) - t.vertexH(tx, ty + 1);
+          const k = Math.min(1.25, Math.max(0.55, 0.82 + 0.1 * h - 0.5 * Math.abs(gx)));
+          const v = parseInt(c.slice(1), 16);
+          const ch = (sh: number): number => Math.min(255, Math.round(((v >> sh) & 255) * k));
+          c = `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+        }
+      }
       if (f === T_GRASS || f === T_BLOCKED || f === T_PATH || f === T_WATER || f === T_BRIDGE) tile(tx, ty, c);
     }
   }
@@ -161,7 +176,7 @@ export class MapPicker {
       .join('');
     const list = PRESETS.filter((p) => this.filter === 'all' || p.spec.biome === this.filter);
     const rnd = this.card('random', 'Rastgele', s.mapPreset === 'random' ? `${BIOME_NAMES[m.biome]} · tohum ${s.seed}` : 'Her şey rastgele');
-    const cards = list.map((p) => this.card(p.id, p.name, `${BIOME_NAMES[p.spec.biome]} · ${RIVER_NAMES[p.spec.river]}`)).join('');
+    const cards = list.map((p) => this.card(p.id, p.name, `${BIOME_NAMES[p.spec.biome]} · ${p.spec.layout !== 'classic' ? LAYOUT_NAMES[p.spec.layout] : p.spec.relief !== 'flat' ? RELIEF_NAMES[p.spec.relief] : RIVER_NAMES[p.spec.river]}`)).join('');
     const detail =
       s.mapPreset === 'random'
         ? `<div class="map-rand"><b>Çekilen harita:</b> ${esc(BIOME_NAMES[m.biome])}, ${esc(RIVER_NAMES[m.river])} nehir, ${esc(FOREST_NAMES[m.forest])} orman, ${esc(VILLAGE_NAMES[m.village])}, ${esc(CROSSING_NAMES[m.crossing])} · tohum <b>${s.seed}</b>
@@ -179,9 +194,11 @@ export class MapPicker {
       <h3>Özelleştir</h3>
       <div class="map-fields">
         <label>Biyom<select id="mp-biome">${this.opt(BIOMES, BIOME_NAMES, m.biome)}</select></label>
-        <label>Nehir<select id="mp-river">${this.opt(RIVERS, RIVER_NAMES, m.river)}</select></label>
+        <label>Nehir<select id="mp-river"${m.layout === 'citadel' || m.layout === 'crossroads' || m.layout === 'archipelago' ? ' disabled' : ''}>${this.opt(RIVERS, RIVER_NAMES, m.river)}</select></label>
         <label>Orman<select id="mp-forest">${this.opt(FORESTS, FOREST_NAMES, m.forest)}</select></label>
         <label>Köy<select id="mp-village">${this.opt(VILLAGES, VILLAGE_NAMES, m.village)}</select></label>
+        <label>Kurgu<select id="mp-layout">${this.opt(LAYOUTS, LAYOUT_NAMES, m.layout)}</select></label>
+        <label>Kabartma<select id="mp-relief"${m.layout !== 'classic' ? ' disabled' : ''}>${this.opt(RELIEFS, RELIEF_NAMES, m.relief)}</select></label>
         <label>Geçit<select id="mp-crossing"${m.river === 'none' ? ' disabled' : ''}>${this.opt(CROSSINGS, CROSSING_NAMES, m.crossing)}</select></label>
       </div>
     </div>
@@ -213,6 +230,8 @@ export class MapPicker {
     field('#mp-forest', 'forest');
     field('#mp-village', 'village');
     field('#mp-crossing', 'crossing');
+    field('#mp-layout', 'layout');
+    field('#mp-relief', 'relief');
 
     // Onizlemeler (kartlar olustuktan sonra, sirayla).
     const size = s.mapSize;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BIOMES, CROSSINGS, DEFAULT_MAP, FORESTS, PRESETS, RELIEFS, RIVERS, VILLAGES, randomSpec, sanitizeSpec, type MapSpec } from '../mapSpec';
+import { BIOMES, CROSSINGS, DEFAULT_MAP, FORESTS, PRESETS, LAYOUTS, RELIEFS, RIVERS, VILLAGES, randomSpec, sanitizeSpec, type MapSpec } from '../mapSpec';
 import { mulberry32 } from '../random';
 import { T_WATER, Terrain } from '../terrain';
 
@@ -8,7 +8,7 @@ const demo = { spawnD0: 8, spawnD1: 14.5, spawnHalfS: 7 };
 
 function allSpecs(): MapSpec[] {
   const out: MapSpec[] = [];
-  for (const river of RIVERS) for (const forest of FORESTS) for (const village of VILLAGES) for (const crossing of CROSSINGS) out.push({ biome: 'forest', river, forest, village, crossing, relief: RELIEFS[(out.length * 7) % RELIEFS.length] });
+  for (const river of RIVERS) for (const forest of FORESTS) for (const village of VILLAGES) for (const crossing of CROSSINGS) out.push({ biome: 'forest', river, forest, village, crossing, relief: RELIEFS[(out.length * 7) % RELIEFS.length], layout: LAYOUTS[(out.length * 3) % LAYOUTS.length] });
   return out;
 }
 
@@ -89,6 +89,31 @@ describe('harita tarifi', () => {
           const b = t.nearestWalkable(size * 0.75, size * 0.25, 14, true);
           expect(a && b, tag).toBeTruthy();
           expect(t.findPath(a!.x, a!.y, b!.x, b!.y), `${tag} yol`).not.toBeNull();
+        }
+      }
+    }
+  });
+
+  it('kurgular: simetri, determinizm, baglanti; kale, kopruler ve yollar', () => {
+    for (const layout of LAYOUTS.filter((l) => l !== 'classic')) {
+      for (const biome of BIOMES) {
+        for (const size of [56, 80, 120]) {
+          const spec: MapSpec = { ...DEFAULT_MAP, biome, layout, river: 'winding', village: 'village', forest: 'sparse' };
+          const t = new Terrain(size, { seed: 6, spec, ...opts });
+          const u = new Terrain(size, { seed: 6, spec, ...opts });
+          const tag = `${layout} ${biome} ${size}`;
+          expect(Array.from(u.flags), `${tag} determinizm`).toEqual(Array.from(t.flags));
+          for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) expect(t.flags[y * size + x] === t.flags[(size - 1 - y) * size + (size - 1 - x)], `${tag} simetri ${x},${y}`).toBe(true);
+          const a = t.nearestWalkable(size * 0.25, size * 0.75, 16, true);
+          const b = t.nearestWalkable(size * 0.75, size * 0.25, 16, true);
+          expect(a && b, tag).toBeTruthy();
+          expect(t.findPath(a!.x, a!.y, b!.x, b!.y), `${tag} yol`).not.toBeNull();
+          if (layout === 'citadel') {
+            expect(t.decor.filter((d) => d.kind === 'keep').length, tag).toBe(1);
+            expect(t.decor.filter((d) => d.kind === 'tower').length, tag).toBeGreaterThanOrEqual(2);
+          }
+          if (layout === 'archipelago') expect(t.crossBridgeTiles.length, tag).toBeGreaterThan(0);
+          if (layout === 'crossroads') expect(t.pathTiles.length, tag).toBeGreaterThan(size);
         }
       }
     }

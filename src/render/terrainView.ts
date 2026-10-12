@@ -42,7 +42,7 @@ export function buildTerrainOverlay(t: Terrain): Container {
     }
     g.poly(flat([...left, ...right.reverse()])).fill({ color, alpha });
   };
-  const hasRiver = t.spec.river !== 'none';
+  const hasRiver = t.riverKind !== 'none';
   if (hasRiver) {
     band(1.0, 1, pal.bank); // kiyi
     band(0, 1, pal.water);
@@ -55,7 +55,7 @@ export function buildTerrainOverlay(t: Terrain): Container {
     const cx = tx + 0.5;
     const cy = ty + 0.5;
     const h = 0.5 + grow;
-    return flat([scr(cx, cy - h), scr(cx + h, cy), scr(cx, cy + h), scr(cx - h, cy)]);
+    return flat([scr(cx - h, cy - h), scr(cx + h, cy - h), scr(cx + h, cy + h), scr(cx - h, cy + h)]);
   };
   for (const idx of t.landTiles) g.poly(tileDiamond(idx % t.size, Math.floor(idx / t.size), 0.35)).fill({ color: pal.bank, alpha: 0.95 });
   for (const idx of t.landTiles) {
@@ -72,6 +72,41 @@ export function buildTerrainOverlay(t: Terrain): Container {
     const a = scr(t.worldX(s, d), t.worldY(s, d));
     const b = scr(t.worldX(s + 0.9, d), t.worldY(s + 0.9, d));
     g.moveTo(a[0], a[1]).lineTo(b[0], b[1]).stroke({ width: 1.5, color: pal.wave, alpha: pal.waveAlpha });
+  }
+
+  // Capraz kanallar (adalar kurgusu): kiyi + su karolari, koprulerin altinda.
+  const bridgeSet = new Set(t.crossBridgeTiles);
+  for (const grow of [0.45, 0]) {
+    for (const idx of t.crossWaterTiles) {
+      const tx = idx % t.size;
+      const ty = Math.floor(idx / t.size);
+      const h = 0.5 + grow;
+      const cx = tx + 0.5;
+      const cy = ty + 0.5;
+      g.poly(flat([scr(cx - h, cy - h), scr(cx + h, cy - h), scr(cx + h, cy + h), scr(cx - h, cy + h)])).fill(grow > 0 ? { color: pal.bank, alpha: 0.9 } : pal.water);
+    }
+  }
+  for (const idx of t.crossWaterTiles) {
+    if (bridgeSet.has(idx)) continue;
+    const tx = idx % t.size;
+    const ty = Math.floor(idx / t.size);
+    if ((tx * 7 + ty * 13) % 5 !== 0) continue;
+    const a = scr(tx + 0.2, ty + 0.5);
+    const b = scr(tx + 0.8, ty + 0.5);
+    g.moveTo(a[0], a[1]).lineTo(b[0], b[1]).stroke({ width: 1.4, color: pal.wave, alpha: pal.waveAlpha });
+  }
+
+  // Capraz kanal koprukleri (adalar kurgusu): tile bazli ahsap/tas tabla.
+  for (const idx of t.crossBridgeTiles) {
+    const tx = idx % t.size;
+    const ty = Math.floor(idx / t.size);
+    const stone = t.spec.crossing === 'stone';
+    const q = [scr(tx, ty, 6), scr(tx + 1, ty, 6), scr(tx + 1, ty + 1, 6), scr(tx, ty + 1, 6)];
+    g.poly(flat([scr(tx + 1, ty + 1, 0), scr(tx, ty + 1, 0), q[3], q[2]])).fill(stone ? pal.stoneSideB : pal.deckSideB);
+    g.poly(flat(q)).fill(stone ? pal.stoneDeck : pal.deck).stroke({ width: 1, color: 0x000000, alpha: 0.3 });
+    const a = scr(tx, ty + 0.5, 6);
+    const b = scr(tx + 1, ty + 0.5, 6);
+    g.moveTo(a[0], a[1]).lineTo(b[0], b[1]).stroke({ width: 1, color: 0x000000, alpha: 0.18 });
   }
 
   for (const b of t.bridges) {

@@ -87,6 +87,34 @@ const HOUSES: Record<Biome, HouseTheme> = {
   swamp: { right: 0x6f5a3c, left: 0x57462e, top: 0x7c8a4c, door: 0x241c14, hole: 0x2c231a, beam: 0x3d2f1e, rubble: 0x6b5a3e, rubbleStroke: 0x3d3224, snow: false },
 };
 
+/** Tas yapi (kale kulesi / hisar): w x h ayak izi, H yukseklik, siperlikli ust. */
+function drawStone(g: Graphics, w: number, h: number, H: number, th: RockTheme, flag: number | null): void {
+  const S = 32;
+  const P = (a: number, b: number, z = 0): [number, number] => [((a - w) - (b - h)) * S, (((a - w) + (b - h)) * S) / 2 - z];
+  const flat = (...p: Array<[number, number]>): number[] => p.flatMap((q) => q);
+  g.poly(flat(P(-0.3, -0.3), P(w + 0.5, -0.3), P(w + 0.5, h + 0.5), P(-0.3, h + 0.5))).fill({ color: 0x000000, alpha: 0.2 });
+  box(g, flat(P(w, 0, 0), P(w, h, 0), P(w, h, H), P(w, 0, H)), th.side);
+  box(g, flat(P(0, h, 0), P(w, h, 0), P(w, h, H), P(0, h, H)), th.fill);
+  box(g, flat(P(0, 0, H), P(w, 0, H), P(w, h, H), P(0, h, H)), th.top);
+  // Siperlikler (ust kenar boyunca kucuk bloklar) ve kapi/pencere.
+  const steps = Math.max(2, Math.round((w + h) * 1.4));
+  for (let k = 0; k < steps; k++) {
+    const t = (k + 0.5) / steps;
+    const p = P(w * t, h, H);
+    g.rect(p[0] - 3, p[1] - 5, 5, 5).fill(th.top).stroke({ width: 0.8, color: th.stroke });
+    const q = P(w, h * t, H);
+    g.rect(q[0] - 3, q[1] - 5, 5, 5).fill(th.side).stroke({ width: 0.8, color: th.stroke });
+  }
+  const dz = H * 0.45;
+  g.poly(flat(P(w * 0.38, h, 0), P(w * 0.62, h, 0), P(w * 0.62, h, dz), P(w * 0.38, h, dz))).fill(0x2a2620);
+  g.poly(flat(P(w, h * 0.4, H * 0.55), P(w, h * 0.55, H * 0.55), P(w, h * 0.55, H * 0.8), P(w, h * 0.4, H * 0.8))).fill(0x2a2620);
+  if (flag !== null) {
+    const top = P(w / 2, h / 2, H);
+    g.moveTo(top[0], top[1]).lineTo(top[0], top[1] - 26).stroke({ width: 2, color: 0x4a3a2a });
+    g.poly([top[0], top[1] - 26, top[0] + 16, top[1] - 21, top[0], top[1] - 16]).fill(flag);
+  }
+}
+
 /** Kar cami: koyu yesil katlar, uclarda kar. */
 function drawSnowPine(g: Graphics, k: number): void {
   g.ellipse(0, 0, 11 * k, 4 * k).fill({ color: 0x4a5a6a, alpha: 0.22 });
@@ -235,7 +263,7 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
   const items: Item[] = [];
   const unitTex: Texture[] = [];
   const unitAnchor: Array<{ ax: number; ay: number }> = [];
-  const decor: Record<DecorKind, Sprite9[]> = { tree: [], rock: [], boulder: [], house: [], wall: [], rubble: [] };
+  const decor: Record<DecorKind, Sprite9[]> = { tree: [], rock: [], boulder: [], house: [], wall: [], rubble: [], tower: [], keep: [] };
   let arrowTex!: Texture;
   let pixelTex!: Texture;
   const fx = {} as Record<'puff' | 'spark' | 'star' | 'ring', Sprite9>;
@@ -370,6 +398,8 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
     }
   }
   for (let style = 0; style < 2; style++) add('wall', 84, 62, 42, 52, (g) => drawWall(g, style, houseTheme));
+  add('tower', 80, 120, 40, 110, (g) => drawStone(g, 1, 1, 56, rockTheme, null));
+  add('keep', 272, 220, 136, 206, (g) => drawStone(g, 4, 4, 52, rockTheme, 0xd8333a));
   for (let style = 0; style < 2; style++) add('rubble', 30, 18, 15, 12, (g) => drawRubble(g, style, houseTheme));
 
   // Raf paketleme.

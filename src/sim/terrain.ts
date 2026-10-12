@@ -1,4 +1,4 @@
-import { DEFAULT_MAP, type MapSpec } from './mapSpec';
+import { DEFAULT_MAP, type LayoutType, type MapSpec, type ReliefType, type RiverType } from './mapSpec';
 import { mulberry32 } from './random';
 
 export const T_GRASS = 0;
@@ -21,7 +21,7 @@ export const U_Y = -R;
 export const V_X = R;
 export const V_Y = R;
 
-export type DecorKind = 'tree' | 'rock' | 'boulder' | 'house' | 'wall' | 'rubble';
+export type DecorKind = 'tree' | 'rock' | 'boulder' | 'house' | 'wall' | 'rubble' | 'tower' | 'keep';
 
 export interface Decor {
   kind: DecorKind;
@@ -90,6 +90,14 @@ export class Terrain {
   hasRelief = false;
   readonly cliffTiles: number[] = [];
   readonly spec: MapSpec;
+  /** Kurguya gore gecerli nehir ve kabartma turu (citadel/crossroads nehirsiz, archipelago adali). */
+  readonly riverKind: RiverType;
+  readonly layout: LayoutType;
+  private readonly reliefKind: ReliefType | 'valley';
+  /** Capraz kanal (adalar kurgusu) kopru karolari ve kanal yari genisligi. */
+  readonly crossBridgeTiles: number[] = [];
+  readonly crossWaterTiles: number[] = [];
+  crossHalf = 0;
   /** Yurunebilir karolarin bagli bilesen numarasi (-1: yurunemez) ve en buyuk bilesen. */
   region: Int32Array = new Int32Array(0);
   mainRegion = -1;
@@ -107,6 +115,9 @@ export class Terrain {
     this.size = size;
     this.opts = opts;
     this.spec = opts.spec ?? DEFAULT_MAP;
+    this.layout = this.spec.layout;
+    this.riverKind = this.layout === 'citadel' || this.layout === 'crossroads' ? 'none' : this.layout === 'archipelago' ? 'islands' : this.spec.river;
+    this.reliefKind = this.layout === 'valley' ? 'valley' : this.layout === 'citadel' ? 'plateau' : this.layout === 'archipelago' || this.layout === 'crossroads' ? 'hills' : this.spec.relief;
     this.cx = this.cy = size / 2;
     this.flags = new Uint8Array(size * size);
     this.occ = new Uint8Array(size * size);
@@ -126,7 +137,7 @@ export class Terrain {
     const k1 = 0.24 + this.rng() * 0.1;
     const k2 = 0.6 + this.rng() * 0.2;
     const k3 = 0.35 + this.rng() * 0.2;
-    const rv = this.spec.river;
+    const rv = this.riverKind;
     const lakeL = size * 0.24;
     for (let i = 0; i < n; i++) {
       const s = this.sMin + i * step;
@@ -145,10 +156,13 @@ export class Terrain {
     this.buildRiver();
     if (rv !== 'none') this.buildBridges();
     if (rv === 'islands') this.carveIslands();
+    if (this.layout === 'archipelago') this.buildCrossChannels();
     this.buildRelief();
     this.placeVillages();
     this.placeForest();
     this.mirror();
+    if (this.layout === 'citadel') this.placeCastle();
+    if (this.layout === 'crossroads') this.carveRoads();
     this.finishRelief();
     this.collectLand();
     this.computeRegions();
@@ -241,6 +255,7 @@ export class Terrain {
   private astarG: Float32Array | null = null;
   private astarParent: Int32Array | null = null;
   private astarStamp: Int32Array | null = null;
+  private astarClosed: Int32Array | null = null;
   private astarGen = 0;
 
   /** (x0,y0)-(x1,y1) dogrusu boyunca tum ornekler yurunebilir mi (birim yaricapi payi ile). */
@@ -270,14 +285,18 @@ export class Terrain {
    * Tile izgarasinda A* (8 komsu, kose kesme yok) + dogrudan gorus ile yol duzlestirme.
    * Donus: [x0,y0,x1,y1,...] ara noktalar (baslangic haric); yol yoksa null; zaten varmissa [].
    */
-  findPath(sx: number, sy: number, gx: number, gy: number, maxNodes = 8000): number[] | null {
+  findPath(sx: number, sy: number, gx: number, gy: number, maxNodes = 0): number[] | null {
     const n = this.size;
     const total = n * n;
+    // Her karo en cok bir kez genisletilir (kapali kume): tum harita taransa bile `total` genisletme yeter.
+    if (maxNodes <= 0) maxNodes = Math.max(8000, total + 64);
     if (!this.astarG) {
       this.astarG = new Float32Array(total);
       this.astarParent = new Int32Array(total);
       this.astarStamp = new Int32Array(total);
+      this.astarClosed = new Int32Array(total);
     }
+    const C = this.astarClosed!;
     const G = this.astarG;
     const P = this.astarParent!;
     const S = this.astarStamp!;
@@ -343,6 +362,8 @@ export class Terrain {
     let found = false;
     while (heapNode.length && expanded < maxNodes) {
       const cur = pop();
+      if (C[cur] === gen) continue;
+      C[cur] = gen;
       expanded++;
       if (cur === target) {
         found = true;
@@ -545,7 +566,7 @@ export class Terrain {
   /** Nehir icinde kalan kara karolari (ada): cizim icin. */
   private collectLand(): void {
     this.landTiles.length = 0;
-    if (this.spec.river === 'none') return;
+    if (this.riverKind === 'none') return;
     const n = this.size;
     for (let ty = 0; ty < n; ty++) {
       for (let tx = 0; tx < n; tx++) {
@@ -556,14 +577,140 @@ export class Terrain {
     }
   }
 
+  /** Adalar kurgusu: nehre dik iki kanal (s = +-yaklasik kopru araligi/2) ve kanallari asan kopruler. */
+  private buildCrossChannels(): void {
+    const n = this.size;
+    const cw = Math.max(4, n * 0.07);
+    this.crossHalf = cw / 2;
+    const s0 = (n < 90 ? 16 : 28) / 2;
+    for (let ty = 0; ty < n; ty++) {
+      for (let tx = 0; tx < n; tx++) {
+        const x = tx + 0.5;
+        const y = ty + 0.5;
+        const s = this.toS(x, y);
+        if (Math.abs(Math.abs(s) - s0) >= cw / 2) continue;
+        if (this.reserved(x, y, 1)) continue;
+        const i = ty * n + tx;
+        if (this.flags[i] === T_GRASS || this.flags[i] === T_PATH) {
+          this.flags[i] = T_WATER;
+          this.crossWaterTiles.push(i);
+        }
+      }
+    }
+    // Kopruler: her kanal icin d = +-0.16n ve +-0.34n.
+    for (const sc of [-s0, s0]) {
+      for (const dc of [-0.34 * n, -0.16 * n, 0.16 * n, 0.34 * n]) {
+        for (let ty = 0; ty < n; ty++) {
+          for (let tx = 0; tx < n; tx++) {
+            const x = tx + 0.5;
+            const y = ty + 0.5;
+            if (Math.abs(this.toD(x, y) - dc) > 1.4 || Math.abs(this.toS(x, y) - sc) > cw / 2 + 1.3) continue;
+            const i = ty * n + tx;
+            if (this.flags[i] === T_BRIDGE) continue;
+            if (this.flags[i] === T_WATER || this.flags[i] === T_GRASS) {
+              this.flags[i] = T_BRIDGE;
+              this.crossBridgeTiles.push(i);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /** Cevreyi temizler: dekoru siler, agac/ev engellerini kaldirir (kale icin). */
+  private clearArea(cx: number, cy: number, r: number): void {
+    const n = this.size;
+    const keep = this.decor.filter((d) => Math.hypot(d.x - cx, d.y - cy) >= r);
+    this.decor.length = 0;
+    for (const d of keep) this.decor.push(d);
+    for (let ty = 0; ty < n; ty++) {
+      for (let tx = 0; tx < n; tx++) {
+        if (Math.hypot(tx + 0.5 - cx, ty + 0.5 - cy) >= r) continue;
+        const i = ty * n + tx;
+        if (this.flags[i] === T_BLOCKED && this.height[i] >= 0) {
+          // yalniz ucurum olmayan (agac/ev/kaya) engeller kalkar
+          let cliff = false;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nx = tx + dx;
+            const ny = ty + dy;
+            if (nx >= 0 && ny >= 0 && nx < n && ny < n && this.height[i] - this.height[ny * n + nx] >= CLIFF_UNITS) cliff = true;
+          }
+          if (!cliff) this.flags[i] = T_GRASS;
+        }
+        this.occ[i] = 0;
+      }
+    }
+  }
+
+  /** Merkez kale: plato ustunde halka duvar (rampa yonlerinde kapi), 4 kose kulesi ve ortada hisar. Nokta simetrik. */
+  private placeCastle(): void {
+    const n = this.size;
+    const c = n / 2;
+    const r = n * 0.21;
+    const rho = r * 0.6;
+    this.clearArea(c, c, rho + 2.5);
+    const put = (tx: number, ty: number, kind: 'wall' | 'tower', variant: number): void => {
+      const i = ty * n + tx;
+      if (tx < 1 || ty < 1 || tx >= n - 1 || ty >= n - 1 || this.flags[i] !== T_GRASS) return;
+      this.flags[i] = T_BLOCKED;
+      this.occ[i] = 1;
+      this.decor.push(kind === 'wall' ? { kind, variant, x: tx + 0.5, y: ty + 0.5 } : { kind, variant, x: tx + 1, y: ty + 1 });
+    };
+    // Halka duvar: merkezden uzakligi [rho - 0.5, rho + 0.5) olan her tile; kapilar rampa yonlerinde.
+    for (let ty = 0; ty < n; ty++) {
+      for (let tx = 0; tx < n; tx++) {
+        const dx = tx + 0.5 - c;
+        const dy = ty + 0.5 - c;
+        const dist = Math.hypot(dx, dy);
+        if (dist < rho - 0.5 || dist >= rho + 0.5) continue;
+        const gate = Math.pow(Math.max(0, Math.cos(2 * Math.atan2(dy, dx))), 4);
+        if (gate > 0.55) continue;
+        put(tx, ty, 'wall', (tx + ty) & 1);
+      }
+    }
+    // Kose kuleleri (4 capraz yon, nokta simetrik).
+    const A = Math.round(rho * Math.SQRT1_2);
+    for (const [tx, ty] of [[c + A, c + A], [c - A - 1, c - A - 1], [c + A, c - A - 1], [c - A - 1, c + A]]) {
+      const i = ty * n + tx;
+      if (this.flags[i] === T_BLOCKED && this.decor.some((d) => d.kind === 'wall' && Math.floor(d.x) === tx && Math.floor(d.y) === ty)) {
+        const k = this.decor.findIndex((d) => d.kind === 'wall' && Math.floor(d.x) === tx && Math.floor(d.y) === ty);
+        this.decor.splice(k, 1);
+        this.flags[i] = T_GRASS;
+      }
+      put(tx, ty, 'tower', 0);
+    }
+    // Hisar: ortada 4x4 (tile c-2..c+1), engel.
+    for (let ty = c - 2; ty < c + 2; ty++) for (let tx = c - 2; tx < c + 2; tx++) {
+      this.flags[ty * n + tx] = T_BLOCKED;
+      this.occ[ty * n + tx] = 1;
+    }
+    this.decor.push({ kind: 'keep', variant: 0, x: c + 2, y: c + 2 });
+  }
+
+  /** Capraz yol: orta eksenler boyunca toprak yol (simetrik). */
+  private carveRoads(): void {
+    const n = this.size;
+    for (let t = -n; t <= n; t += 0.4) {
+      for (const [x, y] of [[this.worldX(0, t), this.worldY(0, t)], [this.worldX(t, 0), this.worldY(t, 0)]]) {
+        if (!this.inMap(x, y, 1)) continue;
+        const idx = this.tileIdx(x, y);
+        if (this.flags[idx] === T_GRASS) {
+          this.flags[idx] = T_PATH;
+          this.pathTiles.push(idx);
+        }
+      }
+    }
+  }
+
   /** Yukselti uretimi: kabartma tipine gore surekli alan -> kademe; sinir/nehir/dogus yakini duzlenir. */
   private buildRelief(): void {
-    const rl = this.spec.relief;
+    const rl = this.reliefKind;
     if (rl === 'flat') return;
+    const amp = this.layout === 'archipelago' ? 0.7 : this.layout === 'crossroads' ? 0.8 : 1;
     const n = this.size;
     const c = n / 2;
     const seed = this.opts.seed + 101;
-    const hasRiver = this.spec.river !== 'none';
+    const hasRiver = this.riverKind !== 'none';
     const smooth = (a: number, b: number, v: number): number => {
       const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
       return t * t * (3 - 2 * t);
@@ -580,7 +727,12 @@ export class Terrain {
         const dist = Math.hypot(x - c, y - c);
         let H = 0;
         if (rl === 'hills') {
-          H = 7 * (0.65 * noise(x / 13, y / 13, seed) + 0.35 * noise(x / 6, y / 6, seed + 5) - 0.36);
+          H = 7 * amp * (0.65 * noise(x / 13, y / 13, seed) + 0.35 * noise(x / 6, y / 6, seed + 5) - 0.36);
+        } else if (rl === 'valley') {
+          // Orta eksene paralel iki yuksek set; yalniz s ~ 0'da bir gecit (kapi) acik.
+          const R = n * 0.17;
+          const hw = n * 0.05 * (1 - 0.97 * Math.exp(-((s / (n * 0.075)) ** 2)));
+          H = 4.4 * smooth(0, 1, (hw - Math.abs(ad - R)) / 0.9 + 0.5) + 0.35 * noise(x / 6, y / 6, seed + 4);
         } else if (rl === 'ridge') {
           const R = n * 0.2;
           const pass = 0.5 + 0.5 * Math.cos((s * Math.PI * 2) / (n * 0.5));
@@ -590,7 +742,9 @@ export class Terrain {
           const ang = Math.atan2(y - c, x - c);
           const ramp = Math.pow(Math.max(0, Math.cos(2 * ang)), 4);
           const w = 0.9 + 6 * ramp;
-          H = 3.4 * smooth(0, 1, (r - dist) / w + 0.5) + 0.3 * noise(x / 5, y / 5, seed + 2);
+          // Citadel kurgusunda plato ustu tam duz (kale insa edilir).
+          const top = this.layout === 'citadel' && dist < r * 0.85 ? 0 : 0.3;
+          H = 3.4 * smooth(0, 1, (r - dist) / w + 0.5) + top * noise(x / 5, y / 5, seed + 2);
         } else {
           const R = n * 0.26;
           H = 5.4 * Math.pow(Math.max(0, 1 - dist / R), 1.15) + 1.1 * Math.abs(noise(x / 4.5, y / 4.5, seed + 9) - 0.5) * 2 * smooth(0, 5, R - dist);
@@ -728,7 +882,15 @@ export class Terrain {
       [2, 3],
     ];
 
-    for (let k = 0; k < sites; k++) {
+    if (this.layout === 'crossroads') {
+      // Kavsak kurgusu: kavsagin dort kosesinde sabit mezralar.
+      for (const [sc, dc] of [[-0.25, -0.2], [0.25, -0.2]]) {
+        const x = this.worldX(sc * n, dc * n);
+        const y = this.worldY(sc * n, dc * n);
+        if (this.inMap(x, y, 6) && this.flags[this.tileIdx(x, y)] === T_GRASS) centers.push({ x, y, side: -1 });
+      }
+    }
+    for (let k = 0; this.layout !== 'crossroads' && k < sites; k++) {
       const side = -1; // yalniz bir yari uretilir, sonra yansitilir (mirror)
       for (let attempt = 0; attempt < 80; attempt++) {
         const s = (rng() * 2 - 1) * n * 0.6;
@@ -882,7 +1044,7 @@ export class Terrain {
     const rng = this.rng;
     const seed = this.opts.seed;
     const ft = this.spec.forest;
-    const hasRiver = this.spec.river !== 'none';
+    const hasRiver = this.riverKind !== 'none';
     // Orman tipi: esik (thr), agac olasiligi ve kaya bandi ust siniri.
     const thr = ft === 'none' ? 99 : ft === 'sparse' ? 0.66 : ft === 'grove' ? 0.64 : 0.6;
     const prob = ft === 'sparse' ? 0.3 : ft === 'grove' ? 0.55 : 0.4;
