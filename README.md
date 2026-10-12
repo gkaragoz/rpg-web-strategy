@@ -3,6 +3,26 @@
 Tarayıcıda çalışan izometrik, otomatik savaş oyunu. PixiJS v8 + Vite + TypeScript. Simülasyon bir Web Worker'da
 çalışır; 20.000 askerlik (10k vs 10k) savaş ~160 FPS'te akar.
 
+## Oyna / Kur
+
+**Tarayıcıda (kurulumsuz):** https://gkaragoz.github.io/rpg-web-strategy/ — her sürümde otomatik yayınlanır. Sayfa ilk açılışta bir
+service worker kaydedip bir kez yenilenir (SharedArrayBuffer / worker sim için); olmazsa sim ana thread'de çalışır.
+
+**Kurulum sihirbazı (yerel sunucu, çevrimdışı oynanır; Node.js 18+ gerekir, yoksa sihirbaz kurmayı önerir):**
+
+| Sistem | Komut |
+|---|---|
+| macOS / Linux | `curl -fsSL https://github.com/gkaragoz/rpg-web-strategy/releases/latest/download/install.sh \| bash` |
+| Windows (PowerShell) | `iwr -useb https://github.com/gkaragoz/rpg-web-strategy/releases/latest/download/install.ps1 \| iex` |
+| Windows (çift tık) | Releases sayfasından `install.bat` indirip çalıştır |
+
+Sihirbaz kurulum klasörünü sorar, son sürümü indirir, `oyna.sh` / `oyna.bat` başlatıcısı ve masaüstü kısayolu oluşturur.
+Güncelleme: `install.sh --update` · Kaldırma: `install.sh --uninstall` (Windows: `-Update` / `-Uninstall`).
+Elle: sürüm zip'ini aç, `node server.mjs app --open` (`scripts/server.mjs`, bağımlılıksız, COOP/COEP başlıklı).
+
+**Sürüm çıkarma:** `git tag v1.x.y && git push origin v1.x.y` → `.github/workflows/release.yml` test eder, derler, zip + sihirbaz
+dosyalarıyla Release oluşturur ve Pages'e yayınlar.
+
 ## Çalıştırma
 
 ```bash

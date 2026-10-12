@@ -7,6 +7,8 @@ const isolation = {
 };
 
 export default defineConfig({
+  // Goreli taban: dist/ herhangi bir alt dizinde (GitHub Pages, yerel sunucu) calisir.
+  base: './',
   server: { headers: isolation },
   preview: { headers: isolation },
   worker: { format: 'es' },

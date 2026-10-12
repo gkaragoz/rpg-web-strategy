@@ -1,0 +1,60 @@
+name: release
+
+# v* etiketi itildiginde: test + derleme, zip/sihirbaz dosyalariyla GitHub Release ve GitHub Pages yayini.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - name: Paketle
+        run: |
+          VER="${GITHUB_REF_NAME:-dev}"
+          mkdir -p release
+          cp scripts/server.mjs dist/server.mjs
+          (cd dist && zip -qr "../release/rpg-web-strategy-${VER}.zip" .)
+          cp scripts/install.sh scripts/install.ps1 scripts/install.bat release/
+          rm dist/server.mjs
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: release/*
+      - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+
+  pages:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
