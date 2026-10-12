@@ -19,6 +19,8 @@ export interface EditorDeps {
   camera: Camera;
   state: AppState;
   getAtlas: () => Atlas;
+  /** Yerlestirilen turlerin dokusu atlas'ta yoksa pisirir (sprite'lar yeniden kurulur). */
+  ensureAtlas: () => void;
   /** Birimler/sayilar degisti (arayuz sayaclarini guncelle). */
   onChange: () => void;
   toast: (msg: string) => void;
@@ -82,7 +84,23 @@ export class Editor {
   private toTile(clientX: number, clientY: number): { x: number; y: number } {
     const rect = this.d.app.canvas.getBoundingClientRect();
     const p = this.d.world.root.toLocal({ x: clientX - rect.left, y: clientY - rect.top });
-    return { x: p.x / 64 + p.y / 32, y: p.y / 32 - p.x / 64 };
+    // Yukseltili arazide ekran noktasi yukselti kadar yukari kayar: iki turda duzelt.
+    let x = p.x / 64 + p.y / 32;
+    let y = p.y / 32 - p.x / 64;
+    const t = this.d.world.terrain;
+    if (t && t.hasRelief) {
+      for (let k = 0; k < 3; k++) {
+        const e = t.elevPx(Math.min(this.d.world.mapSize, Math.max(0, x)), Math.min(this.d.world.mapSize, Math.max(0, y)));
+        x = p.x / 64 + (p.y + e) / 32;
+        y = (p.y + e) / 32 - p.x / 64;
+      }
+    }
+    return { x, y };
+  }
+
+  private elevAt(x: number, y: number): number {
+    const t = this.d.world.terrain;
+    return t && t.hasRelief ? t.elevPx(Math.min(this.d.world.mapSize, Math.max(0, x)), Math.min(this.d.world.mapSize, Math.max(0, y))) : 0;
   }
 
   private inMap(x: number, y: number): boolean {
@@ -172,9 +190,10 @@ export class Editor {
       this.d.toast(`Üst sınıra ulaşıldı (${MAX_PLACED} asker).`);
     }
     if (added.length === 0) return;
+    for (const u of added) s.units.push(u);
+    this.d.ensureAtlas();
     for (const u of added) {
-      s.units.push(u);
-      this.addSprite(u);
+      if (!this.sprites.has(u)) this.addSprite(u);
       this.stroke!.units.push(u);
     }
     saveState(s);
@@ -212,7 +231,7 @@ export class Editor {
     const erase = s.tool === 'erase';
     const { x, y } = this.cursor;
     const cx = isoX(x, y);
-    const cy = isoY(x, y);
+    const cy = isoY(x, y, this.elevAt(x, y));
     const colors = teamColors(s.palette, s.teamCount);
     const col = erase ? 0xffffff : colors[Math.min(s.selTeam, colors.length - 1)].main;
     const bad = !erase && br.count === 1 && !this.isValid(x, y);
@@ -232,7 +251,7 @@ export class Editor {
     const anc = atlas.unitAnchor[idx] ?? atlas.unitAnchor[u.kind * MAX_TEAMS * POSES];
     const spr = new Sprite(tex);
     spr.anchor.set(anc.ax, anc.ay);
-    spr.position.set(isoX(u.x, u.y), isoY(u.x, u.y));
+    spr.position.set(isoX(u.x, u.y), isoY(u.x, u.y, this.elevAt(u.x, u.y)));
     spr.zIndex = u.x + u.y;
     // Haritanin ortasina bakar.
     const c = this.d.world.mapSize / 2;
@@ -405,10 +424,9 @@ export class Editor {
   private addMany(added: PlacedUnit[]): void {
     if (added.length === 0) return;
     const s = this.d.state;
-    for (const u of added) {
-      s.units.push(u);
-      this.addSprite(u);
-    }
+    for (const u of added) s.units.push(u);
+    this.d.ensureAtlas();
+    for (const u of added) if (!this.sprites.has(u)) this.addSprite(u);
     this.undoStack.push({ type: 'add', units: added });
     this.redoStack = [];
     saveState(s);

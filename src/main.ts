@@ -158,6 +158,7 @@ const editor = new Editor({
   camera,
   state,
   getAtlas,
+  ensureAtlas: () => ensureAtlas(),
   onChange: () => studio?.render(),
   toast: (m) => studio?.toast(m),
 });

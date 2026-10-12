@@ -75,13 +75,13 @@ describe('harita tarifi', () => {
           expect(Array.from(u.height), `${tag} determinizm`).toEqual(Array.from(t.height));
           for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) expect(t.height[y * size + x], `${tag} yukselti simetrisi`).toBe(t.height[(size - 1 - y) * size + (size - 1 - x)]);
           for (const i of t.cliffTiles) expect(t.flags[i], tag).toBe(3);
-          // Yurunebilir komsu karolar arasinda en cok 1 kademe fark (ucurum disinda).
+          // Yurunebilir komsu karolar arasinda ucurum esiginin altinda fark.
           for (let y = 0; y < size - 1; y++) {
             for (let x = 0; x < size - 1; x++) {
               const w = (a: number, b: number): boolean => t.flags[a] !== 1 && t.flags[a] !== 3 && t.flags[b] !== 1 && t.flags[b] !== 3;
               const i = y * size + x;
-              if (w(i, i + 1)) expect(Math.abs(t.height[i] - t.height[i + 1]), tag).toBeLessThanOrEqual(1);
-              if (w(i, i + size)) expect(Math.abs(t.height[i] - t.height[i + size]), tag).toBeLessThanOrEqual(1);
+              if (w(i, i + 1)) expect(Math.abs(t.height[i] - t.height[i + 1]), tag).toBeLessThanOrEqual(23);
+              if (w(i, i + size)) expect(Math.abs(t.height[i] - t.height[i + size]), tag).toBeLessThanOrEqual(23);
             }
           }
           // Iki ordu bolgesi birbirine ulasabilir.

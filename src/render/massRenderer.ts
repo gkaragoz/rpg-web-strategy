@@ -119,7 +119,7 @@ export class MassRenderer {
       const list = atlas.decor[d.kind];
       const spr = list[d.variant % list.length];
       this.decorX[i] = isoX(d.x, d.y);
-      this.decorY[i] = isoY(d.x, d.y);
+      this.decorY[i] = isoY(d.x, d.y, this.terrain ? this.terrain.elevPx(d.x, d.y) : 0);
       this.decorKey[i] = Math.min(maxKey, Math.max(0, ((d.x + d.y) * DEPTH_SCALE) | 0));
       this.decorParticles.push(new Particle({ texture: spr.texture, x: this.decorX[i], y: this.decorY[i], anchorX: spr.ax, anchorY: spr.ay }));
     });
@@ -162,6 +162,8 @@ export class MassRenderer {
     const dt = this.lastTime < 0 ? 0 : Math.min(0.1, Math.max(0, time - this.lastTime));
     this.lastTime = time;
     const zoom = view.zoom ?? 1;
+    const terr = this.terrain;
+    const relief = !!terr && terr.hasRelief;
     // Uzakta (kucuk piksel) sekme ve poz degisimi titreme gibi gorunur: sakinlestir.
     const calm = Math.min(1, Math.max(0, (zoom - 0.3) / 0.5));
     const follow = 1 - Math.exp(-dt * 30);
@@ -174,7 +176,7 @@ export class MassRenderer {
       const wx = u.px[i] + (u.x[i] - u.px[i]) * alpha;
       const wy = u.py[i] + (u.y[i] - u.py[i]) * alpha;
       let sx = isoX(wx, wy);
-      let sy = isoY(wx, wy);
+      let sy = isoY(wx, wy, relief ? terr!.elevPx(wx, wy) : 0);
       // Hafif alcak gecirgen konum filtresi: sim-ici kucuk titresimler gorunmez (isinlanma: dogrudan).
       if (this.lastKey[i] >= 0 && dt > 0) {
         const jx = sx - this.fsx[i];
@@ -273,7 +275,8 @@ export class MassRenderer {
       const wx2 = p.sx[i] + (p.tx[i] - p.sx[i]) * k2;
       const wy2 = p.sy[i] + (p.ty[i] - p.sy[i]) * k2;
       const x = isoX(wx, wy);
-      const y = isoY(wx, wy, 4 * p.height[i] * k * (1 - k));
+      const ez = this.terrain && this.terrain.hasRelief ? this.terrain.elevPx(wx, wy) : 0;
+      const y = isoY(wx, wy, ez + 4 * p.height[i] * k * (1 - k));
       if (x < view.left || x > view.right || y < view.top || y > view.bottom) continue;
       let part = this.arrowParticles[n];
       if (!part) {
@@ -286,7 +289,7 @@ export class MassRenderer {
       part.texture = st.orb ? this.orbTex : this.arrowTex;
       part.tint = st.color;
       part.scaleX = part.scaleY = st.scale;
-      part.rotation = st.orb ? 0 : Math.atan2(isoY(wx2, wy2, 4 * p.height[i] * k2 * (1 - k2)) - y, isoX(wx2, wy2) - x);
+      part.rotation = st.orb ? 0 : Math.atan2(isoY(wx2, wy2, ez + 4 * p.height[i] * k2 * (1 - k2)) - y, isoX(wx2, wy2) - x);
       out[n++] = part;
     }
     out.length = n;
@@ -308,7 +311,7 @@ export class MassRenderer {
       const sx = isoX(wx, wy);
       const k = STATS[u.kind[i]].scale;
       const barW = 34 * Math.sqrt(k);
-      const sy = isoY(wx, wy) - 72 * k;
+      const sy = isoY(wx, wy, this.terrain && this.terrain.hasRelief ? this.terrain.elevPx(wx, wy) : 0) - 72 * k;
       if (sx < view.left || sx > view.right || sy < view.top || sy > view.bottom) continue;
       const ratio = u.hp[i] / u.maxHp[i];
       let bg = this.barBg[n];

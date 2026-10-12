@@ -51,6 +51,9 @@ export class FxSystem {
   private readonly textVy = new Float32Array(MAX_NUMBERS);
   private textCursor = 0;
 
+  /** Arazi yuksekligi (ekran pikseli); olaylar yamacta dogru yerde cizilsin. */
+  elev: (x: number, y: number) => number = () => 0;
+
   constructor(
     private readonly atlas: Atlas,
     private readonly camera: Camera,
@@ -131,7 +134,7 @@ export class FxSystem {
     const crowded = this.live.length > MAX_PARTICLES * 0.85;
     for (const ev of events) {
       const sx = isoX(ev.x, ev.y);
-      const sy = isoY(ev.x, ev.y);
+      const sy = isoY(ev.x, ev.y, this.elev(ev.x, ev.y));
       if (!this.inView(sx, sy, view)) continue;
       switch (ev.type) {
         case 'hit':

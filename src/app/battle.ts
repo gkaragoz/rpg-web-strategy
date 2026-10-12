@@ -72,6 +72,8 @@ export class BattleScene {
   private seed = 1;
   private time = 0;
   private activeProjectiles = 0;
+  /** Arazi yuksekligi (ekran pikseli); kabartma yoksa 0. */
+  private elev: (x: number, y: number) => number = () => 0;
   private drawnLine = '';
   private keyHandler: ((e: KeyboardEvent) => void) | null = null;
   private lastHud = 0;
@@ -121,7 +123,10 @@ export class BattleScene {
     const detailed = !opts.bench && unitCount <= DETAILED_MAX;
     const atlas = this.d.getAtlas();
     const { world, camera, app } = this.d;
-    world.rebuild(cfg, atlas, detailed, !opts.bench);
+    const reliefMap = !!cfg.map && cfg.map.relief !== 'flat';
+    world.rebuild(cfg, atlas, detailed, !opts.bench || reliefMap);
+    const terr = world.terrain;
+    this.elev = terr && terr.hasRelief ? (x, y) => terr.elevPx(x, y) : () => 0;
     camera.setMap(world.mapSize);
     camera.fit(app.screen.width, app.screen.height);
     camera.enabled = !(opts.bench && opts.autoSeconds > 0);
@@ -130,7 +135,7 @@ export class BattleScene {
       this.buildViews();
     } else {
       this.mass = new MassRenderer(app, this.sim, atlas, world.terrain);
-      if (opts.bench) world.staticLayer.addChildAt(this.mass.buildGround(), 0);
+      if (opts.bench && !reliefMap) world.staticLayer.addChildAt(this.mass.buildGround(), 0);
       world.entityLayer.addChild(this.mass.layer);
     }
 
@@ -138,6 +143,7 @@ export class BattleScene {
       const quality: FxQuality = opts.fx === 'auto' ? (unitCount <= 400 ? 'high' : 'low') : opts.fx;
       // Kalabalikta yuzen sayilar okunmaz: yalniz az birimde goster.
       this.fx = new FxSystem(atlas, camera, quality, opts.numbers && unitCount <= 200);
+      this.fx.elev = this.elev;
       world.fxLayer.addChild(this.fx.layer, this.fx.numbers);
     }
 
@@ -468,7 +474,7 @@ export class BattleScene {
       const wx = u.px[i] + (u.x[i] - u.px[i]) * alpha;
       const wy = u.py[i] + (u.y[i] - u.py[i]) * alpha;
       v.root.visible = true;
-      v.root.position.set(isoX(wx, wy), isoY(wx, wy));
+      v.root.position.set(isoX(wx, wy), isoY(wx, wy, this.elev(wx, wy)));
       v.root.zIndex = wx + wy;
       const swingTotal = u.swing[i] > 0 ? STATS[u.kind[i]].swing : 0;
       v.update(
@@ -498,8 +504,8 @@ export class BattleScene {
       }
       this.activeProjectiles++;
       const k = Math.min(1, (p.t[i] + advance) / p.dur[i]);
-      const pos = arcPoint(p, i, k);
-      const next = arcPoint(p, i, Math.min(1, k + 0.03));
+      const pos = arcPoint(p, i, k, this.elev);
+      const next = arcPoint(p, i, Math.min(1, k + 0.03), this.elev);
       v.arrow.visible = v.shadow.visible = true;
       if (v.tag !== p.tag[i]) {
         v.tag = p.tag[i];
@@ -594,9 +600,10 @@ export class BattleScene {
   }
 }
 
-function arcPoint(p: SimBackend['projectiles'], i: number, k: number) {
+function arcPoint(p: SimBackend['projectiles'], i: number, k: number, elev: (x: number, y: number) => number) {
   const wx = p.sx[i] + (p.tx[i] - p.sx[i]) * k;
   const wy = p.sy[i] + (p.ty[i] - p.sy[i]) * k;
+  const e = elev(wx, wy);
   const z = 4 * p.height[i] * k * (1 - k);
-  return { sx: isoX(wx, wy), sy: isoY(wx, wy, z), gx: isoX(wx, wy), gy: isoY(wx, wy), z };
+  return { sx: isoX(wx, wy), sy: isoY(wx, wy, e + z), gx: isoX(wx, wy), gy: isoY(wx, wy, e), z };
 }

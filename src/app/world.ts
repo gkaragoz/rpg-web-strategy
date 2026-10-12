@@ -36,7 +36,7 @@ export class WorldView {
 
     this.mapSize = mapSizeFor(config);
     this.terrain = terrainFor(config);
-    if (ground) this.staticLayer.addChild(buildGround(this.mapSize, PALETTES[config.map?.biome ?? 'forest']));
+    if (ground) this.staticLayer.addChild(buildGround(this.mapSize, PALETTES[config.map?.biome ?? 'forest'], this.terrain));
     if (this.terrain) this.staticLayer.addChild(buildTerrainOverlay(this.terrain));
     if (this.terrain && atlas && decorSprites) this.addDecor(this.terrain, atlas);
   }
@@ -54,7 +54,7 @@ export class WorldView {
       const spr9 = list[d.variant % list.length];
       const s = new Sprite(spr9.texture);
       s.anchor.set(spr9.ax, spr9.ay);
-      s.position.set(isoX(d.x, d.y), isoY(d.x, d.y));
+      s.position.set(isoX(d.x, d.y), isoY(d.x, d.y, t.elevPx(d.x, d.y)));
       s.zIndex = d.x + d.y;
       this.entityLayer.addChild(s);
       this.decorSprites.push(s);

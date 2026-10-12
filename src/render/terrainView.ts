@@ -7,7 +7,8 @@ import { PALETTES, type BiomePalette } from './biome';
 type Pt = [number, number];
 
 /** Dunya (x, y) -> ekran. */
-const scr = (x: number, y: number, z = 0): Pt => [isoX(x, y), isoY(x, y, z)];
+let elev = (_x: number, _y: number): number => 0;
+const scr = (x: number, y: number, z = 0): Pt => [isoX(x, y), isoY(x, y, z + elev(x, y))];
 const flat = (p: Pt[]): number[] => p.flatMap((q) => q);
 
 /** Nehir, kopruler ve yollar: zemin ile birimler arasinda duran statik katman. */
@@ -16,6 +17,7 @@ export function buildTerrainOverlay(t: Terrain): Container {
   const g = new Graphics();
   root.addChild(g);
   const pal = PALETTES[t.spec.biome];
+  elev = t.hasRelief ? (x, y) => t.elevPx(x, y) : () => 0;
 
   // Toprak yol karolari.
   for (const idx of t.pathTiles) {

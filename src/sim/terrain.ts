@@ -8,8 +8,11 @@ export const T_BLOCKED = 3;
 export const T_PATH = 4;
 
 /** Bir yukselti kademesinin ekrandaki yuksekligi (piksel). */
-export const LEVEL_PX = 15;
+export const LEVEL_PX = 22;
 export const MAX_LEVEL_H = 4;
+/** Tile yuksekligi birimleri: kademe basina 16 birim; komsu fark >= CLIFF_UNITS ise ucurum. */
+export const H_UNITS = 16;
+export const CLIFF_UNITS = 24;
 
 const R = Math.SQRT1_2;
 /** Nehir eksenleri: u = ordu ekseni (ekranda yatay), v = nehir yonu (ekranda dikey). */
@@ -577,7 +580,7 @@ export class Terrain {
         const dist = Math.hypot(x - c, y - c);
         let H = 0;
         if (rl === 'hills') {
-          H = 3.6 * (0.65 * noise(x / 13, y / 13, seed) + 0.35 * noise(x / 6, y / 6, seed + 5)) - 1.05;
+          H = 7 * (0.65 * noise(x / 13, y / 13, seed) + 0.35 * noise(x / 6, y / 6, seed + 5) - 0.36);
         } else if (rl === 'ridge') {
           const R = n * 0.2;
           const pass = 0.5 + 0.5 * Math.cos((s * Math.PI * 2) / (n * 0.5));
@@ -589,8 +592,8 @@ export class Terrain {
           const w = 0.9 + 6 * ramp;
           H = 3.4 * smooth(0, 1, (r - dist) / w + 0.5) + 0.3 * noise(x / 5, y / 5, seed + 2);
         } else {
-          const R = n * 0.3;
-          H = 4.6 * Math.pow(Math.max(0, 1 - dist / R), 1.25) + 0.45 * noise(x / 5, y / 5, seed + 9) * smooth(0, 6, R - dist);
+          const R = n * 0.26;
+          H = 5.4 * Math.pow(Math.max(0, 1 - dist / R), 1.15) + 1.1 * Math.abs(noise(x / 4.5, y / 4.5, seed + 9) - 0.5) * 2 * smooth(0, 5, R - dist);
         }
         if (!radial) H *= smooth(1.5, 5, ad); // nehir/orta eksen vadi
         if (hasRiver && !radial) H *= smooth(2.5, 6, this.riverEdgeDist(x, y));
@@ -604,7 +607,7 @@ export class Terrain {
         if (this.reserved(x, y, 2)) H = 0;
         const f = this.flags[ty * n + tx];
         if (f === T_WATER || f === T_BRIDGE) H = 0;
-        this.height[ty * n + tx] = Math.min(MAX_LEVEL_H, Math.max(0, Math.floor(H)));
+        this.height[ty * n + tx] = Math.min(MAX_LEVEL_H * H_UNITS, Math.max(0, Math.round(H * H_UNITS)));
       }
     }
     // Nokta simetri.
@@ -626,7 +629,7 @@ export class Terrain {
           const nx = tx + dx;
           const ny = ty + dy;
           if (nx < 0 || ny < 0 || nx >= n || ny >= n) continue;
-          if (h - this.height[ny * n + nx] >= 2) cliff = true;
+          if (h - this.height[ny * n + nx] >= CLIFF_UNITS) cliff = true;
         }
         if (cliff) {
           this.flags[i] = T_BLOCKED;
@@ -657,7 +660,7 @@ export class Terrain {
             cnt++;
           }
         }
-        this.vh[vy * w + vx] = sum / Math.max(1, cnt);
+        this.vh[vy * w + vx] = sum / Math.max(1, cnt) / H_UNITS;
       }
     }
     // Ucurum karolarini cizim icin ekran listesi olarak koru (dekor/ev yerlesimi bunlari zaten engel sayar).
@@ -670,7 +673,7 @@ export class Terrain {
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const nx = tx + dx;
         const ny = ty + dy;
-        if (nx >= 0 && ny >= 0 && nx < n && ny < n && h - this.height[ny * n + nx] >= 2) {
+        if (nx >= 0 && ny >= 0 && nx < n && ny < n && h - this.height[ny * n + nx] >= CLIFF_UNITS) {
           this.cliffTiles.push(i);
           break;
         }
@@ -703,7 +706,7 @@ export class Terrain {
         if (x < 1 || y < 1 || x >= n - 1 || y >= n - 1) return false;
         const i = y * n + x;
         if (this.flags[i] !== T_GRASS || this.occ[i]) return false;
-        if (this.height[i] !== h0) return false; // yapi duz zemine kurulur
+        if (Math.abs(this.height[i] - h0) > 4) return false; // yapi duz zemine kurulur
         if (this.reserved(x + 0.5, y + 0.5, 1)) return false;
       }
     }
