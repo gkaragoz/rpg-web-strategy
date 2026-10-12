@@ -1,9 +1,10 @@
 /// <reference lib="webworker" />
-import { Battle, type BattleConfig, projectileCapacity, unitCapacity } from './battle';
+import { Battle, DBG_KEYS, type BattleConfig, projectileCapacity, unitCapacity } from './battle';
 import { SIM_DT } from './constants';
 import {
   F_ALIVE_BLUE,
   F_ALIVE_RED,
+  F_DBG,
   F_LAST_MS,
   F_MAX_MS,
   F_PREV_PUBLISH,
@@ -115,6 +116,7 @@ function runStep(): void {
   f[F_MAX_MS] = maxMs;
   f[F_LAST_MS] = ms;
   PROF_KEYS.forEach((k, i) => (f[F_PROF + i] = battle.prof[k]));
+  DBG_KEYS.forEach((k, i) => (f[F_DBG + i] = battle.dbg[k]));
 
   if (battle.events.length) {
     ctx.postMessage({ type: 'events', events: battle.events.splice(0) } satisfies WorkerEvent);
@@ -146,6 +148,8 @@ function zeroStats(): void {
   const f = sh.ctrlF;
   f[F_STEPS] = f[F_TOTAL_MS] = f[F_MAX_MS] = 0;
   for (let i = 0; i < PROF_KEYS.length; i++) f[F_PROF + i] = 0;
+  for (const k of DBG_KEYS) battle.dbg[k] = 0;
+  for (let i = 0; i < DBG_KEYS.length; i++) f[F_DBG + i] = 0;
 }
 
 ctx.onmessage = (e: MessageEvent<WorkerCommand>) => {

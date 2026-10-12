@@ -1,11 +1,13 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import { Camera } from './camera';
 import { isoX, isoY } from './iso';
+import { bakeAtlas } from './render/atlas';
 import { buildGround } from './render/ground';
 import { MassRenderer, type MassOptions } from './render/massRenderer';
+import { addDecorSprites, buildTerrainOverlay } from './render/terrainView';
 import { DEATH_FADE, UnitView } from './render/unitView';
 import type { SimBackend } from './sim/backend';
-import type { BattleConfig } from './sim/battle';
+import { terrainFor, type BattleConfig } from './sim/battle';
 import { SIM_DT } from './sim/constants';
 import { InlineSim } from './sim/inlineSim';
 import { STATS, Team } from './sim/units';
@@ -18,6 +20,9 @@ const WARMUP_FRAMES = 60;
 // ?bench=10000  -> takim basina birim sayisi (10000 vs 10000)
 // ?auto=30      -> 30 sn sonra otomatik rapor
 // ?sim=main     -> sim'i worker yerine ana thread'de calistir (karsilastirma)
+// ?env=off      -> cevre (nehir, engeller) kapali: eski cıplak harita
+// ?seed=3       -> harita tohumu
+// ?kite=off     -> okcu/priest vur-kac kapali (eski davranis)
 const params = new URLSearchParams(location.search);
 const benchPer = params.has('bench') ? Math.max(10, Number(params.get('bench')) || 10000) : 0;
 const autoSeconds = Number(params.get('auto')) || 0;
@@ -41,7 +46,14 @@ const world = new Container();
 app.stage.addChild(world);
 
 let seed = 1;
-const config: BattleConfig = isBench ? { mode: 'bench', perTeam: benchPer } : { mode: 'demo', perTeam: 10 };
+const env = params.get('env') !== 'off';
+const terrainSeed = Number(params.get('seed')) || 1;
+const kite = params.get('kite') !== 'off';
+const config: BattleConfig = isBench
+  ? { mode: 'bench', perTeam: benchPer, env, terrainSeed, kite }
+  : { mode: 'demo', perTeam: 10, env, terrainSeed, kite };
+const terrain = terrainFor(config);
+const atlas = bakeAtlas(app.renderer);
 const sim: SimBackend = useWorker ? await WorkerSim.create(config, seed) : new InlineSim(config, seed);
 const camera = new Camera(app.canvas, sim.mapSize);
 const stats = new StatsPanel(document.getElementById('stats')!);
@@ -65,12 +77,17 @@ let mass: MassRenderer | null = null;
 const massOpts: MassOptions = { bars: true, sort: true, cull: true };
 
 if (isBench) {
-  mass = new MassRenderer(app, sim);
-  world.addChild(mass.buildGround(), mass.layer);
+  mass = new MassRenderer(app, sim, atlas, terrain);
+  world.addChild(mass.buildGround());
+  if (terrain) world.addChild(buildTerrainOverlay(terrain));
+  world.addChild(mass.layer);
   camera.fit(app.screen.width, app.screen.height);
   if (autoSeconds > 0) camera.enabled = false;
 } else {
-  world.addChild(buildGround(sim.mapSize), shadowLayer, unitLayer, arrowLayer, fxLayer);
+  world.addChild(buildGround(sim.mapSize));
+  if (terrain) world.addChild(buildTerrainOverlay(terrain));
+  world.addChild(shadowLayer, unitLayer, arrowLayer, fxLayer);
+  if (terrain) addDecorSprites(terrain, atlas, unitLayer);
   buildViews();
 }
 
@@ -183,6 +200,8 @@ function benchSummary() {
     mainThreadSimMsPerFrame: Number((mainSimTotalMs / Math.max(1, frameCount)).toFixed(2)),
     simMsPerStep: Number((st.totalMs / simSteps).toFixed(2)),
     simMaxStepMs: Number(st.maxMs.toFixed(2)),
+    behavior: st.dbg,
+    decor: terrain ? terrain.decor.length : 0,
     simPhasesMsPerStep: Object.fromEntries(
       Object.entries(st.prof)
         .filter(([k]) => k !== 'steps')
@@ -320,7 +339,7 @@ function syncMass(alpha: number): void {
   );
   sim.events.length = 0;
   activeProjectiles = mass!.drawnArrows;
-  drawnLine = `Cizilen    ${mass!.drawnUnits} birim, ${mass!.drawnArrows} ok`;
+  drawnLine = `Cizilen    ${mass!.drawnUnits} birim, ${mass!.drawnDecor} dekor, ${mass!.drawnArrows} ok`;
 }
 
 function syncViews(dt: number, alpha: number): void {
@@ -411,5 +430,6 @@ function arcPoint(p: SimBackend['projectiles'], i: number, k: number) {
 }
 
 (window as unknown as { __sim: SimBackend; __camera: Camera }).__sim = sim;
-(window as unknown as { __camera: Camera }).__camera = camera;
+(window as unknown as { __camera: Camera; __terrain: unknown }).__camera = camera;
+(window as unknown as { __terrain: unknown }).__terrain = terrain;
 requestAnimationFrame(frame);

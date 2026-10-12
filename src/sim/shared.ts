@@ -48,6 +48,7 @@ export const F_TOTAL_MS = 7;
 export const F_MAX_MS = 8;
 export const F_LAST_MS = 9;
 export const F_PROF = 10; // prep, grid, units, pick, separate, arrows, steps (7 deger)
+export const F_DBG = 17; // DBG_KEYS sirasiyla (7 deger)
 export const F_LEN = 24;
 
 export const PROF_KEYS = ['prep', 'grid', 'units', 'pick', 'separate', 'arrows', 'steps'] as const;

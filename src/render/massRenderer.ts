@@ -1,14 +1,14 @@
 import { Application, Container, Graphics, Particle, ParticleContainer, Rectangle, Texture, TilingSprite } from 'pixi.js';
+import type { Terrain } from '../sim/terrain';
+import type { Atlas } from './atlas';
 import { isoX, isoY } from '../iso';
 import type { SimView } from '../sim/backend';
 import { SIM_DT } from '../sim/constants';
 import { Kind, STATS } from '../sim/units';
-import { DEATH_FADE, UnitView } from './unitView';
+import { DEATH_FADE } from './unitView';
 
-const CELL_W = 64;
 const CELL_H = 96;
 const FEET_Y = 80;
-const SHEET_COLS = 4;
 const DEPTH_SCALE = 4;
 
 export interface MassViewport {
@@ -40,10 +40,14 @@ export class MassRenderer {
   private readonly bars = new ParticleContainer({
     dynamicProperties: { vertex: true, position: true, rotation: false, uvs: false, color: true },
   });
-  private readonly unitTex: Texture[] = []; // [kind*4 + team*2 + pose]
-  private arrowTex!: Texture;
-  private pixelTex!: Texture;
+  private readonly unitTex: Texture[]; // [kind*4 + team*2 + pose]
+  private readonly arrowTex: Texture;
+  private readonly pixelTex: Texture;
   private particles: Particle[] = [];
+  private decorParticles: Particle[] = [];
+  private decorKey: Int32Array = new Int32Array(0);
+  private decorX: Float32Array = new Float32Array(0);
+  private decorY: Float32Array = new Float32Array(0);
   private arrowParticles: Particle[] = [];
   private barBg: Particle[] = [];
   private barFill: Particle[] = [];
@@ -52,14 +56,20 @@ export class MassRenderer {
   private counts = new Int32Array(0);
   /** Son karede cizilen birim ve ok sayilari. */
   drawnUnits = 0;
+  drawnDecor = 0;
   drawnArrows = 0;
 
   constructor(
     private readonly app: Application,
     private readonly sim: SimView,
+    atlas: Atlas,
+    private readonly terrain: Terrain | null,
   ) {
     this.layer = new Container();
-    this.bakeAtlas();
+    this.unitTex = atlas.unitTex;
+    this.arrowTex = atlas.arrowTex;
+    this.pixelTex = atlas.pixelTex;
+    this.buildDecor(atlas);
     this.layer.addChild(this.units, this.arrows, this.bars);
     this.rebuild();
   }
@@ -83,50 +93,22 @@ export class MassRenderer {
     return root;
   }
 
-  private bakeAtlas(): void {
-    const sheet = new Container();
-    const cell = (idx: number): { x: number; y: number } => ({
-      x: (idx % SHEET_COLS) * CELL_W,
-      y: Math.floor(idx / SHEET_COLS) * CELL_H,
+  private buildDecor(atlas: Atlas): void {
+    const decor = this.terrain ? this.terrain.decor : [];
+    const n = decor.length;
+    this.decorKey = new Int32Array(n);
+    this.decorX = new Float32Array(n);
+    this.decorY = new Float32Array(n);
+    this.decorParticles = [];
+    const maxKey = Math.ceil(this.sim.mapSize * 2 * DEPTH_SCALE) + 2;
+    decor.forEach((d, i) => {
+      const list = atlas.decor[d.kind];
+      const spr = list[d.variant % list.length];
+      this.decorX[i] = isoX(d.x, d.y);
+      this.decorY[i] = isoY(d.x, d.y);
+      this.decorKey[i] = Math.min(maxKey, Math.max(0, ((d.x + d.y) * DEPTH_SCALE) | 0));
+      this.decorParticles.push(new Particle({ texture: spr.texture, x: this.decorX[i], y: this.decorY[i], anchorX: spr.ax, anchorY: spr.ay }));
     });
-
-    for (let kind = 0; kind < 3; kind++) {
-      for (let team = 0; team < 2; team++) {
-        for (let pose = 0; pose < 2; pose++) {
-          const idx = kind * 4 + team * 2 + pose;
-          const view = new UnitView(kind, team, 0);
-          view.update(
-            { hp: 1, maxHp: 1, facing: 1, moving: false, swingProgress: pose ? 0.55 : -1, flash: false, deathT: -1 },
-            0,
-            0,
-          );
-          const c = cell(idx);
-          view.root.position.set(c.x + CELL_W / 2, c.y + FEET_Y);
-          sheet.addChild(view.root);
-        }
-      }
-    }
-
-    // Son satir: ok ve 4x4 beyaz piksel (saglik cubugu).
-    const extra = cell(12);
-    const g = new Graphics();
-    g.moveTo(extra.x + 6, extra.y + 20).lineTo(extra.x + 22, extra.y + 20).stroke({ width: 2, color: 0x6b4a2b });
-    g.poly([extra.x + 22, extra.y + 17, extra.x + 27, extra.y + 20, extra.x + 22, extra.y + 23]).fill(0xcfd4dc);
-    g.poly([extra.x + 6, extra.y + 20, extra.x + 3, extra.y + 17, extra.x + 9, extra.y + 20, extra.x + 3, extra.y + 23]).fill(0xf2f2f2);
-    g.rect(extra.x + 40, extra.y + 40, 4, 4).fill(0xffffff);
-    sheet.addChild(g);
-
-    const rows = Math.ceil(13 / SHEET_COLS);
-    const frame = new Rectangle(0, 0, SHEET_COLS * CELL_W, rows * CELL_H);
-    const atlas = this.app.renderer.generateTexture({ target: sheet, frame, resolution: 2, antialias: true });
-    sheet.destroy({ children: true });
-
-    for (let idx = 0; idx < 12; idx++) {
-      const c = cell(idx);
-      this.unitTex.push(new Texture({ source: atlas.source, frame: new Rectangle(c.x, c.y, CELL_W, CELL_H) }));
-    }
-    this.arrowTex = new Texture({ source: atlas.source, frame: new Rectangle(extra.x, extra.y + 8, 32, 24) });
-    this.pixelTex = new Texture({ source: atlas.source, frame: new Rectangle(extra.x + 40, extra.y + 40, 4, 4) });
   }
 
   /** Birim sayisi degisince (restart) parcaciklari yeniden kurar. */
@@ -138,8 +120,8 @@ export class MassRenderer {
         new Particle({ texture: this.unitTex[u.kind[i] * 4 + u.team[i] * 2], anchorX: 0.5, anchorY: FEET_Y / CELL_H }),
       );
     }
-    this.keys = new Int32Array(u.count);
-    this.order = new Int32Array(u.count);
+    this.keys = new Int32Array(u.count + this.decorParticles.length);
+    this.order = new Int32Array(u.count + this.decorParticles.length);
     this.counts = new Int32Array(Math.ceil(this.sim.mapSize * 2 * DEPTH_SCALE) + 4);
     this.units.particleChildren = [];
     this.arrows.particleChildren = [];
@@ -191,6 +173,18 @@ export class MassRenderer {
       n++;
     }
 
+    // Dekor: statik; ayni siralamaya girer (indeks >= birim sayisi).
+    const nUnits = n;
+    const uc = this.particles.length;
+    for (let d = 0; d < this.decorParticles.length; d++) {
+      const sx = this.decorX[d];
+      const sy = this.decorY[d];
+      if (opt.cull && (sx < view.left - 60 || sx > view.right + 60 || sy < view.top - 20 || sy > view.bottom + 160)) continue;
+      keys[n] = this.decorKey[d];
+      order[n] = uc + d;
+      n++;
+    }
+
     // 2) Derinlik: x+y anahtarina gore sayma siralamasi (O(n)).
     out.length = n;
     if (opt.sort) {
@@ -198,11 +192,12 @@ export class MassRenderer {
       counts.fill(0);
       for (let k = 0; k < n; k++) counts[keys[k] + 1]++;
       for (let c = 1; c < counts.length; c++) counts[c] += counts[c - 1];
-      for (let k = 0; k < n; k++) out[counts[keys[k]]++] = this.particles[order[k]];
+      for (let k = 0; k < n; k++) out[counts[keys[k]]++] = order[k] < uc ? this.particles[order[k]] : this.decorParticles[order[k] - uc];
     } else {
-      for (let k = 0; k < n; k++) out[k] = this.particles[order[k]];
+      for (let k = 0; k < n; k++) out[k] = order[k] < uc ? this.particles[order[k]] : this.decorParticles[order[k] - uc];
     }
-    this.drawnUnits = n;
+    this.drawnUnits = nUnits;
+    this.drawnDecor = n - nUnits;
 
     this.syncArrows(view, alpha * SIM_DT);
     this.syncBars(alpha, view, opt.bars);

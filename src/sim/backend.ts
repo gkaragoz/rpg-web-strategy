@@ -25,6 +25,8 @@ export interface SimStats {
   maxMs: number;
   /** Faz bazli birikimli sure (prep, grid, units, pick, separate, arrows). */
   prof: Record<string, number>;
+  /** Davranis sayaclari (kite, sikisma, ...). */
+  dbg: Record<string, number>;
 }
 
 export interface FrameInfo {

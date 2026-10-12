@@ -1,9 +1,10 @@
 import type { FrameInfo, ProjView, SimBackend, SimStats, UnitsView } from './backend';
-import { mapSizeFor, projectileCapacity, unitCapacity, type BattleConfig, type SimEvent } from './battle';
+import { DBG_KEYS, mapSizeFor, projectileCapacity, unitCapacity, type BattleConfig, type SimEvent } from './battle';
 import { SIM_DT } from './constants';
 import {
   F_ALIVE_BLUE,
   F_ALIVE_RED,
+  F_DBG,
   F_MAX_MS,
   F_PREV_PUBLISH,
   F_PROF,
@@ -165,6 +166,8 @@ export class WorkerSim implements SimBackend {
     const f = this.sh.ctrlF;
     const prof: Record<string, number> = {};
     PROF_KEYS.forEach((k, i) => (prof[k] = f[F_PROF + i]));
-    return { steps: f[F_STEPS], totalMs: f[F_TOTAL_MS], maxMs: f[F_MAX_MS], prof };
+    const dbg: Record<string, number> = {};
+    DBG_KEYS.forEach((k, i) => (dbg[k] = f[F_DBG + i]));
+    return { steps: f[F_STEPS], totalMs: f[F_TOTAL_MS], maxMs: f[F_MAX_MS], prof, dbg };
   }
 }

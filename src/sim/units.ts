@@ -18,8 +18,30 @@ export interface KindStats {
 export const STATS: KindStats[] = [
   { name: 'Warrior', hp: 160, speed: 3.0, range: 1.0, power: 16, cooldown: 0.9, swing: 0.35, hitAt: 0.2 },
   { name: 'Archer', hp: 80, speed: 2.4, range: 9, power: 13, cooldown: 1.4, swing: 0.4, hitAt: 0.25 },
-  { name: 'Priest', hp: 90, speed: 2.6, range: 6.5, power: 20, cooldown: 1.5, swing: 0.5, hitAt: 0.3 },
+  { name: 'Priest', hp: 90, speed: 2.6, range: 6.5, power: 14, cooldown: 1.8, swing: 0.5, hitAt: 0.3 },
 ];
+
+/** Vur-kac (kite) ve yol bulma ayarlari: tek yerde, kolay ayar. */
+export const KITE = {
+  archerDanger: 4.5,
+  archerSafe: 6.5,
+  archerCornered: 1.8,
+  archerSnapMin: 2.5,
+  priestDanger: 5,
+  priestSafe: 7,
+  archerSprint: 1.25,
+  priestSprint: 1.15,
+  staminaDrain: 0.8,
+  priestStaminaDrain: 0.6,
+  staminaRecharge: 0.35,
+  staminaMin: 0.3,
+  /** Kacis yonunde kendi ordu merkezine dogru karisim agirligi. */
+  armyPull: 0.35,
+  /** Okcu/priest, kendi warrior merkezinin bu kadar onune gecmez. */
+  leash: 1.0,
+  /** Tehdit taramasi her N adimda bir (birim basina kaydirmali). */
+  scanEvery: 3,
+};
 
 /** Struct-of-arrays birim deposu: buyuk olcekli benchmark'a hazir. */
 export class Units {
@@ -48,6 +70,20 @@ export class Units {
   attackers: Uint8Array;
   healers: Uint8Array;
   slotAngle: Float32Array;
+  stamina: Float32Array;
+  /** 1: geri cekiliyor (kite). */
+  kiteState: Uint8Array;
+  /** En yakin yakin-dovus tehdidine mesafe (Infinity: yok) ve tehditten uzaga birim vektor. */
+  threatDist: Float32Array;
+  threatDx: Float32Array;
+  threatDy: Float32Array;
+  /** Nehir gecisi: secili kopru (-1: yok) ve evre (0: girise git, 1: karsiya gec). */
+  route: Int16Array;
+  routePhase: Uint8Array;
+  /** Sikisma kirici: birikim ve yan adim suresi/yonu. */
+  stuckT: Float32Array;
+  sideT: Float32Array;
+  sideDir: Int8Array;
 
   constructor(cap: number) {
     this.cap = cap;
@@ -74,6 +110,16 @@ export class Units {
     this.attackers = new Uint8Array(cap);
     this.healers = new Uint8Array(cap);
     this.slotAngle = new Float32Array(cap);
+    this.stamina = new Float32Array(cap).fill(1);
+    this.kiteState = new Uint8Array(cap);
+    this.threatDist = new Float32Array(cap).fill(Infinity);
+    this.threatDx = new Float32Array(cap);
+    this.threatDy = new Float32Array(cap);
+    this.route = new Int16Array(cap).fill(-1);
+    this.routePhase = new Uint8Array(cap);
+    this.stuckT = new Float32Array(cap);
+    this.sideT = new Float32Array(cap);
+    this.sideDir = new Int8Array(cap);
   }
 
   clear(): void {
@@ -102,6 +148,14 @@ export class Units {
     this.facing[i] = team === Team.Blue ? 1 : -1;
     this.moving[i] = 0;
     this.slotAngle[i] = (rand() * 2 - 1) * 1.3;
+    this.stamina[i] = 1;
+    this.kiteState[i] = 0;
+    this.threatDist[i] = Infinity;
+    this.threatDx[i] = this.threatDy[i] = 0;
+    this.route[i] = -1;
+    this.routePhase[i] = 0;
+    this.stuckT[i] = this.sideT[i] = 0;
+    this.sideDir[i] = 1;
     return i;
   }
 }

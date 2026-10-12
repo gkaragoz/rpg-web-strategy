@@ -1,5 +1,5 @@
 import type { FrameInfo, SimBackend, SimStats } from './backend';
-import { Battle, type BattleConfig, type SimEvent } from './battle';
+import { Battle, DBG_KEYS, type BattleConfig, type SimEvent } from './battle';
 import { SIM_DT } from './constants';
 
 const MAX_STEPS_PER_FRAME = 5;
@@ -99,9 +99,10 @@ export class InlineSim implements SimBackend {
     this.maxMs = 0;
     const p = this.battle.prof;
     p.prep = p.grid = p.units = p.pick = p.separate = p.arrows = p.steps = 0;
+    for (const k of DBG_KEYS) this.battle.dbg[k] = 0;
   }
 
   stats(): SimStats {
-    return { steps: this.steps, totalMs: this.totalMs, maxMs: this.maxMs, prof: { ...this.battle.prof } };
+    return { steps: this.steps, totalMs: this.totalMs, maxMs: this.maxMs, prof: { ...this.battle.prof }, dbg: { ...this.battle.dbg } };
   }
 }
