@@ -1,7 +1,8 @@
 import type { BattleConfig } from '../battle';
 import { randomSpec } from '../mapSpec';
 import { mulberry32 } from '../random';
-import { DEFAULT_STATS, LEGACY_COUNT as KIND_COUNT, Kind, TUNABLE, type StatOverrides } from '../units';
+import { TROOPS } from '../data/troops';
+import { DEFAULT_STATS, KIND_OF_TROOP, LEGACY_COUNT as KIND_COUNT, Kind, TUNABLE, type StatOverrides } from '../units';
 
 export interface Scenario {
   id: number;
@@ -135,4 +136,26 @@ export function makeScenario(id: number): Scenario {
       stats: statOverrides(rng),
     },
   };
+}
+
+/**
+ * Roster birimli senaryo: makeScenario'nun dizilimini/haritasini korur, turleri takim basina
+ * 1-3 rastgele roster birimiyle degistirir ve seviyeyi rastgele secer.
+ */
+export function makeRosterScenario(id: number): Scenario {
+  const sc = makeScenario(id);
+  const rng = mulberry32(id * 31 + 7);
+  const rosterKinds = TROOPS.filter((t) => !t.summoned).map((t) => KIND_OF_TROOP[t.id]);
+  const L = sc.config.layout!;
+  const pools = new Map<number, number[]>();
+  for (let k = 0; k + 3 < L.length; k += 4) {
+    const team = L[k] | 0;
+    let pool = pools.get(team);
+    if (!pool) {
+      pool = Array.from({ length: 1 + Math.floor(rng() * 3) }, () => rosterKinds[Math.floor(rng() * rosterKinds.length)]);
+      pools.set(team, pool);
+    }
+    L[k + 1] = pool[Math.floor(rng() * pool.length)];
+  }
+  return { ...sc, desc: `${sc.desc} ROSTER L${(sc.config.level = 1 + Math.floor(rng() * 10))}`, config: { ...sc.config, stats: undefined } };
 }

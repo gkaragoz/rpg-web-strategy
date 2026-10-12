@@ -206,10 +206,15 @@ export class Terrain {
     const dy = y1 - y0;
     const len = Math.sqrt(dx * dx + dy * dy);
     const steps = Math.max(1, Math.ceil(len / 0.3));
+    let px = x0;
+    let py = y0;
     for (let i = 1; i <= steps; i++) {
       const x = x0 + (dx * i) / steps;
       const y = y0 + (dy * i) / steps;
-      if (!this.walkable(x, y)) return false;
+      // Hareketle ayni kural: kose capraz gecisi (iki engel kose kose) yasak.
+      if (!this.stepOk(Math.fround(px), Math.fround(py), Math.fround(x), Math.fround(y))) return false;
+      px = x;
+      py = y;
       // Kenarlara surtunmemek icin yan komsulara da bak (yaklasik birim yaricapi)
       const nx = -dy / (len || 1);
       const ny = dx / (len || 1);
