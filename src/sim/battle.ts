@@ -1,8 +1,10 @@
 import { Grid } from './grid';
 import { Terrain, T_BLOCKED, T_WATER } from './terrain';
 import type { MapSpec } from './mapSpec';
-import { KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides } from './units';
-import { Projectiles } from './projectiles';
+import { DEFAULT_LEVEL, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides } from './units';
+import { PF_PIERCE, PF_SKILL, Projectiles } from './projectiles';
+import { SKILL_ELEMENT, skillParams, type SkillParams } from './data/skills';
+import type { SkillId } from './data/troops';
 import { mulberry32 } from './random';
 
 export const MAP_SIZE = 56;
@@ -45,7 +47,7 @@ const BENCH_GAP = 24;
 
 export interface SimEvent {
   /** hit: hasar aldi (value = hasar), shot: ok atildi, land: ok bos indi, heal: iyilesti (value = miktar). */
-  type: 'heal' | 'death' | 'bash' | 'slam' | 'hit' | 'shot' | 'land';
+  type: 'heal' | 'death' | 'bash' | 'slam' | 'hit' | 'shot' | 'land' | 'burst';
   x: number;
   y: number;
   unit: number;
@@ -54,10 +56,26 @@ export interface SimEvent {
   value?: number;
   /** Olay sahibi birimin turu (olum/vurus icin). */
   kind?: number;
+  /** burst: etki unsuru (0 fiziksel, 1 ates, 2 buz, 3 kutsal, 4 karanlik, 5 doga, 6 enerji); value = yaricap. */
+  element?: number;
 }
 
 /** Adim basina uretilen olay ust siniri (cok kalabalikta mesaj/tahsis patlamasin). */
 const EVENT_CAP = 300;
+/** Her Bone Caller icin on-ayrilmis (uyuyan) iskelet sayisi. */
+const SUMMON_POOL = 8;
+
+/** Kalici etki bolgesi: yanma, lanet (dusman takimlarina etkir). */
+interface Zone {
+  x: number;
+  y: number;
+  r: number;
+  t: number;
+  dps: number;
+  /** Bolgeyi koyan takim (diger takimlar etkilenir). */
+  team: number;
+  slowK: number;
+}
 
 export interface BattleConfig {
   /** 'demo': 10v10 el yapimi dizilim, 'bench': takim basina perTeam birim blok dizilimi,
@@ -183,8 +201,12 @@ export class Battle {
     for (const k of DBG_KEYS) this.dbg[k] = 0;
     this.dbg.bans = this.dbg.leashBreaks = this.dbg.paths = this.dbg.pathFails = 0;
     this.paths.clear();
+    this.zones.length = 0;
+    this.links.clear();
+    this.pools.clear();
     if (this.config.mode === 'custom') {
       this.spawnLayout();
+      this.setupSkills();
     } else if (this.config.mode === 'bench') {
       this.spawnBenchArmy(0, -1);
       this.spawnBenchArmy(1, 1);
@@ -351,6 +373,7 @@ export class Battle {
     tp = tn;
 
     if (this.winner < 0) {
+      if (this.zones.length > 0) this.updateZones(dt);
       // Sira her adimda terslenir: dusuk indeksli (ilk dogan) takim kalici avantaj kazanmasin.
       const cnt = u.count;
       const rev = (this.stepNo & 1) === 1;
@@ -367,7 +390,7 @@ export class Battle {
       tp = tn;
     }
 
-    this.projectiles.update(dt, (x, y, team, dmg) => this.arrowLanded(x, y, team, dmg));
+    this.projectiles.update(dt, (x, y, team, dmg, idx) => this.arrowLanded(x, y, team, dmg, idx));
     pf.arrows += performance.now() - tp;
     pf.steps++;
     this.countAlive();
@@ -431,8 +454,24 @@ export class Battle {
     const kind = u.kind[i];
     const s = STATS[kind];
     const ranged = !isMelee(kind);
-    u.cooldown[i] -= dt;
+    u.cooldown[i] -= dt * (u.slowT[i] > 0 || u.flags[i] !== 0 ? this.atkRate(i) : 1);
     u.retarget[i] -= dt;
+    if (u.slowT[i] > 0) u.slowT[i] -= dt;
+    if (u.shieldT[i] > 0) u.shieldT[i] -= dt;
+    if (u.weakT[i] > 0) u.weakT[i] -= dt;
+    if (u.invulnT[i] > 0) u.invulnT[i] -= dt;
+    if (u.tauntT[i] > 0) u.tauntT[i] -= dt;
+    if (u.stackT[i] > 0 && (u.stackT[i] -= dt) <= 0) u.stacks[i] = 0;
+    if (u.burnT[i] > 0) {
+      u.burnT[i] -= dt;
+      this.damage(i, u.burnDps[i] * dt, -1, false, true);
+      if (!u.alive[i]) return;
+    }
+    const skill = s.skill;
+    if (skill === 'rage' && (u.flags[i] & F_RAGE) === 0 && u.hp[i] < u.maxHp[i] * this.sp('rage').b) {
+      u.flags[i] |= F_RAGE;
+      this.burst(u.x[i], u.y[i], 2, skill);
+    }
     if (u.sideT[i] > 0) u.sideT[i] -= dt;
     if (u.banT[i] > 0) u.banT[i] -= dt;
     if (u.leashOffT[i] > 0) u.leashOffT[i] -= dt;
@@ -445,6 +484,19 @@ export class Battle {
       u.hitPending[i] = 0;
       return;
     }
+
+    if (u.fearT[i] > 0) {
+      // Korku: kaynaktan uzaklas, saldirma.
+      u.fearT[i] -= dt;
+      u.swing[i] = 0;
+      u.hitPending[i] = 0;
+      const fx = u.x[i] - u.fearX[i];
+      const fy = u.y[i] - u.fearY[i];
+      const fl = Math.sqrt(fx * fx + fy * fy) || 1;
+      this.moveToward(i, u.x[i] + (fx / fl) * 6, u.y[i] + (fy / fl) * 6, s.speed * 1.15, dt, true, false);
+      return;
+    }
+    if (skill === 'mock' || skill === 'taunt' || skill === 'stoneWill') this.periodic(i, dt, skill);
 
     if (ranged && this.kiteOn) {
       this.updateThreat(i);
@@ -703,6 +755,13 @@ export class Battle {
 
   private pickTarget(i: number): void {
     const u = this.units;
+    if (u.tauntT[i] > 0) {
+      const b = u.tauntBy[i];
+      if (b >= 0 && u.alive[b]) {
+        u.target[i] = b;
+        return;
+      }
+    }
     const kind = u.kind[i];
     const team = u.team[i];
     const cur = u.target[i];
@@ -825,33 +884,50 @@ export class Battle {
 
   private resolveHit(i: number): void {
     const u = this.units;
+    const kind = u.kind[i];
+    const s = STATS[kind];
+    const skill = s.skill;
+    if (skill === 'summonSkeleton') {
+      this.summon(i);
+      return;
+    }
     const t = u.target[i];
     if (t < 0 || !u.alive[t]) return;
-    const s = STATS[u.kind[i]];
     const dx = u.x[t] - u.x[i];
     const dy = u.y[t] - u.y[i];
     const dist = Math.sqrt(dx * dx + dy * dy);
+    const power = s.power * this.dealMul(i);
 
-    if (isMelee(u.kind[i]) && !isTank(u.kind[i])) {
-      if (dist <= s.range + 0.6) this.damage(t, s.power);
-    } else if (u.kind[i] === Kind.Shield) {
+    if (kind === Kind.Shield) {
       this.shieldBash(i, dx, dy, dist);
-    } else if (u.kind[i] === Kind.Brute) {
+    } else if (kind === Kind.Brute) {
       this.bruteSlam(i);
-    } else if (isRanged(u.kind[i])) {
-      const flight = Math.max(0.25, dist / ARROW_SPEED);
-      // Hareketli hedefe on tahminle atar; tahmin tutmazsa ok kacirir.
-      const tx = u.x[t] + u.vx[t] * flight;
-      const ty = u.y[t] + u.vy[t] * flight;
-      this.projectiles.spawn(u.x[i], u.y[i], tx, ty, flight, 18 + dist * 2.2, s.power, u.team[i]);
-      if (this.emitEvents) this.pushEvent({ type: 'shot', x: u.x[i], y: u.y[i], unit: i, angle: Math.atan2(ty - u.y[i], tx - u.x[i]) });
-    } else if (dist <= s.range + 1 && u.hp[t] < u.maxHp[t]) {
-      const before = u.hp[t];
-      const stale = this.time - this.lastDeathTime - STALE_AFTER;
-      const heal = stale > 0 ? s.power / (1 + stale * STALE_RAMP) : s.power;
-      u.hp[t] = Math.min(u.maxHp[t], u.hp[t] + heal);
-      this.counters.heal += u.hp[t] - before;
-      if (this.emitEvents) this.pushEvent({ type: 'heal', x: u.x[t], y: u.y[t], unit: t, value: heal, kind: u.kind[t] });
+    } else if (isHealer(kind)) {
+      if (dist <= s.range + 1 && u.hp[t] < u.maxHp[t]) {
+        const before = u.hp[t];
+        const stale = this.time - this.lastDeathTime - STALE_AFTER;
+        const heal = stale > 0 ? s.power / (1 + stale * STALE_RAMP) : s.power;
+        u.hp[t] = Math.min(u.maxHp[t], u.hp[t] + heal);
+        this.counters.heal += u.hp[t] - before;
+        if (this.emitEvents) this.pushEvent({ type: 'heal', x: u.x[t], y: u.y[t], unit: t, value: heal, kind: u.kind[t] });
+        if (skill === 'cleanse') {
+          // Nun: hedefi ve cevresindeki dostlari da iyilestirir, kontrol etkilerini kaldirir.
+          const p = this.sp('cleanse');
+          this.cleanse(t);
+          const out = this.scratch;
+          this.gather(this.selfList[u.team[i]], u.x[t], u.y[t], p.radius, out, 24);
+          for (let k = 0; k < out.length; k++) {
+            if (out[k] === t) continue;
+            this.healUnit(out[k], heal * 0.5);
+            this.cleanse(out[k]);
+          }
+          this.burst(u.x[t], u.y[t], p.radius, skill);
+        }
+      }
+    } else if (isRanged(kind)) {
+      this.fireShot(i, t, dist, power, skill);
+    } else {
+      this.meleeHit(i, t, dist, dx, dy, power, skill);
     }
   }
 
@@ -947,61 +1023,684 @@ export class Battle {
     if (Math.abs(u.kbVx[i]) + Math.abs(u.kbVy[i]) < 0.3) u.kbVx[i] = u.kbVy[i] = 0;
   }
 
-  private arrowLanded(x: number, y: number, team: number, dmg: number): void {
+  // ===================================================================
+  // Yetenekler ve durum etkileri
+  // ===================================================================
+
+  private readonly skillCache: Partial<Record<SkillId, SkillParams>> = {};
+  private readonly zones: Zone[] = [];
+  /** Hex bebegi -> bagli dusmanlar; Bone Caller -> iskelet havuzu. */
+  private readonly links = new Map<number, number[]>();
+  private readonly pools = new Map<number, number[]>();
+  private readonly scratch: number[] = [];
+  private readonly scratch2: number[] = [];
+
+  private sp(id: SkillId): SkillParams {
+    return (this.skillCache[id] ??= skillParams(id, this.config.level ?? DEFAULT_LEVEL));
+  }
+
+  /** Hasar carpani: zayiflatma, ofke, mizrak yigini. */
+  private dealMul(i: number): number {
     const u = this.units;
+    let m = 1;
+    if (u.weakT[i] > 0) m *= u.weakK[i];
+    if ((u.flags[i] & F_RAGE) !== 0) m *= 1 + this.sp('rage').a;
+    if (u.stacks[i] > 0) m *= 1 + u.stacks[i] * this.sp('spearBuild').a;
+    return m;
+  }
+
+  private moveMul(i: number): number {
+    const u = this.units;
+    let m = u.slowT[i] > 0 ? u.slowK[i] : 1;
+    if ((u.flags[i] & F_RAGE) !== 0) m *= 1 + this.sp('rage').a * 0.5;
+    return m;
+  }
+
+  private atkRate(i: number): number {
+    const u = this.units;
+    let m = u.slowT[i] > 0 ? u.slowA[i] : 1;
+    if ((u.flags[i] & F_RAGE) !== 0) m *= 1 + this.sp('rage').a;
+    return m;
+  }
+
+  private tick(i: number, every: number): boolean {
+    const u = this.units;
+    if (++u.skillN[i] >= every) {
+      u.skillN[i] = 0;
+      return true;
+    }
+    return false;
+  }
+
+  private burst(x: number, y: number, radius: number, skill: SkillId | null): void {
+    if (this.emitEvents) this.pushEvent({ type: 'burst', x, y, unit: -1, value: radius, element: skill ? (SKILL_ELEMENT[skill] ?? 0) : 0 });
+  }
+
+  /** Verilen takimlarin canli birimlerinden (x,y) merkezli r yaricap icindekileri out'a toplar. */
+  private gather(teams: number[], x: number, y: number, r: number, out: number[], max = 96): number {
+    const u = this.units;
+    out.length = 0;
     const g0 = this.grids[0];
     const cols = g0.cols;
-    const cx = Math.min(cols - 1, Math.max(0, (x / g0.cell) | 0));
-    const cy = Math.min(cols - 1, Math.max(0, (y / g0.cell) | 0));
-    let best = -1;
-    let bestD = LANDING_RADIUS;
-    const enemies = this.enemyList[team];
-    for (let e = 0; e < enemies.length; e++) {
-      const grid = this.grids[enemies[e]];
-      for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
-        for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
+    const cell = g0.cell;
+    const gx0 = Math.max(0, ((x - r) / cell) | 0);
+    const gx1 = Math.min(cols - 1, ((x + r) / cell) | 0);
+    const gy0 = Math.max(0, ((y - r) / cell) | 0);
+    const gy1 = Math.min(cols - 1, ((y + r) / cell) | 0);
+    const r2 = r * r;
+    for (let a = 0; a < teams.length; a++) {
+      const grid = this.grids[teams[a]];
+      for (let gy = gy0; gy <= gy1; gy++) {
+        for (let gx = gx0; gx <= gx1; gx++) {
           const c = gy * cols + gx;
           for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
             const j = grid.items[k];
             if (!u.alive[j]) continue;
-            const ex = u.x[j] - x;
-            const ey = u.y[j] - y;
-            const d = Math.sqrt(ex * ex + ey * ey);
-            if (d < bestD) {
-              bestD = d;
-              best = j;
+            const dx = u.x[j] - x;
+            const dy = u.y[j] - y;
+            if (dx * dx + dy * dy <= r2) {
+              out.push(j);
+              if (out.length >= max) return out.length;
             }
           }
         }
       }
     }
-    if (best >= 0) this.damage(best, dmg);
-    else if (this.emitEvents) this.pushEvent({ type: 'land', x, y, unit: -1 });
+    return out.length;
   }
 
-  private damage(j: number, amount: number): void {
+  /** (ox,oy) noktasindan (dx,dy) yonunde uzunluk x yari-genislik seridindeki dusmanlar. */
+  private gatherLine(teams: number[], ox: number, oy: number, dx: number, dy: number, length: number, half: number, out: number[]): number {
     const u = this.units;
+    const tmp = this.scratch2;
+    this.gather(teams, ox + (dx * length) / 2, oy + (dy * length) / 2, length / 2 + half, tmp, 200);
+    out.length = 0;
+    for (let k = 0; k < tmp.length; k++) {
+      const j = tmp[k];
+      const rx = u.x[j] - ox;
+      const ry = u.y[j] - oy;
+      const along = rx * dx + ry * dy;
+      if (along < -0.3 || along > length) continue;
+      if (Math.abs(rx * dy - ry * dx) <= half) out.push(j);
+    }
+    return out.length;
+  }
+
+  private applySlow(j: number, dur: number, moveK: number, atkK: number): void {
+    const u = this.units;
+    if (u.invulnT[j] > 0) return;
+    if (u.slowT[j] > 0) {
+      u.slowK[j] = Math.min(u.slowK[j], moveK);
+      u.slowA[j] = Math.min(u.slowA[j], atkK);
+    } else {
+      u.slowK[j] = moveK;
+      u.slowA[j] = atkK;
+    }
+    u.slowT[j] = Math.max(u.slowT[j], dur);
+  }
+
+  private applyStun(j: number, dur: number): void {
+    const u = this.units;
+    if (u.invulnT[j] > 0 || !u.alive[j]) return;
+    u.stunT[j] = Math.max(u.stunT[j], dur);
+  }
+
+  private applyFear(j: number, dur: number, fx: number, fy: number): void {
+    const u = this.units;
+    if (u.invulnT[j] > 0 || !u.alive[j]) return;
+    u.fearT[j] = Math.max(u.fearT[j], dur);
+    u.fearX[j] = fx;
+    u.fearY[j] = fy;
+  }
+
+  private applyWeak(j: number, dur: number, k: number): void {
+    const u = this.units;
+    u.weakK[j] = u.weakT[j] > 0 ? Math.min(u.weakK[j], k) : k;
+    u.weakT[j] = Math.max(u.weakT[j], dur);
+  }
+
+  private applyShield(j: number, dur: number, k: number): void {
+    const u = this.units;
+    u.shieldK[j] = u.shieldT[j] > 0 ? Math.min(u.shieldK[j], k) : k;
+    u.shieldT[j] = Math.max(u.shieldT[j], dur);
+  }
+
+  private applyTaunt(j: number, by: number, dur: number): void {
+    const u = this.units;
+    if (u.invulnT[j] > 0) return;
+    // Zaten baska bir tank kiskirtiyorsa hedef degistirme (salinim olmasin).
+    if (u.tauntT[j] > 0 && u.tauntBy[j] !== by && u.tauntBy[j] >= 0 && u.alive[u.tauntBy[j]]) return;
+    u.tauntBy[j] = by;
+    u.tauntT[j] = Math.max(u.tauntT[j], dur);
+    u.target[j] = by;
+    u.retarget[j] = dur;
+  }
+
+  private cleanse(j: number): void {
+    const u = this.units;
+    u.stunT[j] = u.slowT[j] = u.fearT[j] = u.burnT[j] = u.weakT[j] = 0;
+  }
+
+  private pushUnit(j: number, ux: number, uy: number, amount: number): void {
+    const u = this.units;
+    if (!u.alive[j]) return;
+    const a = isTank(u.kind[j]) ? amount * 0.5 : amount;
+    u.kbVx[j] = ux * a * 9;
+    u.kbVy[j] = uy * a * 9;
+  }
+
+  private healUnit(j: number, amount: number): number {
+    const u = this.units;
+    if (!u.alive[j]) return 0;
+    const before = u.hp[j];
+    u.hp[j] = Math.min(u.maxHp[j], u.hp[j] + amount);
+    const gained = u.hp[j] - before;
+    this.counters.heal += gained;
+    if (gained > 0 && this.emitEvents) this.pushEvent({ type: 'heal', x: u.x[j], y: u.y[j], unit: j, value: gained, kind: u.kind[j] });
+    return gained;
+  }
+
+  /** Cevredeki dost birimleri iyilestirir (merkezdekiler dahil). */
+  private healArea(team: number, x: number, y: number, r: number, amount: number): void {
+    const out = this.scratch;
+    this.gather(this.selfList[team], x, y, r, out, 64);
+    for (let k = 0; k < out.length; k++) if (this.units.hp[out[k]] < this.units.maxHp[out[k]]) this.healUnit(out[k], amount);
+  }
+
+  private addZone(x: number, y: number, r: number, t: number, dps: number, team: number, slowK: number, skill: SkillId): void {
+    if (this.zones.length >= 32) this.zones.shift();
+    this.zones.push({ x, y, r, t, dps, team, slowK });
+    this.burst(x, y, r, skill);
+  }
+
+  private updateZones(dt: number): void {
+    const out = this.scratch;
+    for (let k = this.zones.length - 1; k >= 0; k--) {
+      const z = this.zones[k];
+      z.t -= dt;
+      if (z.t <= 0) {
+        this.zones.splice(k, 1);
+        continue;
+      }
+      this.gather(this.enemyList[z.team], z.x, z.y, z.r, out, 64);
+      for (let a = 0; a < out.length; a++) {
+        const j = out[a];
+        if (z.dps > 0) this.damage(j, z.dps * dt, -1, false, true);
+        if (z.slowK < 1 && this.units.alive[j]) this.applySlow(j, 0.4, z.slowK, z.slowK);
+      }
+    }
+  }
+
+  /** Yetenekli birimlerin yasam dongusu kurulumu: iskelet havuzu, hex baglari. */
+  private setupSkills(): void {
+    const u = this.units;
+    const skelKind = KIND_OF_TROOP.skeleton;
+    const n = u.count;
+    for (let i = 0; i < n; i++) {
+      const skill = STATS[u.kind[i]].skill;
+      if (skill === 'summonSkeleton') {
+        const pool: number[] = [];
+        for (let k = 0; k < SUMMON_POOL; k++) {
+          const s = u.spawn(u.team[i], skelKind, u.x[i], u.y[i], this.rng);
+          u.alive[s] = 0;
+          u.deathT[s] = 1000;
+          u.hp[s] = 0;
+          u.owner[s] = i;
+          pool.push(s);
+        }
+        this.pools.set(i, pool);
+      } else if (skill === 'destinyBond') {
+        const foes: number[] = [];
+        for (let j = 0; j < n; j++) if (u.alive[j] && u.team[j] !== u.team[i] && STATS[u.kind[j]].skill !== 'destinyBond') foes.push(j);
+        const pick: number[] = [];
+        const want = Math.min(this.sp('destinyBond').count, foes.length);
+        while (pick.length < want) {
+          const f = foes[Math.floor(this.rng() * foes.length)];
+          if (!pick.includes(f)) pick.push(f);
+        }
+        if (pick.length) this.links.set(i, pick);
+      }
+    }
+  }
+
+  /** Bone Caller: havuzdan iskelet uyandirir. */
+  private summon(i: number): void {
+    const u = this.units;
+    const pool = this.pools.get(i);
+    if (!pool) return;
+    let n = this.sp('summonSkeleton').count;
+    for (let a = 0; a < pool.length && n > 0; a++) {
+      const k = pool[a];
+      if (u.alive[k]) continue;
+      let x = u.x[i] + (this.rng() - 0.5) * 3;
+      let y = u.y[i] + (this.rng() - 0.5) * 3;
+      if (this.terrain) {
+        const p = this.terrain.nearestWalkable(x, y, 3, true);
+        if (!p) continue;
+        x = p.x;
+        y = p.y;
+      }
+      u.alive[k] = 1;
+      u.hp[k] = u.maxHp[k];
+      u.deathT[k] = 0;
+      u.x[k] = u.px[k] = x;
+      u.y[k] = u.py[k] = y;
+      u.target[k] = -1;
+      u.retarget[k] = 0;
+      u.cooldown[k] = 0.4;
+      u.flash[k] = 0.25;
+      u.stunT[k] = u.slowT[k] = u.fearT[k] = u.burnT[k] = 0;
+      u.winX[k] = x;
+      u.winY[k] = y;
+      u.winT[k] = 0;
+      n--;
+      this.burst(x, y, 1.6, 'summonSkeleton');
+    }
+  }
+
+  private explode(i: number): void {
+    const u = this.units;
+    if ((u.flags[i] & F_EXPLODED) !== 0) return;
+    u.flags[i] |= F_EXPLODED;
+    const p = this.sp('explode');
+    // Olum sirasinda cagrilabilir: ic ice gecen dongulerin ortak dizisini bozmamak icin yerel dizi.
+    const out: number[] = [];
+    this.gather(this.enemyList[u.team[i]], u.x[i], u.y[i], p.radius, out, 64);
+    for (let k = 0; k < out.length; k++) this.damage(out[k], p.dmg, i, false);
+    this.addZone(u.x[i], u.y[i], p.radius, p.dur, p.a / p.dur, u.team[i], 1, 'explode');
+    if (u.alive[i]) this.killUnit(i);
+  }
+
+  /** Periyodik yetenekler: kiskirtma, alay, tas irade. */
+  private periodic(i: number, dt: number, skill: SkillId): void {
+    const u = this.units;
+    u.skillT[i] -= dt;
+    if (u.skillT[i] > 0) return;
+    const p = this.sp(skill);
+    const out = this.scratch;
+    const team = u.team[i];
+    if (skill === 'mock' || skill === 'taunt') {
+      u.skillT[i] = p.b;
+      this.gather(this.enemyList[team], u.x[i], u.y[i], p.radius, out, 48);
+      if (out.length === 0) {
+        u.skillT[i] = 0.6;
+        return;
+      }
+      for (let k = 0; k < out.length; k++) {
+        // Kiskirtma bir sonraki doneme kadar surer: hedef surekli degismesin.
+        this.applyTaunt(out[k], i, p.b + 0.5);
+        if (skill === 'mock') this.applyWeak(out[k], p.dur, p.a);
+      }
+      this.burst(u.x[i], u.y[i], p.radius, skill);
+    } else if (skill === 'stoneWill') {
+      u.skillT[i] = 6;
+      this.gather(this.enemyList[team], u.x[i], u.y[i], p.radius, out, 48);
+      if (out.length === 0) {
+        u.skillT[i] = 1;
+        return;
+      }
+      this.applyShield(i, p.dur, p.b);
+      for (let k = 0; k < out.length; k++) {
+        this.damage(out[k], STATS[u.kind[i]].power * 0.6, i, false);
+        this.applySlow(out[k], p.dur, p.a, p.a);
+      }
+      this.burst(u.x[i], u.y[i], p.radius, skill);
+    }
+  }
+
+  /** Yakin-dovus vurusu: temel hasar + yetenek. */
+  private meleeHit(i: number, t: number, dist: number, dx: number, dy: number, power: number, skill: SkillId | null): void {
+    const u = this.units;
+    const s = STATS[u.kind[i]];
+    if (skill === 'explode') {
+      this.explode(i);
+      return;
+    }
+    if (dist > s.range + 0.6) return;
+    const nx = dist > 0.01 ? dx / dist : u.facing[i];
+    const ny = dist > 0.01 ? dy / dist : 0;
+    const out = this.scratch;
+    let dealt = 0;
+    if (skill === 'stun') {
+      // Night Lancer: her vurus onundeki seride guclu saplama + sersemletme.
+      const p = this.sp('stun');
+      this.gatherLine(this.enemyList[u.team[i]], u.x[i], u.y[i], nx, ny, p.length, p.half, out);
+      for (let k = 0; k < out.length; k++) {
+        this.damage(out[k], p.dmg, i, true);
+        this.applyStun(out[k], p.dur);
+      }
+      this.burst(u.x[i] + nx * 2, u.y[i] + ny * 2, 2, skill);
+      return;
+    }
+    if (s.shape === 1 && s.splash > 0) {
+      this.gather(this.enemyList[u.team[i]], u.x[t], u.y[t], s.splash, out, 48);
+      for (let k = 0; k < out.length; k++) dealt += this.damage(out[k], power, i, true);
+      this.burst(u.x[t], u.y[t], s.splash, null);
+    } else if (s.shape === 2 && s.splash > 0) {
+      this.gatherLine(this.enemyList[u.team[i]], u.x[i], u.y[i], nx, ny, s.splash * 1.7, s.splash * 0.5 + 0.3, out);
+      for (let k = 0; k < out.length; k++) dealt += this.damage(out[k], power, i, true);
+    } else {
+      dealt = this.damage(t, power, i, true);
+    }
+    if (!skill) return;
+    const p = this.sp(skill);
+    switch (skill) {
+      case 'lifesteal':
+        u.hp[i] = Math.min(u.maxHp[i], u.hp[i] + dealt * p.a);
+        break;
+      case 'heal':
+        this.healArea(u.team[i], u.x[i], u.y[i], p.radius, p.dmg);
+        this.burst(u.x[i], u.y[i], 1.8, skill);
+        break;
+      case 'bash':
+        if (this.tick(i, p.every)) {
+          this.areaStrike(i, p.radius, p.dmg, p.a, 0, 0, false);
+          this.burst(u.x[i], u.y[i], p.radius, skill);
+          if (this.emitEvents) this.pushEvent({ type: 'slam', x: u.x[i], y: u.y[i], unit: i });
+        }
+        break;
+      case 'knives':
+        if (this.tick(i, p.every)) {
+          this.gather(this.enemyList[u.team[i]], u.x[i], u.y[i], p.radius, out, p.count);
+          for (let k = 0; k < out.length; k++) this.damage(out[k], p.dmg, i, false);
+          this.burst(u.x[i], u.y[i], p.radius, skill);
+        }
+        break;
+      case 'shield':
+        if (this.tick(i, p.every)) {
+          this.gather(this.selfList[u.team[i]], u.x[i], u.y[i], p.radius, out, 48);
+          let n = p.count;
+          for (let k = 0; k < out.length && n > 0; k++) {
+            const j = out[k];
+            if (u.hp[j] < u.maxHp[j] * 0.7) {
+              this.applyShield(j, p.dur, p.a);
+              n--;
+            }
+          }
+          this.burst(u.x[i], u.y[i], p.radius, skill);
+        }
+        break;
+      case 'withstand':
+        if (this.tick(i, p.every)) {
+          this.gather(this.selfList[u.team[i]], u.x[i], u.y[i], p.radius, out, 48);
+          for (let k = 0; k < out.length; k++) this.applyShield(out[k], p.dur, p.a);
+          this.burst(u.x[i], u.y[i], p.radius, skill);
+        }
+        break;
+      case 'charge':
+        if (this.tick(i, p.every)) {
+          this.gatherLine(this.enemyList[u.team[i]], u.x[i], u.y[i], nx, ny, p.length, p.half, out);
+          for (let k = 0; k < out.length; k++) {
+            this.damage(out[k], p.dmg, i, true);
+            this.pushUnit(out[k], nx, ny, p.a);
+            this.applyStun(out[k], 0.3);
+          }
+          this.burst(u.x[i] + nx * 3, u.y[i] + ny * 3, 2.5, skill);
+        }
+        break;
+      case 'swarm':
+        if (this.tick(i, p.every)) {
+          this.gatherLine(this.enemyList[u.team[i]], u.x[i], u.y[i], nx, ny, p.length, p.half, out);
+          for (let k = 0; k < out.length; k++) this.damage(out[k], p.dmg, i, false);
+          this.burst(u.x[i] + nx * 4, u.y[i] + ny * 4, 3.5, skill);
+        }
+        break;
+      case 'fear':
+        if (this.tick(i, p.every)) {
+          this.gather(this.enemyList[u.team[i]], u.x[i], u.y[i], p.radius, out, 64);
+          for (let k = 0; k < out.length; k++) this.applyFear(out[k], p.dur, u.x[i], u.y[i]);
+          this.burst(u.x[i], u.y[i], p.radius, skill);
+        }
+        break;
+      case 'rockThrow':
+        if (this.tick(i, p.every)) {
+          this.gather(this.enemyList[u.team[i]], u.x[t], u.y[t], p.radius, out, 48);
+          for (let k = 0; k < out.length; k++) {
+            this.damage(out[k], p.dmg, i, false);
+            this.applyStun(out[k], p.dur);
+          }
+          this.burst(u.x[t], u.y[t], p.radius, skill);
+        }
+        break;
+      case 'refraction':
+        if (this.tick(i, p.every)) {
+          u.invulnT[i] = p.dur;
+          this.gather(this.enemyList[u.team[i]], u.x[i], u.y[i], p.radius, out, 48);
+          for (let k = 0; k < out.length; k++) this.damage(out[k], p.dmg, i, false);
+          this.burst(u.x[i], u.y[i], p.radius, skill);
+        }
+        break;
+    }
+  }
+
+  /** Uzaktan saldiri: mermi uretir, yetenek icin yuk/bayrak koyar. */
+  private fireShot(i: number, t: number, dist: number, power: number, skill: SkillId | null): void {
+    const u = this.units;
+    const s = STATS[u.kind[i]];
+    const team = u.team[i];
+    let dmg = power;
+    let flags = s.shape === 3 ? PF_PIERCE : 0;
+    const lob = s.splash >= 3 || skill === 'ship';
+    if (skill) {
+      const p = this.sp(skill);
+      switch (skill) {
+        case 'crit':
+          if (this.rng() < p.a) dmg *= p.b;
+          break;
+        case 'spearBuild':
+          u.stacks[i] = Math.min(p.count, u.stacks[i] + 1);
+          u.stackT[i] = p.dur;
+          break;
+        case 'frostBlast':
+        case 'fireball':
+        case 'ship':
+        case 'curseZone':
+        case 'chill':
+          if (this.tick(i, p.every)) flags |= PF_SKILL;
+          break;
+        case 'scarecrow':
+          flags |= PF_SKILL;
+          break;
+        case 'orbs':
+          if (this.tick(i, p.every)) this.fireOrbs(i, p);
+          break;
+        case 'axes':
+          if (this.tick(i, p.every)) {
+            const nx = dist > 0.01 ? (u.x[t] - u.x[i]) / dist : 1;
+            const ny = dist > 0.01 ? (u.y[t] - u.y[i]) / dist : 0;
+            const out = this.scratch;
+            this.gatherLine(this.enemyList[team], u.x[i], u.y[i], nx, ny, p.length, p.half, out);
+            for (let k = 0; k < out.length; k++) this.damage(out[k], p.dmg, i, false);
+            this.burst(u.x[i] + nx * 5, u.y[i] + ny * 5, 3, skill);
+          }
+          break;
+      }
+    }
+    const speed = lob ? 10 : ARROW_SPEED;
+    const flight = Math.max(0.25, dist / speed);
+    const tx = u.x[t] + u.vx[t] * flight;
+    const ty = u.y[t] + u.vy[t] * flight;
+    const height = lob ? 30 + dist * 3 : 18 + dist * 2.2;
+    this.projectiles.spawn(u.x[i], u.y[i], tx, ty, flight, height, dmg, team, i, s.splash, flags);
+    if (this.emitEvents) this.pushEvent({ type: 'shot', x: u.x[i], y: u.y[i], unit: i, angle: Math.atan2(ty - u.y[i], tx - u.x[i]) });
+  }
+
+  /** Horned Seer: ayni anda birden cok dusmana ates kuresi. */
+  private fireOrbs(i: number, p: SkillParams): void {
+    const u = this.units;
+    const out = this.scratch;
+    this.gather(this.enemyList[u.team[i]], u.x[i], u.y[i], STATS[u.kind[i]].range, out, 12);
+    let n = p.count;
+    for (let k = 0; k < out.length && n > 0; k++, n--) {
+      const j = out[k];
+      const d = Math.hypot(u.x[j] - u.x[i], u.y[j] - u.y[i]);
+      this.projectiles.spawn(u.x[i], u.y[i], u.x[j], u.y[j], Math.max(0.3, d / ARROW_SPEED), 20 + d * 2, p.dmg, u.team[i], i, 0, 0);
+    }
+  }
+
+  /** Mermi indi: alan, delici ya da tek hedef; yetenek yan etkileri. */
+  private arrowLanded(x: number, y: number, team: number, dmg: number, idx: number): void {
+    const u = this.units;
+    const pr = this.projectiles;
+    const src = pr.src[idx];
+    const spl = pr.splash[idx];
+    const fl = pr.flags[idx];
+    const skill = src >= 0 ? STATS[u.kind[src]].skill : null;
+    const out = this.scratch;
+    const enemies = this.enemyList[team];
+    out.length = 0;
+    if (spl > 0) {
+      this.gather(enemies, x, y, spl, out, 64);
+      if (out.length > 0 && this.emitEvents && spl >= 2.5) this.burst(x, y, spl, skill);
+    } else {
+      const g0 = this.grids[0];
+      const cols = g0.cols;
+      const cx = Math.min(cols - 1, Math.max(0, (x / g0.cell) | 0));
+      const cy = Math.min(cols - 1, Math.max(0, (y / g0.cell) | 0));
+      let best = -1;
+      let bestD = LANDING_RADIUS;
+      for (let e = 0; e < enemies.length; e++) {
+        const grid = this.grids[enemies[e]];
+        for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
+          for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
+            const c = gy * cols + gx;
+            for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
+              const j = grid.items[k];
+              if (!u.alive[j]) continue;
+              const ex = u.x[j] - x;
+              const ey = u.y[j] - y;
+              const d = Math.sqrt(ex * ex + ey * ey);
+              if (d < bestD) {
+                bestD = d;
+                best = j;
+              }
+            }
+          }
+        }
+      }
+      if (best >= 0) out.push(best);
+      if (best >= 0 && (fl & PF_PIERCE) !== 0) {
+        // Delici: ayni noktanin hemen arkasindaki iki dusmana daha, azalan hasarla.
+        const extra = this.scratch2;
+        this.gather(enemies, x, y, 1.6, extra, 12);
+        let n = 2;
+        for (let k = 0; k < extra.length && n > 0; k++) {
+          if (extra[k] !== best) {
+            out.push(extra[k]);
+            n--;
+          }
+        }
+      }
+    }
+    if (out.length === 0) {
+      if (this.emitEvents) this.pushEvent({ type: 'land', x, y, unit: -1 });
+      if (skill === 'burnOil') this.landSkill(src, x, y, team, skill, fl);
+      return;
+    }
+    let amount = dmg;
+    let slowSkill: SkillParams | null = null;
+    let stun = 0;
+    if (skill && (fl & PF_SKILL) !== 0) {
+      const p = this.sp(skill);
+      if (skill === 'frostBlast') {
+        amount = p.dmg;
+        slowSkill = p;
+      } else if (skill === 'ship') {
+        amount = dmg * p.a;
+        stun = p.dur;
+      } else if (skill === 'chill') {
+        slowSkill = p;
+        stun = p.dur * 0.75;
+      } else if (skill === 'scarecrow') stun = p.dur;
+    } else if (skill === 'scarecrow') stun = this.sp('scarecrow').dur;
+    else if (skill === 'chill') slowSkill = this.sp('chill');
+    const first = out[0];
+    for (let k = 0; k < out.length; k++) {
+      const j = out[k];
+      this.damage(j, k === 0 || spl > 0 ? amount : amount * 0.6, src, false);
+      if (!u.alive[j]) continue;
+      if (slowSkill) this.applySlow(j, slowSkill.dur || 2, slowSkill.a, slowSkill.b);
+      if (stun > 0 && (skill !== 'chill' || (fl & PF_SKILL) !== 0)) this.applyStun(j, stun);
+    }
+    this.landSkill(src, x, y, team, skill, fl, first);
+  }
+
+  /** Inis sonrasi yetenek etkileri: bolge, bolunen toplar. */
+  private landSkill(src: number, x: number, y: number, team: number, skill: SkillId | null, fl: number, first = -1): void {
+    if (!skill || src < 0) return;
+    const p = this.sp(skill);
+    if (skill === 'burnOil') this.addZone(x, y, p.radius, p.dur, p.dmg / p.dur, team, 1, skill);
+    else if (skill === 'curseZone' && (fl & PF_SKILL) !== 0) this.addZone(x, y, p.radius, p.dur, p.dmg, team, p.a, skill);
+    else if (skill === 'fireball' && (fl & PF_SKILL) !== 0) {
+      const near = this.scratch2;
+      this.gather(this.enemyList[team], x, y, p.radius, near, 24);
+      const u = this.units;
+      for (let k = 0; k < p.count && near.length > 0; k++) {
+        const j = near[Math.floor(this.rng() * near.length)];
+        if (j === first && near.length > 1) continue;
+        this.projectiles.spawn(x, y, u.x[j], u.y[j], 0.3, 14, p.dmg, team, src, 0, 0);
+      }
+    }
+  }
+
+  /** Hasar uygular; gercekte dusen can miktarini dondurur. src: saldiran, melee: yakin vurus, quiet: olay/parlama uretme (sureli hasar). */
+  private damage(j: number, amount: number, src = -1, melee = false, quiet = false): number {
+    const u = this.units;
+    if (!u.alive[j] || u.invulnT[j] > 0) return 0;
     // Uzun suredir kimse olmediyse hasar kademeli artar: iyilestirme dengesi savasi kilitleyemez.
     const stale = this.time - this.lastDeathTime - STALE_AFTER;
     if (stale > 0) amount *= 1 + stale * STALE_RAMP;
     amount *= 1 - STATS[u.kind[j]].armor;
-    this.counters.damage += Math.min(amount, Math.max(0, u.hp[j]));
-    if (this.emitEvents) this.pushEvent({ type: 'hit', x: u.x[j], y: u.y[j], unit: j, value: amount, kind: u.kind[j] });
-    u.hp[j] -= amount;
-    u.flash[j] = 0.12;
-    if (u.hp[j] <= 0) {
-      u.hp[j] = 0;
-      this.lastDeathTime = this.time;
-      this.counters.kills++;
-      u.alive[j] = 0;
-      u.deathT[j] = 0;
-      u.target[j] = -1;
-      if (isRanged(u.kind[j])) {
-        this.dbg.archerDeaths++;
-        if (u.kiteState[j] === 1) this.dbg.archerDeathsKiting++;
-      }
-      if (this.emitEvents) this.pushEvent({ type: 'death', x: u.x[j], y: u.y[j], unit: j, kind: u.kind[j] });
+    if (u.shieldT[j] > 0) amount *= u.shieldK[j];
+    const dealt = Math.min(amount, Math.max(0, u.hp[j]));
+    this.counters.damage += dealt;
+    if (!quiet) {
+      if (this.emitEvents) this.pushEvent({ type: 'hit', x: u.x[j], y: u.y[j], unit: j, value: amount, kind: u.kind[j] });
+      u.flash[j] = 0.12;
     }
+    u.hp[j] -= amount;
+    const skill = STATS[u.kind[j]].skill;
+    if (skill === 'thorns' && melee && src >= 0 && u.alive[src]) this.damage(src, amount * this.sp('thorns').a, -1, false, true);
+    if (!quiet && this.links.size > 0) {
+      const lk = this.links.get(j);
+      if (lk) for (const e of lk) if (u.alive[e]) this.damage(e, amount * this.sp('destinyBond').a, -1, false, true);
+    }
+    if (u.hp[j] <= 0) {
+      if (skill === 'revive' && (u.flags[j] & F_REVIVED) === 0) {
+        u.flags[j] |= F_REVIVED;
+        u.hp[j] = u.maxHp[j] * this.sp('revive').a;
+        u.invulnT[j] = 1;
+        this.cleanse(j);
+        this.burst(u.x[j], u.y[j], 2.2, skill);
+        return dealt;
+      }
+      if (skill === 'explode' && (u.flags[j] & F_EXPLODED) === 0) {
+        u.hp[j] = 1;
+        this.explode(j);
+        return dealt;
+      }
+      if (skill === 'destinyBond') {
+        const lk = this.links.get(j);
+        if (lk) for (const e of lk) if (u.alive[e]) this.damage(e, this.sp('destinyBond').dmg, -1, false, true);
+      }
+      this.killUnit(j);
+    }
+    return dealt;
+  }
+
+  private killUnit(j: number): void {
+    const u = this.units;
+    u.hp[j] = 0;
+    this.lastDeathTime = this.time;
+    this.counters.kills++;
+    u.alive[j] = 0;
+    u.deathT[j] = 0;
+    u.target[j] = -1;
+    if (isRanged(u.kind[j])) {
+      this.dbg.archerDeaths++;
+      if (u.kiteState[j] === 1) this.dbg.archerDeathsKiting++;
+    }
+    if (this.emitEvents) this.pushEvent({ type: 'death', x: u.x[j], y: u.y[j], unit: j, kind: u.kind[j] });
   }
 
   /**
@@ -1010,6 +1709,7 @@ export class Battle {
    * Gercek kat edilen mesafeyi dondurur.
    */
   private moveToward(i: number, gx: number, gy: number, speed: number, dt: number, faceMove = true, useRoute = true): number {
+    if (this.units.slowT[i] > 0 || this.units.flags[i] !== 0) speed *= this.moveMul(i);
     const u = this.units;
     const t = this.terrain;
     if (t && useRoute) {
@@ -1438,7 +2138,12 @@ function benchMapSize(perTeam: number): number {
 }
 
 export function unitCapacity(config: BattleConfig): number {
-  if (config.mode === 'custom') return Math.floor((config.layout?.length ?? 0) / 4) + 16;
+  if (config.mode === 'custom') {
+    const L = config.layout;
+    let necro = 0;
+    if (L) for (let k = 1; k < L.length; k += 4) if (L[k] === KIND_OF_TROOP.bone-caller) necro++;
+    return Math.floor((L?.length ?? 0) / 4) + 16 + necro * SUMMON_POOL;
+  }
   return config.perTeam * 2 + 16;
 }
 

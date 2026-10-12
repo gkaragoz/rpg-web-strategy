@@ -1,3 +1,7 @@
+/** Mermi bayraklari: delici, yetenek tetikli. */
+export const PF_PIERCE = 1;
+export const PF_SKILL = 2;
+
 export class Projectiles {
   readonly cap: number;
   count = 0;
@@ -11,6 +15,10 @@ export class Projectiles {
   height: Float32Array;
   dmg: Float32Array;
   team: Uint8Array;
+  /** Yuk: atan birim (-1: yok), alan yaricapi ve bayraklar (PF_*). */
+  src: Int32Array;
+  splash: Float32Array;
+  flags: Uint8Array;
   private cursor = 0;
 
   constructor(cap: number) {
@@ -25,6 +33,9 @@ export class Projectiles {
     this.height = new Float32Array(cap);
     this.dmg = new Float32Array(cap);
     this.team = new Uint8Array(cap);
+    this.src = new Int32Array(cap).fill(-1);
+    this.splash = new Float32Array(cap);
+    this.flags = new Uint8Array(cap);
   }
 
   clear(): void {
@@ -33,7 +44,7 @@ export class Projectiles {
     this.cursor = 0;
   }
 
-  spawn(sx: number, sy: number, tx: number, ty: number, dur: number, height: number, dmg: number, team: number): void {
+  spawn(sx: number, sy: number, tx: number, ty: number, dur: number, height: number, dmg: number, team: number, src = -1, splash = 0, flags = 0): void {
     // Donen imlecle bos yuva ara: tum diziyi her seferinde taramaz.
     let i = this.cursor;
     let tries = 0;
@@ -53,16 +64,19 @@ export class Projectiles {
     this.height[i] = height;
     this.dmg[i] = dmg;
     this.team[i] = team;
+    this.src[i] = src;
+    this.splash[i] = splash;
+    this.flags[i] = flags;
     if (i >= this.count) this.count = i + 1;
   }
 
-  update(dt: number, land: (x: number, y: number, team: number, dmg: number) => void): void {
+  update(dt: number, land: (x: number, y: number, team: number, dmg: number, idx: number) => void): void {
     for (let i = 0; i < this.count; i++) {
       if (!this.active[i]) continue;
       this.t[i] += dt;
       if (this.t[i] >= this.dur[i]) {
         this.active[i] = 0;
-        land(this.tx[i], this.ty[i], this.team[i], this.dmg[i]);
+        land(this.tx[i], this.ty[i], this.team[i], this.dmg[i], i);
       }
     }
   }

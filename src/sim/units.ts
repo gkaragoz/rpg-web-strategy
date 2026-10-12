@@ -31,6 +31,8 @@ export interface KindStats {
   role: number;
   /** Temel saldirinin alan hasari yaricapi (tile; 0: tek hedef). */
   splash: number;
+  /** Hasar sekli: 0 tek hedef, 1 daire, 2 dikdortgen, 3 delici. */
+  shape: number;
   /** Buyulu hasar (gorsel/ses ipucu). */
   magical: boolean;
   /** Roster birim kimligi (klasik turlerde yok) ve yetenegi. */
@@ -38,7 +40,7 @@ export interface KindStats {
   skill: SkillId | null;
 }
 
-const classic = (s: Omit<KindStats, 'role' | 'splash' | 'magical' | 'skill'> & { role: number }): KindStats => ({ ...s, splash: 0, magical: false, skill: null });
+const classic = (s: Omit<KindStats, 'role' | 'splash' | 'shape' | 'magical' | 'skill'> & { role: number }): KindStats => ({ ...s, splash: 0, shape: 0, magical: false, skill: null });
 
 export const STATS: KindStats[] = [
   classic({ name: 'Savaşçı', role: Role.Melee, hp: 160, speed: 3.0, range: 1.0, power: 16, cooldown: 0.9, swing: 0.35, hitAt: 0.2, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
@@ -83,6 +85,7 @@ function troopStats(t: TroopDef, level: number): KindStats {
     aoe: 0,
     knockback: 0,
     splash: t.aoe,
+    shape: { single: 0, round: 1, rect: 2, pierce: 3 }[t.shape],
     magical: t.magical,
     troop: t.id,
     skill: t.skill,
@@ -95,6 +98,11 @@ TROOPS.forEach((t, i) => {
 });
 
 export const KIND_COUNT = STATS.length;
+
+/** Birim bayraklari (Units.flags). */
+export const F_REVIVED = 1;
+export const F_RAGE = 2;
+export const F_EXPLODED = 4;
 
 /** Rol sorgulari (sicak donguler icin tip dizileri). */
 const ROLE_OF = new Uint8Array(KIND_COUNT);
@@ -270,6 +278,31 @@ export class Units {
   spd: Float32Array;
   hx: Float32Array;
   hy: Float32Array;
+  /** Durum etkileri (yavaslatma, yanma, kalkan, korku, zayiflatma, dokunulmazlik, kiskirtma). */
+  slowT: Float32Array;
+  slowK: Float32Array;
+  slowA: Float32Array;
+  burnT: Float32Array;
+  burnDps: Float32Array;
+  shieldT: Float32Array;
+  shieldK: Float32Array;
+  fearT: Float32Array;
+  fearX: Float32Array;
+  fearY: Float32Array;
+  weakT: Float32Array;
+  weakK: Float32Array;
+  invulnT: Float32Array;
+  tauntT: Float32Array;
+  tauntBy: Int32Array;
+  /** Yetenek sayaci (her N saldirida tetik), periyodik yetenek zamanlayicisi, yigin ve yigin suresi. */
+  skillN: Uint8Array;
+  skillT: Float32Array;
+  stacks: Uint8Array;
+  stackT: Float32Array;
+  /** Bit bayraklari (F_*): yeniden dogdu, ofke, patladi. */
+  flags: Uint8Array;
+  /** Cagrilan birimin sahibi (-1: yok). */
+  owner: Int32Array;
 
   constructor(cap: number) {
     this.cap = cap;
@@ -321,6 +354,27 @@ export class Units {
     this.spd = new Float32Array(cap);
     this.hx = new Float32Array(cap);
     this.hy = new Float32Array(cap);
+    this.slowT = new Float32Array(cap);
+    this.slowK = new Float32Array(cap);
+    this.slowA = new Float32Array(cap);
+    this.burnT = new Float32Array(cap);
+    this.burnDps = new Float32Array(cap);
+    this.shieldT = new Float32Array(cap);
+    this.shieldK = new Float32Array(cap);
+    this.fearT = new Float32Array(cap);
+    this.fearX = new Float32Array(cap);
+    this.fearY = new Float32Array(cap);
+    this.weakT = new Float32Array(cap);
+    this.weakK = new Float32Array(cap);
+    this.invulnT = new Float32Array(cap);
+    this.tauntT = new Float32Array(cap);
+    this.tauntBy = new Int32Array(cap).fill(-1);
+    this.skillN = new Uint8Array(cap);
+    this.skillT = new Float32Array(cap);
+    this.stacks = new Uint8Array(cap);
+    this.stackT = new Float32Array(cap);
+    this.flags = new Uint8Array(cap);
+    this.owner = new Int32Array(cap).fill(-1);
   }
 
   clear(): void {
@@ -367,6 +421,13 @@ export class Units {
     this.winT[i] = 0;
     this.spd[i] = 0;
     this.hx[i] = this.hy[i] = 0;
+    this.slowT[i] = this.burnT[i] = this.shieldT[i] = this.fearT[i] = this.weakT[i] = this.invulnT[i] = this.tauntT[i] = 0;
+    this.slowK[i] = this.slowA[i] = this.shieldK[i] = this.weakK[i] = 1;
+    this.burnDps[i] = 0;
+    this.tauntBy[i] = -1;
+    this.skillN[i] = this.stacks[i] = this.flags[i] = 0;
+    this.skillT[i] = this.stackT[i] = 0;
+    this.owner[i] = -1;
     return i;
   }
 }

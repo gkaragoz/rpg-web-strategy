@@ -136,7 +136,7 @@ export class StallDetector {
 
       // --- vuramayan: menzilde, hazir, ama saldirmiyor ---
       const tt = u.target[i];
-      if (tt >= 0 && u.alive[tt] && u.kiteState[i] !== 1 && u.stunT[i] <= 0 && u.swing[i] <= 0) {
+      if (tt >= 0 && u.alive[tt] && u.kiteState[i] !== 1 && u.stunT[i] <= 0 && u.fearT[i] <= 0 && u.swing[i] <= 0) {
         const dx = u.x[tt] - u.x[i];
         const dy = u.y[tt] - u.y[i];
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -158,7 +158,7 @@ export class StallDetector {
         this.lastY[i] = u.y[i];
         const t = u.target[i];
         // holdT > 0: leash yuzunden kasitli bekleme (en fazla LEASH_HOLD_MAX sn), hata degil.
-        if (t >= 0 && u.alive[t] && u.kiteState[i] !== 1 && u.stunT[i] <= 0 && u.swing[i] <= 0 && u.holdT[i] <= 0) {
+        if (t >= 0 && u.alive[t] && u.kiteState[i] !== 1 && u.stunT[i] <= 0 && u.fearT[i] <= 0 && u.swing[i] <= 0 && u.holdT[i] <= 0) {
           const dist = Math.hypot(u.x[t] - u.x[i], u.y[t] - u.y[i]);
           const s = STATS[u.kind[i]];
           const reach = isMelee(u.kind[i]) ? s.range + 0.6 : s.range;
