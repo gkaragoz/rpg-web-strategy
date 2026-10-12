@@ -2,7 +2,8 @@ import { Graphics, Sprite, type Application } from 'pixi.js';
 import type { Camera } from '../camera';
 import { isoX, isoY } from '../iso';
 import type { Atlas } from '../render/atlas';
-import { KIND_COUNT, Kind, MAX_TEAMS } from '../sim/units';
+import { KIND_COUNT, MAX_TEAMS, STATS } from '../sim/units';
+import { composeArmy, composeFromKind, type Lane } from './armies';
 import { POSES } from '../render/unitView';
 import { BRUSHES, MAX_PLACED, saveState, teamColors, type AppState, type PlacedUnit } from './state';
 import type { WorldView } from './world';
@@ -321,8 +322,11 @@ export class Editor {
     return removed.length;
   }
 
-  /** Hazir blok dizilim: onde savasci/tank, ortada okcu, arkada rahip. Harita merkezine bakar. */
-  formation(team: number): PlacedUnit[] {
+  /**
+   * Blok dizilim: onde yakin, ortada uzak, arkada sifaci/kusatma hatti. Harita merkezine bakar.
+   * `army` verilmezse klasik karisim (Savasci/Okcu/Rahip + tanklar) kullanilir.
+   */
+  formation(team: number, army?: Record<Lane, number[]>): PlacedUnit[] {
     const s = this.d.state;
     const n = this.d.world.mapSize;
     const c = n / 2;
@@ -334,17 +338,19 @@ export class Editor {
     const py = c + dy * R;
     const lx = -dy;
     const ly = dx;
-    const rows: Array<{ kinds: number[] }> = [
-      { kinds: [Kind.Warrior, Kind.Warrior, Kind.Warrior, Kind.Brute, Kind.Shield, Kind.Warrior, Kind.Warrior, Kind.Warrior] },
-      { kinds: [Kind.Warrior, Kind.Warrior, Kind.Warrior, Kind.Warrior, Kind.Warrior, Kind.Warrior, Kind.Warrior, Kind.Warrior] },
-      { kinds: [Kind.Archer, Kind.Archer, Kind.Archer, Kind.Archer, Kind.Archer, Kind.Archer] },
-      { kinds: [Kind.Priest, Kind.Priest, Kind.Priest] },
-    ];
+    const src = army ?? { front: [0, 0, 0, 4, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], mid: [1, 1, 1, 1, 1, 1], back: [2, 2, 2] };
+    // Hat basina en cok 10 birimlik satirlar; buyuk birimler kendi satirina daha fazla derinlik ister.
+    const rows: number[][] = [];
+    for (const lane of ['front', 'mid', 'back'] as Lane[]) {
+      const kinds = src[lane].slice().sort((p, q) => p - q);
+      for (let i = 0; i < kinds.length; i += 10) rows.push(kinds.slice(i, i + 10));
+    }
     const out: PlacedUnit[] = [];
-    rows.forEach((row, ri) => {
-      row.kinds.forEach((kind, ci) => {
-        const off = (ci - (row.kinds.length - 1) / 2) * 1.3;
-        const depth = ri * 1.35 + (kind >= Kind.Shield ? 0.4 : 0);
+    let depth = 0;
+    rows.forEach((row) => {
+      const big = row.some((k) => STATS[k].scale > 1);
+      row.forEach((kind, ci) => {
+        const off = (ci - (row.length - 1) / 2) * (big ? 1.6 : 1.3);
         let x = px + dx * depth + lx * off;
         let y = py + dy * depth + ly * off;
         const t = this.d.world.terrain;
@@ -356,25 +362,45 @@ export class Editor {
         }
         if (this.isValid(x, y, out)) out.push({ team, kind, x, y });
       });
+      depth += big ? 1.8 : 1.35;
     });
     return out;
   }
 
-  /** Secili takim icin formasyon ekler (var olanlari silmez). */
+  /** Secili takim icin formasyon ekler; secili tur kendi hattinin ana birimi olur (var olanlari silmez). */
   fillFormation(team: number): number {
     const s = this.d.state;
-    const added = this.formation(team).slice(0, Math.max(0, MAX_PLACED - s.units.length));
+    const army = composeFromKind(s.selKind, this.rand);
+    const added = this.formation(team, army).slice(0, Math.max(0, MAX_PLACED - s.units.length));
     this.addMany(added);
     return added.length;
   }
 
-  /** Tum takimlari temizleyip hizli dizilim kurar. */
+  /** Tum takimlari temizleyip rol dengeli rastgele hizli dizilim kurar. */
   quickFormation(): number {
     this.clear();
     let total = 0;
-    for (let t = 0; t < this.d.state.teamCount; t++) total += this.fillFormation(t);
+    for (let t = 0; t < this.d.state.teamCount; t++) total += this.addRandomArmy(t);
     return total;
   }
+
+  /** Verilen takima rol dengeli rastgele ordu ekler. */
+  addRandomArmy(team: number): number {
+    const s = this.d.state;
+    const added = this.formation(team, composeArmy(this.rand)).slice(0, Math.max(0, MAX_PLACED - s.units.length));
+    this.addMany(added);
+    return added.length;
+  }
+
+  /** Secili takim disindaki tum takimlara rastgele dusman ordusu ekler. */
+  addRandomEnemies(): number {
+    let total = 0;
+    for (let t = 0; t < this.d.state.teamCount; t++) if (t !== this.d.state.selTeam) total += this.addRandomArmy(t);
+    return total;
+  }
+
+  /** Her cagrida farkli sonuc: sabit tohumlu uretec degil. */
+  private rand = (): number => Math.random();
 
   private addMany(added: PlacedUnit[]): void {
     if (added.length === 0) return;

@@ -145,7 +145,8 @@ export class Studio {
   <div class="dock-group">
     <button id="undo" type="button" title="Geri al (Ctrl+Z)">Geri al</button>
     <button id="redo" type="button" title="Yinele (Ctrl+Y)">Yinele</button>
-    <button id="fill" type="button" title="Seçili takım için blok dizilim ekle">Formasyon doldur</button>
+    <button id="fill" type="button" title="Seçili birimi ana alarak rol dengeli formasyon ekle">Formasyon doldur</button>
+    <button id="rand-enemy" type="button" title="Seçili takım dışındaki takımlara rastgele ordu ekle">Rastgele düşman</button>
     <button id="clear" type="button" title="Tüm askerleri sil">Temizle</button>
   </div>
   <div class="dock-group end">
@@ -200,6 +201,12 @@ export class Studio {
     });
     this.$('#redo').addEventListener('click', () => {
       this.d.editor.redo();
+      this.render();
+    });
+    this.$('#rand-enemy').addEventListener('click', () => {
+      const n = this.d.editor.addRandomEnemies();
+      this.d.onKindPick(s.selKind);
+      this.toast(n > 0 ? `${n} düşman asker eklendi.` : 'Uygun yer bulunamadı.');
       this.render();
     });
     this.$('#fill').addEventListener('click', () => {

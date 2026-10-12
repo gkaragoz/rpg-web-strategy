@@ -78,9 +78,13 @@ export interface AppState {
   units: PlacedUnit[];
   /** Hic kaydedilmis kurulum yoksa ilk acilista hizli dizilim kurulur. */
   fresh: boolean;
+  /** Tur tablosu surumu (KINDS_VER). */
+  kindsVer: number;
 }
 
 const KEY = 'rpgweb.studio.v1';
+/** Tur numaralari degisince (birim eklendi/cikarildi) eski yerlesimler gecersizdir. */
+const KINDS_VER = 2;
 
 export function defaultState(): AppState {
   return {
@@ -103,6 +107,7 @@ export function defaultState(): AppState {
     options: defaultOptions(),
     units: [],
     fresh: true,
+    kindsVer: KINDS_VER,
   };
 }
 
@@ -150,7 +155,7 @@ export function loadState(): AppState {
       palette: PALETTES.some((p) => p.id === o.palette) ? (o.palette as string) : d.palette,
       speed: [1, 2, 4].includes(o.speed as number) ? (o.speed as number) : 1,
       selTeam: 0,
-      selKind: Math.floor(num(o.selKind, 0, KIND_COUNT - 1, 0)),
+      selKind: (o as { kindsVer?: number }).kindsVer === KINDS_VER ? Math.floor(num(o.selKind, 0, KIND_COUNT - 1, 0)) : 0,
       brush: Math.floor(num(o.brush, 0, BRUSHES.length - 1, d.brush)),
       tool: 'place',
       benchPerTeam: [1000, 3000, 10000].includes(o.benchPerTeam as number) ? (o.benchPerTeam as number) : d.benchPerTeam,
@@ -159,6 +164,7 @@ export function loadState(): AppState {
       options: defaultOptions(),
       units: [],
       fresh: false,
+      kindsVer: KINDS_VER,
     };
     if (o.options && typeof o.options === 'object') {
       const op = o.options as Partial<Options>;
@@ -169,7 +175,8 @@ export function loadState(): AppState {
       if (typeof op.debug === 'boolean') s.options.debug = op.debug;
       if (op.bars === 'damaged' || op.bars === 'always' || op.bars === 'never') s.options.bars = op.bars;
     }
-    if (Array.isArray(o.stats)) {
+    const stale = (o as { kindsVer?: number }).kindsVer !== KINDS_VER;
+    if (!stale && Array.isArray(o.stats)) {
       o.stats.slice(0, KIND_COUNT).forEach((row, k) => {
         if (!row || typeof row !== 'object') return;
         for (const t of TUNABLE) {
@@ -178,7 +185,7 @@ export function loadState(): AppState {
         }
       });
     }
-    if (Array.isArray(o.units)) {
+    if (!stale && Array.isArray(o.units)) {
       for (const u of o.units.slice(0, MAX_PLACED)) {
         if (!u || typeof u !== 'object') continue;
         const { team, kind, x, y } = u as PlacedUnit;

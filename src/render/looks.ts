@@ -1012,20 +1012,6 @@ export const LOOKS: Record<string, Recipe> = {
     drawShip(r, c, d);
     return 'siege';
   },
-  tauntman: (r, c, d) => {
-    legs(r, 0x4b4b52, true);
-    heavy(r.g, 0xb04a2a, 0x4a1a0a, GOLD);
-    r.g.circle(0, HY, HR).fill(SKIN).stroke({ width: 1.5, color: SKIN_D });
-    r.g.circle(-4, HY - 2, 1.9).fill(0x222222);
-    r.g.circle(5, HY - 2, 1.9).fill(0x222222);
-    r.g.ellipse(0, HY + 5, 5, 4).fill(0x6a1010).stroke({ width: 0.8, color: 0x2a0606 });
-    r.g.moveTo(-8, HY - 7).lineTo(-2, HY - 5).stroke({ width: 1.6, color: 0x4a2a14 });
-    r.g.moveTo(9, HY - 7).lineTo(3, HY - 5).stroke({ width: 1.6, color: 0x4a2a14 });
-    helm(r.g, 0xc8502a, c);
-    sword(r, 22);
-    mkShield(r, 'tower', 0xd8333a, d);
-    return 'swing';
-  },
   demon: (r) => {
     legs(r, 0x5a1a1a, true);
     wings(r, 0x5a1a2a, 0x2a0a10);

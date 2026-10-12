@@ -21,8 +21,8 @@ function duel(kind: number, foe: number, level: number, n = 6): Scenario {
 }
 
 describe('roster birimleri', () => {
-  it('46 birim tanimli ve istatistikleri gecerli', () => {
-    expect(TROOPS.length).toBe(46);
+  it('45 birim tanimli ve istatistikleri gecerli', () => {
+    expect(TROOPS.length).toBe(45);
     for (let i = 0; i < TROOPS.length; i++) {
       const s = STATS[LEGACY_COUNT + i];
       for (const key of ['hp', 'speed', 'range', 'power', 'cooldown', 'armor'] as const) {
