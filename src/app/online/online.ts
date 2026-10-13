@@ -15,11 +15,39 @@ import type { StatsPanel } from '../../ui/stats';
 import type { BattleOptions, BattleScene } from '../battle';
 import { makeTeamColor } from '../state';
 import type { WorldView } from '../world';
+import { ChatOverlay } from './chat';
 import { CursorLayer, playerColor } from './cursors';
 import { Placement } from './placement';
 import { LobbyScreen, MenuScreen } from './screens';
 
 const PROFILE_KEY = 'rpgweb.online.profile';
+const LAST_KEY = 'rpgweb.online.last';
+
+interface LastSession {
+  code: string;
+  token: string;
+  name: string;
+  color: number;
+  at: number;
+}
+/** Geri baglanma suresi (host 60 sn tutar); biraz pay birakilir. */
+const REJOIN_MS = 55000;
+function loadLast(): LastSession | null {
+  try {
+    const l = JSON.parse(sessionStorage.getItem(LAST_KEY) ?? 'null') as LastSession | null;
+    return l && typeof l.code === 'string' && Date.now() - l.at < REJOIN_MS ? l : null;
+  } catch {
+    return null;
+  }
+}
+function saveLast(l: LastSession | null): void {
+  try {
+    if (l) sessionStorage.setItem(LAST_KEY, JSON.stringify(l));
+    else sessionStorage.removeItem(LAST_KEY);
+  } catch {
+    /* depolama kapali */
+  }
+}
 /** Internet lobilerinin paylasilan baglanti adresi (Pages). */
 const PAGES_URL = 'https://gkaragoz.github.io/rpg-web-strategy/';
 
@@ -66,6 +94,7 @@ export class OnlineApp {
   private menu: MenuScreen | null = null;
   private lobby: LobbyScreen | null = null;
   private placement: Placement | null = null;
+  private chat: ChatOverlay | null = null;
   private session: Session | null = null;
   private cursors: CursorLayer | null = null;
   private colors: TeamColors[] = [];
@@ -73,6 +102,7 @@ export class OnlineApp {
   private inBattle = false;
   private sim: LockstepSim | null = null;
   private kind: 'lan' | 'net' = 'lan';
+  private lastSaved = 0;
   private dead = false;
   private busy = false;
   private transition: Promise<void> = Promise.resolve();
@@ -94,11 +124,15 @@ export class OnlineApp {
     const prof = loadProfile();
     this.menu = new MenuScreen(
       this.root,
-      { name: prof.name, color: prof.color, code },
+      { name: prof.name, color: prof.color, code, last: loadLast()?.code },
       {
         onHost: (n, c, tp) => void this.host(n, c, tp),
         onJoin: (n, c, code2, pass, spec) => void this.join(n, c, code2, pass, spec),
         onClose: () => this.exit(),
+        onRejoin: () => {
+          const l = loadLast();
+          if (l) void this.join(l.name, l.color, l.code, '', false, l.token);
+        },
       },
       true,
     );
@@ -142,7 +176,7 @@ export class OnlineApp {
     }
   }
 
-  private async join(name: string, color: number, code: string, pass: string, spectator: boolean): Promise<void> {
+  private async join(name: string, color: number, code: string, pass: string, spectator: boolean, token?: string): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     this.menu?.setBusy(true);
@@ -160,7 +194,7 @@ export class OnlineApp {
         tp = await PeerGuestTransport.create(code);
       }
       this.kind = kind;
-      const s = new GuestSession(tp, { name, color, pass: pass || undefined, spectator });
+      const s = new GuestSession(tp, { name, color, pass: pass || undefined, spectator, token });
       const ok = await new Promise<string | null>((resolve) => {
         const timer = setTimeout(() => resolve('Lobi yanıt vermedi.'), 8000);
         s.model.listeners.push((m) => {
@@ -182,6 +216,7 @@ export class OnlineApp {
         s.leave();
         return this.fail(ok);
       }
+      saveLast({ code, token: s.model.token, name, color, at: Date.now() });
       this.attach(s);
     } catch (e) {
       this.fail(e instanceof NetError ? (e.code === 'noroom' ? 'Böyle bir lobi yok.' : e.code === 'full' ? 'Lobi dolu.' : 'Sunucuya bağlanılamadı (LAN adresini kontrol et).') : `Bağlantı hatası: ${(e as Error).message}`);
@@ -209,8 +244,15 @@ export class OnlineApp {
       this.exit();
       return;
     }
+    // Misafir: yeniden baglanma kaydinin zamani canli tutulur (kopus anindan itibaren sayilir).
+    if (!this.session?.isHost && Date.now() - this.lastSaved > 4000) {
+      this.lastSaved = Date.now();
+      const l = loadLast();
+      if (l) saveLast({ ...l, at: Date.now() });
+    }
     if (msg.t === 'state' || msg.t === 'welcome' || msg.t === 'start') this.sync();
     this.lobby?.update();
+    this.chat?.update();
     this.placement?.onMessage(msg);
   }
 
@@ -243,13 +285,17 @@ export class OnlineApp {
     if (prev === 'battle' && want !== 'battle') this.leaveBattle();
     this.screen = want;
     if (want === 'lobby') {
+      this.chat?.destroy();
+      this.chat = null;
       this.cursors?.setView(null);
       this.env.setIconColors(null);
       this.env.setComedyVisual(null);
       this.lobby = new LobbyScreen(this.root, this.session, { onLeave: () => this.exit(), link: (c) => `${this.kind === 'net' ? PAGES_URL : location.origin + location.pathname}#join=${c}` });
     } else if (want === 'placing') {
+      this.chat ??= new ChatOverlay(this.root, this.session);
       await this.startPlacing(st.init!);
     } else {
+      this.chat ??= new ChatOverlay(this.root, this.session);
       await this.startBattle();
     }
   }
@@ -386,6 +432,7 @@ export class OnlineApp {
   exit(): void {
     if (this.dead) return;
     this.dead = true;
+    saveLast(null);
     try {
       this.session?.leave();
     } catch {
@@ -394,6 +441,7 @@ export class OnlineApp {
     this.menu?.destroy();
     this.lobby?.destroy();
     this.placement?.destroy();
+    this.chat?.destroy();
     this.leaveBattle();
     this.cursors?.destroy();
     this.root.remove();

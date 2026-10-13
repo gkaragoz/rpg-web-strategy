@@ -56,6 +56,8 @@ export interface HostDeps {
 interface Slot {
   token: string;
   disconnectedAt: number;
+  /** Kopmadan onceki hazir durumu (yerlestirmede geri baglaninca geri verilir). */
+  readyBefore?: boolean;
   lastPresence: number;
   chatTimes: number[];
 }
@@ -280,6 +282,7 @@ export class HostLobby {
           this.slots.delete(oldId);
           p.id = from;
           p.connected = true;
+          if (this.phase === 'placing') p.ready = slot.readyBefore ?? false;
           this.slots.set(from, { ...slot, disconnectedAt: 0 });
           this.welcome(from, slot.token);
           this.pushState();
@@ -400,9 +403,12 @@ export class HostLobby {
       return;
     }
     p.connected = false;
-    p.ready = true; // yerlestirme asamasi onu beklemesin
     const slot = this.slots.get(peer);
-    if (slot) slot.disconnectedAt = this.now();
+    if (slot) {
+      slot.disconnectedAt = this.now();
+      slot.readyBefore = p.ready;
+    }
+    p.ready = true; // yerlestirme asamasi onu beklemesin
     this.pushState();
   }
 

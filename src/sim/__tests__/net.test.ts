@@ -403,6 +403,8 @@ describe('baglanti', () => {
     expect(back.model.rejected).toBeNull();
     expect(back.model.me!.team).toBe(team);
     expect(back.model.me!.connected).toBe(true);
+    // Yerlestirme asamasinda kopmadan once hazir degildi: geri donunce kilitli olmamali.
+    expect(back.model.me!.ready).toBe(false);
     expect(r.hs.model.state!.players.length).toBe(3);
   });
 

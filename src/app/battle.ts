@@ -366,6 +366,8 @@ export class BattleScene {
   }
 
   private onKey(e: KeyboardEvent): void {
+    const tg = e.target as HTMLElement | null;
+    if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA')) return;
     const bench = this.opts.bench;
     const on = this.opts.online;
     if (on) {

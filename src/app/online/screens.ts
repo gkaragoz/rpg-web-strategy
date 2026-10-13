@@ -15,12 +15,15 @@ export interface MenuHandlers {
   onHost(name: string, color: number, transport: 'lan' | 'net'): void;
   onJoin(name: string, color: number, code: string, pass: string, spectator: boolean): void;
   onClose(): void;
+  onRejoin?(): void;
 }
 
 export interface MenuInit {
   name: string;
   color: number;
   code?: string;
+  /** Kopan oturum: yeniden baglan dugmesi gosterilir. */
+  last?: string;
 }
 
 /** Cevrimici menu: ad + renk, Lobi Kur / Kodla Katil / Seyret kartlari. */
@@ -46,6 +49,7 @@ export class MenuScreen {
     <div class="on-colors" id="m-colors" role="radiogroup" aria-label="Renk"></div>
   </div>
   <div class="on-error" id="m-error" role="alert" hidden></div>
+  ${init.last ? `<div class="on-rejoin"><span>Son lobi: <b>${esc(init.last)}</b></span> <button type="button" class="primary" id="m-rejoin">Yeniden bağlan</button></div>` : ''}
   <div class="on-cards">
     <section class="on-card">
       <h3>Lobi kur</h3>
@@ -90,6 +94,9 @@ export class MenuScreen {
     paintTp();
     const prof = (): { name: string; color: number } => ({ name: q<HTMLInputElement>('#m-name').value.trim() || 'Oyuncu', color: this.color });
     q('#m-close').addEventListener('click', () => this.h.onClose());
+    this.el.querySelector('#m-rejoin')?.addEventListener('click', () => {
+      if (!this.busy) this.h.onRejoin?.();
+    });
     q('#m-host').addEventListener('click', () => {
       if (this.busy) return;
       const p = prof();

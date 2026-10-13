@@ -26,7 +26,10 @@ export class Camera {
     public mapSize: number,
   ) {
     this.y = (mapSize * TILE_H) / 2;
-    window.addEventListener('keydown', (e) => this.enabled && this.keys.add(e.code));
+    window.addEventListener('keydown', (e) => {
+      const t = e.target as HTMLElement | null;
+      if (this.enabled && !(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'))) this.keys.add(e.code);
+    });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
     canvas.addEventListener('mousedown', (e) => {

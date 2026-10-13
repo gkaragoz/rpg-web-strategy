@@ -1329,3 +1329,32 @@ button.on {
   border-radius: 6px;
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
 }
+.on-ingame-chat {
+  position: absolute;
+  left: 12px;
+  bottom: 96px;
+  width: min(360px, calc(100vw - 24px));
+  pointer-events: none;
+}
+.on-ingame-chat .on-ig-in {
+  pointer-events: auto;
+  width: 100%;
+  background: rgba(10, 14, 22, 0.9);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font: inherit;
+}
+.on-ig-line {
+  background: rgba(10, 14, 22, 0.7);
+  border-radius: 6px;
+  padding: 2px 8px;
+  margin-top: 3px;
+  width: fit-content;
+  max-width: 100%;
+  transition: opacity 1.4s;
+}
+.on-ig-line.gone {
+  opacity: 0;
+}
