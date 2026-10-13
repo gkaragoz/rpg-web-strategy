@@ -55,6 +55,11 @@ export class Editor {
   private readonly onDown = (e: PointerEvent) => this.pointerDown(e);
   private readonly onMove = (e: PointerEvent) => this.pointerMove(e);
   private readonly onUp = (e: PointerEvent) => this.pointerUp(e);
+  /** Dokunmatik: parmak yalniz kalirsa (ikinci parmak gelmezse) kisa gecikmeyle boyama baslar. */
+  private touchPending: { id: number; x: number; y: number; timer: ReturnType<typeof setTimeout> } | null = null;
+  private readonly onCancel = (e: PointerEvent) => {
+    if (e.pointerType === 'touch') this.endTouchGesture();
+  };
   private readonly onLeave = () => {
     this.cursor.inside = false;
     this.drawGhost();
@@ -71,6 +76,7 @@ export class Editor {
     c.addEventListener('pointerdown', this.onDown);
     window.addEventListener('pointermove', this.onMove);
     window.addEventListener('pointerup', this.onUp);
+    window.addEventListener('pointercancel', this.onCancel);
     c.addEventListener('pointerleave', this.onLeave);
     c.addEventListener('contextmenu', this.onContext);
     this.refreshSprites();
@@ -82,6 +88,8 @@ export class Editor {
     c.removeEventListener('pointerdown', this.onDown);
     window.removeEventListener('pointermove', this.onMove);
     window.removeEventListener('pointerup', this.onUp);
+    window.removeEventListener('pointercancel', this.onCancel);
+    this.endTouchGesture();
     c.removeEventListener('pointerleave', this.onLeave);
     c.removeEventListener('contextmenu', this.onContext);
     this.ghost.clear();
@@ -136,13 +144,63 @@ export class Editor {
   // ---- fare ----
 
   private pointerDown(e: PointerEvent): void {
+    if (e.pointerType === 'touch') {
+      if (!this.active) return;
+      // Kamera bu olaydan once parmagi saydi: 2+ parmak = kaydirma/yakinlastirma, yerlestirme degil.
+      if (this.d.camera.touchCount >= 2) {
+        this.finishStroke();
+        this.clearTouchPending();
+        return;
+      }
+      this.clearTouchPending();
+      const { clientX: x, clientY: y, pointerId: id } = e;
+      this.touchPending = { id, x, y, timer: setTimeout(() => this.beginTouch(), 70) };
+      return;
+    }
     if (!this.active || (e.button !== 0 && e.button !== 2)) return;
-    const erase = e.button === 2 || this.d.state.tool === 'erase';
-    this.strokeButton = e.button;
+    this.beginStroke(e.button === 2 || this.d.state.tool === 'erase', e.button, e.clientX, e.clientY, e.shiftKey);
+  }
+
+  private beginStroke(erase: boolean, button: number, cx: number, cy: number, teamOnly: boolean): void {
+    this.strokeButton = button;
     this.stroke = { type: erase ? 'remove' : 'add', units: [] };
     this.lastStamp = { x: -999, y: -999 };
-    const p = this.toTile(e.clientX, e.clientY);
-    this.apply(p.x, p.y, e.shiftKey);
+    const p = this.toTile(cx, cy);
+    this.apply(p.x, p.y, teamOnly || this.d.state.eraseTeamOnly);
+  }
+
+  private clearTouchPending(): void {
+    if (this.touchPending) clearTimeout(this.touchPending.timer);
+    this.touchPending = null;
+  }
+
+  /** Bekleyen dokunmayi gercek bir darbeye cevirir (parmak hala tek). */
+  private beginTouch(): void {
+    const t = this.touchPending;
+    this.touchPending = null;
+    if (!t || !this.active || this.d.camera.touchCount > 1) return;
+    this.beginStroke(this.d.state.tool === 'erase', 0, t.x, t.y, false);
+  }
+
+  private finishStroke(): void {
+    const op = this.stroke;
+    this.stroke = null;
+    this.strokeButton = -1;
+    if (op && op.units.length > 0) {
+      this.undoStack.push(op);
+      this.redoStack = [];
+      if (this.undoStack.length > 200) this.undoStack.shift();
+      this.d.onChange();
+    }
+  }
+
+  /** Dokunma bitti/iptal: bekleyen dokunma (kisa tik) darbeye cevrilip bitirilir, hayalet kapanir. */
+  private endTouchGesture(): void {
+    if (this.touchPending && this.d.camera.touchCount <= 1) this.beginTouch();
+    this.clearTouchPending();
+    this.finishStroke();
+    this.cursor.inside = false;
+    this.drawGhost();
   }
 
   private pointerMove(e: PointerEvent): void {
@@ -151,21 +209,30 @@ export class Editor {
     const inside = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
     const p = this.toTile(e.clientX, e.clientY);
     this.cursor = { x: p.x, y: p.y, inside };
-    if (this.stroke && inside) this.apply(p.x, p.y, e.shiftKey);
+    if (e.pointerType === 'touch') {
+      // Parmak surukleniyorsa bekleyen dokunma hemen darbeye donusur (2+ parmak degilse).
+      if (this.touchPending && e.pointerId === this.touchPending.id && this.d.camera.touchCount === 1 && Math.hypot(e.clientX - this.touchPending.x, e.clientY - this.touchPending.y) > 8) {
+        this.touchPending.x = e.clientX;
+        this.touchPending.y = e.clientY;
+        clearTimeout(this.touchPending.timer);
+        this.beginTouch();
+      }
+      if (this.d.camera.touchCount >= 2) {
+        this.finishStroke();
+        this.clearTouchPending();
+      }
+    }
+    if (this.stroke && inside) this.apply(p.x, p.y, e.shiftKey || this.d.state.eraseTeamOnly);
     this.drawGhost();
   }
 
   private pointerUp(e: PointerEvent): void {
-    if (!this.stroke || e.button !== this.strokeButton) return;
-    const op = this.stroke;
-    this.stroke = null;
-    this.strokeButton = -1;
-    if (op.units.length > 0) {
-      this.undoStack.push(op);
-      this.redoStack = [];
-      if (this.undoStack.length > 200) this.undoStack.shift();
-      this.d.onChange();
+    if (e.pointerType === 'touch') {
+      this.endTouchGesture();
+      return;
     }
+    if (!this.stroke || e.button !== this.strokeButton) return;
+    this.finishStroke();
   }
 
   /** Boyama darbesinde fircayi uygular (aralik kontroluyle). */

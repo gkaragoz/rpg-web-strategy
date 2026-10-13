@@ -5,6 +5,21 @@ const PAN_SPEED = 900;
 const MIN_ZOOM = 0.04;
 const MAX_ZOOM = 2.5;
 
+/** Iki parmak hareketinin kamera uzerindeki etkisi (saf fonksiyon: test edilebilir). mx/my: tuvalin merkezine gore orta nokta. */
+export function gestureStep(
+  cam: { x: number; y: number; zoom: number },
+  prev: { mx: number; my: number; d: number },
+  next: { mx: number; my: number; d: number },
+): { x: number; y: number; zoom: number } {
+  const before = cam.zoom;
+  const ratio = prev.d > 1 && next.d > 1 ? next.d / prev.d : 1;
+  const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, before * ratio));
+  // Orta noktanin altindaki dunya noktasi, orta nokta hareket ettikce parmaklarla birlikte kalsin.
+  const x = cam.x + prev.mx / before - next.mx / zoom;
+  const y = cam.y + prev.my / before - next.my / zoom;
+  return { x, y, zoom };
+}
+
 export class Camera {
   /** Ekrandaki merkez noktasi (dunya/iso piksel koordinati). */
   x = 0;
@@ -17,6 +32,15 @@ export class Camera {
   /** Kisa zoom darbesi (komedi modu): 0..0.08, hizla soner. */
   private punchAmp = 0;
   private keys = new Set<string>();
+  /** Dokunmatik: aktif parmaklar (editor da okur: 2+ parmak = kamera hareketi, yerlestirme degil). */
+  private readonly touches = new Map<number, { x: number; y: number }>();
+  private gesture: { mx: number; my: number; d: number } | null = null;
+  /** true iken (savas) tek parmak da kaydirir. */
+  singleFingerPan = false;
+  private canvasEl: HTMLCanvasElement;
+  get touchCount(): number {
+    return this.touches.size;
+  }
   private dragging = false;
   private lastX = 0;
   private lastY = 0;
@@ -26,6 +50,12 @@ export class Camera {
     public mapSize: number,
   ) {
     this.y = (mapSize * TILE_H) / 2;
+    this.canvasEl = canvas;
+    canvas.style.touchAction = 'none';
+    canvas.addEventListener('pointerdown', (e) => this.touchDown(e));
+    window.addEventListener('pointermove', (e) => this.touchMove(e));
+    window.addEventListener('pointerup', (e) => this.touchEnd(e));
+    window.addEventListener('pointercancel', (e) => this.touchEnd(e));
     window.addEventListener('keydown', (e) => {
       const t = e.target as HTMLElement | null;
       if (this.enabled && !(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'))) this.keys.add(e.code);
@@ -66,6 +96,46 @@ export class Camera {
       },
       { passive: false },
     );
+  }
+
+  private touchState(): { mx: number; my: number; d: number } | null {
+    const pts = [...this.touches.values()];
+    if (pts.length === 0) return null;
+    const rect = this.canvasEl.getBoundingClientRect();
+    const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length - rect.left - rect.width / 2;
+    const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length - rect.top - rect.height / 2;
+    const d = pts.length >= 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0;
+    return { mx: cx, my: cy, d };
+  }
+
+  private touchDown(e: PointerEvent): void {
+    if (e.pointerType !== 'touch') return;
+    this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    this.gesture = this.touchState();
+  }
+
+  private touchMove(e: PointerEvent): void {
+    if (e.pointerType !== 'touch' || !this.touches.has(e.pointerId)) return;
+    this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!this.enabled || !this.gesture) return;
+    if (this.touches.size < 2 && !this.singleFingerPan) return;
+    const next = this.touchState()!;
+    const g = gestureStep(this, this.gesture, this.touches.size >= 2 ? next : { ...next, d: 0 });
+    this.x = g.x;
+    this.y = g.y;
+    this.zoom = g.zoom;
+    this.gesture = next;
+  }
+
+  private touchEnd(e: PointerEvent): void {
+    if (e.pointerType !== 'touch') return;
+    this.touches.delete(e.pointerId);
+    this.gesture = this.touchState();
+  }
+
+  /** Yakinlastir/uzaklastir (HUD dugmeleri): ekran merkezine dogru. */
+  zoomBy(f: number): void {
+    this.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.zoom * f));
   }
 
   punch(amount: number): void {

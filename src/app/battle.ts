@@ -149,6 +149,7 @@ export class BattleScene {
     camera.setMap(world.mapSize);
     camera.fit(app.screen.width, app.screen.height);
     camera.enabled = !(opts.bench && opts.autoSeconds > 0);
+    camera.singleFingerPan = true;
 
     if (detailed) {
       this.buildViews();
@@ -194,6 +195,7 @@ export class BattleScene {
   }
 
   exit(): void {
+    this.d.camera.singleFingerPan = false;
     if (this.keyHandler) window.removeEventListener('keydown', this.keyHandler);
     this.keyHandler = null;
     if (this.visHandler) document.removeEventListener('visibilitychange', this.visHandler);

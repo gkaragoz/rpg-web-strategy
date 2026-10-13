@@ -52,6 +52,8 @@ export class CursorLayer {
       this.pendingLeave = true;
     };
     window.addEventListener('pointermove', this.onMove);
+    // Dokunmatik: pointermove yalniz parmak degerken gelir; ilk dokunusu da bildir.
+    window.addEventListener('pointerdown', this.onMove);
     document.addEventListener('pointerleave', this.onLeave);
   }
 
@@ -64,6 +66,7 @@ export class CursorLayer {
 
   destroy(): void {
     window.removeEventListener('pointermove', this.onMove);
+    window.removeEventListener('pointerdown', this.onMove);
     document.removeEventListener('pointerleave', this.onLeave);
     this.root.remove();
     this.els.clear();

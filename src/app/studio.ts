@@ -413,10 +413,20 @@ export class Studio {
       s.brush = Number(id);
       this.changed(false);
     });
-    this.seg(this.$('#tool'), [{ id: 'place', label: 'Yerleştir' }, { id: 'erase', label: 'Sil' }], s.tool, (id) => {
-      s.tool = id as 'place' | 'erase';
-      this.render();
-    });
+    this.seg(
+      this.$('#tool'),
+      [
+        { id: 'place', label: 'Yerleştir' },
+        { id: 'erase', label: 'Sil' },
+        { id: 'eraseTeam', label: 'Sil: seçili takım' },
+      ],
+      s.tool === 'place' ? 'place' : s.eraseTeamOnly ? 'eraseTeam' : 'erase',
+      (id) => {
+        s.tool = id === 'place' ? 'place' : 'erase';
+        s.eraseTeamOnly = id === 'eraseTeam';
+        this.render();
+      },
+    );
 
     ($in('#undo') as unknown as HTMLButtonElement).disabled = !this.d.editor.canUndo;
     ($in('#redo') as unknown as HTMLButtonElement).disabled = !this.d.editor.canRedo;

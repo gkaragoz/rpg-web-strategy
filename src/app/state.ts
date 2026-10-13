@@ -75,6 +75,8 @@ export interface AppState {
   selKind: number;
   brush: number;
   tool: 'place' | 'erase';
+  /** Silme yalniz secili takimin birimlerine uygulanir (Shift'in dokunmatik karsiligi). */
+  eraseTeamOnly: boolean;
   benchPerTeam: number;
   /** Roster birimlerinin seviyesi (1-10). */
   level: number;
@@ -111,6 +113,7 @@ export function defaultState(): AppState {
     selKind: 0,
     brush: 1,
     tool: 'place',
+    eraseTeamOnly: false,
     benchPerTeam: 10000,
     level: DEFAULT_LEVEL,
     stats: Array.from({ length: KIND_COUNT }, () => ({})),
@@ -178,6 +181,7 @@ export function loadState(): AppState {
       selKind: (o as { kindsVer?: number }).kindsVer === KINDS_VER ? Math.floor(num(o.selKind, 0, KIND_COUNT - 1, 0)) : 0,
       brush: Math.floor(num(o.brush, 0, BRUSHES.length - 1, d.brush)),
       tool: 'place',
+      eraseTeamOnly: false,
       benchPerTeam: [1000, 3000, 10000].includes(o.benchPerTeam as number) ? (o.benchPerTeam as number) : d.benchPerTeam,
       level: Math.floor(num(o.level, 1, MAX_LEVEL, d.level)),
       stats: Array.from({ length: KIND_COUNT }, () => ({})),
