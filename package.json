@@ -3,8 +3,11 @@
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "author": "gkaragoz",
-  "repository": { "type": "git", "url": "https://github.com/gkaragoz/rpg-web-strategy.git" },
-  "version": "1.4.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gkaragoz/rpg-web-strategy.git"
+  },
+  "version": "1.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -33,3 +33,4 @@ That is why the project is not "open source" by the OSI definition.
 - v1.0.0 – v1.3.1: no license file (no license was granted beyond what the law gives).
 - From the commit that added this document: PolyForm Noncommercial 1.0.0 + additional terms.
 - From v1.4.0: the unit roster was rewritten with original names, stats and texts.
+- v1.5.0: the repository history was rewritten to remove material from before the roster rewrite.
