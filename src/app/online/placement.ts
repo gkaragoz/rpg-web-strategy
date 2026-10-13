@@ -220,6 +220,7 @@ export class Placement {
           for (const u of added) this.state.units.push(u);
           this.ensureKinds();
           this.editor.refreshSprites();
+          this.refreshUi(); // gold and unit counts follow the restored units
         }
         this.ensureKinds();
         this.syncRemote();

@@ -243,6 +243,11 @@ function onMapChange(): void {
   mapTimer = window.setTimeout(() => rebuildWorld(true), 120);
 }
 
+/** Frees an old atlas a moment later: the frame in flight may still have its textures bound (Pixi warns when a bound texture is destroyed). */
+function disposeLater(a: Atlas): void {
+  window.setTimeout(() => a.dispose(), 300);
+}
+
 /** Team count/palette changed: re-bakes the atlas with the new colors. */
 function rebakeAtlas(): void {
   const old = atlas;
@@ -250,7 +255,7 @@ function rebakeAtlas(): void {
   atlas = bakeAtlas(app.renderer, teamColors(state.palette, state.teamCount), atlasBiome, neededKinds());
   world.setAtlas(atlas, true);
   editor.refreshSprites();
-  old.dispose();
+  disposeLater(old);
   clearIcons();
 }
 
@@ -483,7 +488,7 @@ function startOnline(joinCode?: string): void {
       atlasBiome = biome;
       atlas = bakeAtlas(app.renderer, colors, biome, kinds);
       world.setAtlas(atlas, true);
-      old.dispose();
+      disposeLater(old);
     },
     getAtlas,
     setIconColors: (c) => {
