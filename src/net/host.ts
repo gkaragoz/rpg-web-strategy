@@ -3,7 +3,7 @@ import { mulberry32 } from '../sim/random';
 import { Terrain } from '../sim/terrain';
 import { STATS, KIND_COUNT } from '../sim/units';
 import { TROOP_BY_ID } from '../sim/data/troops';
-import { buyable, costTable, mapSizeForPlayers, teamZones, type Zone } from './economy';
+import { MAX_GOLD, MAX_ROOM_UNITS, ONLINE_MAP_SIZES, buyable, costTable, mapSizeForPlayers, teamZones, type Zone } from './economy';
 import {
   CHAT_MAX,
   MAX_PLAYERS,
@@ -43,7 +43,6 @@ export const DEFAULT_SETTINGS: LobbySettings = {
 };
 
 /** Most units a player may place (performance cap). */
-export const MAX_UNITS_PER_PLAYER = 1500;
 const MAX_PLAYER_NAME_TRIES = 20;
 
 export interface HostDeps {
@@ -397,8 +396,8 @@ export class HostLobby {
     if (patch.mapMode === 'random' || patch.mapMode === 'fixed') s.mapMode = patch.mapMode;
     if (patch.map) s.map = sanitizeSpec(patch.map);
     if (typeof patch.mapSeed === 'number' && Number.isFinite(patch.mapSeed)) s.mapSeed = Math.max(1, Math.floor(patch.mapSeed)) % 1000000;
-    if (typeof patch.mapSize === 'number') s.mapSize = [0, 40, 56, 80, 100, 120].includes(patch.mapSize) ? patch.mapSize : s.mapSize;
-    if (typeof patch.gold === 'number' && Number.isFinite(patch.gold)) s.gold = Math.min(100000, Math.max(100, Math.round(patch.gold)));
+    if (typeof patch.mapSize === 'number') s.mapSize = ONLINE_MAP_SIZES.includes(patch.mapSize) ? patch.mapSize : s.mapSize;
+    if (typeof patch.gold === 'number' && Number.isFinite(patch.gold)) s.gold = Math.min(MAX_GOLD, Math.max(100, Math.round(patch.gold)));
     if (typeof patch.placeSecs === 'number' && Number.isFinite(patch.placeSecs)) s.placeSecs = Math.min(600, Math.max(0, Math.round(patch.placeSecs)));
     if (typeof patch.openPlacement === 'boolean') s.openPlacement = patch.openPlacement;
     if (typeof patch.comedyPhysics === 'boolean') s.comedyPhysics = patch.comedyPhysics;
@@ -555,7 +554,7 @@ export class HostLobby {
         fail('gold');
         continue;
       }
-      if (n >= MAX_UNITS_PER_PLAYER) {
+      if (this.units.length + placed.length >= MAX_ROOM_UNITS) {
         fail('cap');
         continue;
       }

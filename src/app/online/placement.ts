@@ -3,7 +3,8 @@ import type { Camera } from '../../camera';
 import { t } from '../../i18n';
 import { isoX, isoY } from '../../iso';
 import { act } from '../../net/act';
-import { spent, teamZones, type Zone } from '../../net/economy';
+import { MAX_ROOM_UNITS, spent, teamZones, type Zone } from '../../net/economy';
+import { fmtDamage } from '../dpsMeter';
 import type { Session } from '../../net/client';
 import type { GameInit, PlacedItem, ServerMsg } from '../../net/protocol';
 import type { Atlas } from '../../render/atlas';
@@ -110,6 +111,7 @@ export class Placement {
         canEdit: () => !this.locked,
         cost: (k) => init.costs[k] ?? 0,
         left: () => init.gold - spent(this.state.units, init.costs),
+        maxUnits: MAX_ROOM_UNITS,
       };
       this.editor.sync = {
         added: (units) => this.sendAdded(units),
@@ -425,7 +427,7 @@ export class Placement {
     if (!d) return;
     const q = (s: string): HTMLElement => d.querySelector(s) as HTMLElement;
     const left = this.init.gold - spent(this.state.units, this.init.costs);
-    q('#pg-gold').textContent = t('online.place.gold', { left, max: this.init.gold });
+    q('#pg-gold').textContent = t('online.place.gold', { left: fmtGold(left), max: fmtGold(this.init.gold) });
     (q('#pg-bar').style as CSSStyleDeclaration).width = `${Math.max(0, Math.min(100, (left / this.init.gold) * 100))}%`;
     const kinds = [0, 1, 2, 3, 4];
     if (!kinds.includes(this.state.selKind)) kinds.push(this.state.selKind);
@@ -477,7 +479,7 @@ export class Placement {
       .map((p) => {
         const mine = p.id === this.session.model.you;
         const gold = mine && this.editor ? this.init.gold - spent(this.state.units, this.init.costs) : p.gold;
-        return `<span class="on-chip${p.ready ? ' rdy' : ''}${mine ? ' me' : ''}${p.connected ? '' : ' off'}" style="border-color:${hex(playerColor(p.color))}"><i class="dot" style="background:${hex(playerColor(p.color))}"></i>${esc(p.name)} <b>${gold}g</b> <small>${t('online.place.units', { n: p.units })}</small>${p.ready ? ' ✓' : ''}</span>`;
+        return `<span class="on-chip${p.ready ? ' rdy' : ''}${mine ? ' me' : ''}${p.connected ? '' : ' off'}" style="border-color:${hex(playerColor(p.color))}"><i class="dot" style="background:${hex(playerColor(p.color))}"></i>${esc(p.name)} <b>${fmtGold(gold)}g</b> <small>${t('online.place.units', { n: p.units })}</small>${p.ready ? ' ✓' : ''}</span>`;
       })
       .join('');
     const spec = st.players.filter((p) => p.role === 'spectator').length;
@@ -503,4 +505,9 @@ export class Placement {
   get myUnits(): PlacedUnit[] {
     return this.state.units;
   }
+}
+
+/** Gold with a short suffix once it gets long (1 000 000 -> 1.0m). */
+function fmtGold(n: number): string {
+  return n >= 100000 ? fmtDamage(n) : String(n);
 }

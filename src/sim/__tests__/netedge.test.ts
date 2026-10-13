@@ -42,6 +42,32 @@ function three(): { r: Rig; a: GuestSession; b: GuestSession } {
   return { r, a, b };
 }
 
+describe('big rooms', () => {
+  it('accepts huge gold and the big map sizes, clamps the rest', () => {
+    const r = rig(5);
+    r.hs.send({ t: 'settings', settings: { gold: 5_000_000, mapSize: 256 } });
+    expect(r.hs.model.state!.settings.gold).toBe(5_000_000);
+    expect(r.hs.model.state!.settings.mapSize).toBe(256);
+    r.hs.send({ t: 'settings', settings: { gold: 99_000_000, mapSize: 130 } });
+    expect(r.hs.model.state!.settings.gold).toBe(10_000_000);
+    expect(r.hs.model.state!.settings.mapSize).toBe(256);
+  });
+
+  it('has no per-player unit limit: far more than 1500 units fit when gold allows', () => {
+    const r = rig(7);
+    const a = join(r, 'A');
+    a.send({ t: 'ready', ready: true });
+    r.hs.send({ t: 'settings', settings: { gold: 5_000_000, mapSize: 160 } });
+    a.send({ t: 'ready', ready: true });
+    r.hs.send({ t: 'start' });
+    expect(r.hs.model.state!.phase).toBe('placing');
+    const sp = spots(r, 0, 2500);
+    expect(sp.length).toBeGreaterThan(1600);
+    for (let i = 0; i < sp.length; i += 80) r.hs.send({ t: 'place', items: sp.slice(i, i + 80).map((q, j) => ({ cid: i + j, kind: 0, x: q.x, y: q.y })) });
+    expect(r.hs.model.placed.size).toBe(sp.length);
+  });
+});
+
 describe('rematch', () => {
   it('keeps the map and the last formation, clears READY and starts a new battle with a new sim seed', () => {
     const { r, a, b } = three();

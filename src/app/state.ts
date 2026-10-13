@@ -21,6 +21,8 @@ export const MAP_SIZES = [
   { id: 40, name: t('studio.size.small') },
   { id: 56, name: t('studio.size.medium') },
   { id: 80, name: t('studio.size.large') },
+  { id: 120, name: t('studio.size.huge') },
+  { id: 160, name: t('studio.size.giant') },
 ] as const;
 
 /** Maximum units that can be placed in the editor (the benchmark is separate). */

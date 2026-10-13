@@ -77,7 +77,7 @@ export const online: StringTable = {
     'online.reason.banned': 'This rarity is disabled',
     'online.reason.zone': 'Outside your zone',
     'online.reason.gold': 'Not enough gold',
-    'online.reason.cap': 'Unit limit reached',
+    'online.reason.cap': 'Room unit limit reached',
     'online.reason.close': 'Too close to another unit',
 
     // connection type
@@ -152,6 +152,9 @@ export const online: StringTable = {
     'online.size.80': 'Large (80)',
     'online.size.100': 'Very large (100)',
     'online.size.120': 'Huge (120)',
+    'online.size.160': 'Gigantic (160)',
+    'online.size.200': 'Colossal (200)',
+    'online.size.256': 'Endless (256)',
     'online.rar.legendary': 'Legendary',
     'online.rar.epic': 'Epic',
     'online.rar.rare': 'Rare',
@@ -263,7 +266,7 @@ export const online: StringTable = {
     'online.reason.banned': 'Bu nadirlik kapalı',
     'online.reason.zone': 'Bölge dışı',
     'online.reason.gold': 'Gold yetersiz',
-    'online.reason.cap': 'Birim sınırı',
+    'online.reason.cap': 'Oda birim sınırı doldu',
     'online.reason.close': 'Çok yakın',
 
     // connection type
@@ -338,6 +341,9 @@ export const online: StringTable = {
     'online.size.80': 'Büyük (80)',
     'online.size.100': 'Çok büyük (100)',
     'online.size.120': 'Dev (120)',
+    'online.size.160': 'Devasa (160)',
+    'online.size.200': 'Muazzam (200)',
+    'online.size.256': 'Sonsuz (256)',
     'online.rar.legendary': 'Efsanevi',
     'online.rar.epic': 'Destansı',
     'online.rar.rare': 'Nadir',

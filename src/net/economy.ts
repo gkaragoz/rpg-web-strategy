@@ -61,6 +61,15 @@ export function spent(units: Placed[], costs: number[]): number {
   return t;
 }
 
+/** Hard ceiling of placed units in a whole online room (keeps messages and the simulation bounded; gold normally limits first). */
+export const MAX_ROOM_UNITS = 30000;
+
+/** Gold range the host accepts for the lobby setting. */
+export const MAX_GOLD = 10_000_000;
+
+/** Map sizes the host accepts (0 = automatic by player count). */
+export const ONLINE_MAP_SIZES: readonly number[] = [0, 40, 56, 80, 100, 120, 160, 200, 256];
+
 /** Recommended map size for the number of players. */
 export function mapSizeForPlayers(players: number): number {
   return players <= 2 ? 56 : players <= 4 ? 80 : 100;

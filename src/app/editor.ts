@@ -42,6 +42,8 @@ export interface PlacementConstraint {
   left(): number;
   /** Online: false while the player is ready (the host ignores edits then), so erase/undo/redo/clear must not change anything. */
   canEdit?(): boolean;
+  /** Unit ceiling of the placement (default `MAX_PLACED`). */
+  maxUnits?: number;
 }
 
 /** Unit placement on the map: brush painting, erasing, undo/redo, formations. */
@@ -319,10 +321,11 @@ export class Editor {
       added.length = 0;
       added.push(...keep);
     }
-    const room = MAX_PLACED - s.units.length;
+    const cap = this.cap;
+    const room = cap - s.units.length;
     if (added.length > room) {
       added.length = Math.max(0, room);
-      this.d.toast(t('studio.editor.cap', { max: MAX_PLACED }));
+      this.d.toast(t('studio.editor.cap', { max: cap }));
     }
     if (added.length === 0) return;
     for (const u of added) s.units.push(u);
@@ -534,7 +537,7 @@ export class Editor {
   fillFormation(team: number): number {
     const s = this.d.state;
     const army = composeFromKind(s.selKind, this.rand);
-    const added = this.formation(team, army).slice(0, Math.max(0, MAX_PLACED - s.units.length));
+    const added = this.formation(team, army).slice(0, Math.max(0, this.cap - s.units.length));
     this.addMany(added);
     return added.length;
   }
@@ -550,7 +553,7 @@ export class Editor {
   /** Adds a role-balanced random army to the given team. */
   addRandomArmy(team: number): number {
     const s = this.d.state;
-    const added = this.formation(team, composeArmy(this.rand)).slice(0, Math.max(0, MAX_PLACED - s.units.length));
+    const added = this.formation(team, composeArmy(this.rand)).slice(0, Math.max(0, this.cap - s.units.length));
     this.addMany(added);
     return added.length;
   }
@@ -587,6 +590,10 @@ export class Editor {
     const set = new Set(units);
     this.undoStack = this.undoStack.filter((op) => !op.units.some((u) => set.has(u)));
     this.redoStack = this.redoStack.filter((op) => !op.units.some((u) => set.has(u)));
+  }
+
+  private get cap(): number {
+    return this.constraint?.maxUnits ?? MAX_PLACED;
   }
 
   private addMany(added: PlacedUnit[]): void {

@@ -1,6 +1,7 @@
 import { loc, t } from '../../i18n';
 import type { Session } from '../../net/client';
 import { act } from '../../net/act';
+import { ONLINE_MAP_SIZES } from '../../net/economy';
 import type { PlayerInfo } from '../../net/protocol';
 import { BIOME_NAMES, DEFAULT_MAP, LAYOUT_NAMES, type MapSpec } from '../../sim/mapSpec';
 import type { Rarity } from '../../sim/data/troops';
@@ -163,9 +164,9 @@ export class MenuScreen {
   }
 }
 
-const GOLDS = [500, 1000, 2000, 5000, 10000];
+const GOLDS = [500, 1000, 2000, 5000, 10000, 100000, 1000000];
 const TIMES: number[] = [60, 120, 300, 0];
-const SIZES: number[] = [0, 40, 56, 80, 100, 120];
+const SIZES: readonly number[] = ONLINE_MAP_SIZES;
 
 export interface LobbyEnv {
   onLeave(): void;
@@ -199,7 +200,7 @@ export class LobbyScreen {
     <div class="on-field"><span>${t('online.lobby.map')}</span>
       <div class="on-map"><canvas id="l-prev" width="160" height="82"></canvas><div class="on-map-info"><b id="l-map-name"></b><div class="on-btnrow"><button type="button" id="l-map-pick">${t('online.lobby.pick')}</button><button type="button" id="l-map-rand">${t('online.lobby.random')}</button></div></div></div>
     </div>
-    <div class="on-field"><span>${t('online.lobby.gold')}</span><div class="seg" id="l-gold"></div><input id="l-gold-n" type="number" min="100" max="100000" step="100" aria-label="${esc(t('online.lobby.goldCustom'))}" /></div>
+    <div class="on-field"><span>${t('online.lobby.gold')}</span><div class="seg" id="l-gold"></div><input id="l-gold-n" type="number" min="100" max="10000000" step="100" aria-label="${esc(t('online.lobby.goldCustom'))}" /></div>
     <div class="on-field"><span>${t('online.lobby.placeTime')}</span><select id="l-time"></select></div>
     <div class="on-field"><span>${t('online.lobby.mapSize')}</span><select id="l-size"></select></div>
     <label class="row"><span>${t('online.lobby.openPlace')} <small>${t('online.lobby.openPlaceHint')}</small></span><input type="checkbox" id="l-open" role="switch" /></label>
