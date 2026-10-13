@@ -406,10 +406,23 @@ function startOnline(joinCode?: string): void {
 // ---- Ana dongu ----
 
 let last = performance.now();
+/** Uyarlanir cozunurluk: savasta kareler uzun suredir yavassa (zayif cihaz) cozunurluk kademeli duser. */
+let slowRun = 0;
+let resTier = Math.min(window.devicePixelRatio || 1, 2);
+function adaptResolution(frameMs: number): void {
+  if (frameMs > 500) return; // sekme arka plandan donus vb.
+  slowRun = frameMs > 38 ? slowRun + 1 : Math.max(0, slowRun - 2);
+  if (slowRun < 90 || resTier <= 1 || state.options.fx !== 'auto') return;
+  slowRun = 0;
+  resTier = resTier > 1.5 ? 1.5 : 1;
+  app.renderer.resize(app.screen.width, app.screen.height, resTier);
+  studio.toast(`Kareler yavaş: grafik çözünürlüğü düşürüldü (${resTier}×)`);
+}
 function frame(now: number): void {
   requestAnimationFrame(frame);
   const frameMs = now - last;
   last = now;
+  if (mode !== 'studio') adaptResolution(frameMs);
   if (mode === 'online' && online) {
     online.frame(now, frameMs);
     return;

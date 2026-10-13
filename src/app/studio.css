@@ -1658,8 +1658,12 @@ button.on {
     padding: 8px 10px;
   }
   .ug-icon {
-    width: 92px;
-    height: 110px;
+    width: 72px;
+    height: 84px;
+  }
+  .ug-card {
+    padding: 6px 8px;
+    font-size: 12px;
   }
   .ug-bar {
     padding: 8px 10px 0;
@@ -1749,4 +1753,8 @@ button.on {
     opacity: 0;
     visibility: hidden;
   }
+}
+.ug-grid {
+  grid-auto-rows: max-content;
+  align-content: start;
 }

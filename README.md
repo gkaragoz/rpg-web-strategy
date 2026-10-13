@@ -101,6 +101,17 @@ Sorun giderme: *Sinyal sunucusuna ulaşılamadı* → ağ/güvenlik duvarı Peer
 *Host bulundu ama doğrudan bağlantı kurulamadı* (yalnız röle ulaşılamazken WebRTC'ye düşüldüğünde) → iki cihaz farklı ağlarda ve NAT'lar doğrudan bağlantıya izin vermiyor; ücretsiz TURN sunucusu yok. Birincil yol olan **röle** bu durumda kullanılır; röle de erişilemiyorsa (ağ `workers.dev` adresini engelliyor) LAN'ı dene.
 *LAN sunucusuna bağlanılamadı* → oyunu `--lan` ile başlatmadın ya da Pages'ten LAN seçtin (Pages https olduğundan `ws://` kuramaz).
 
+## Mobil
+
+Telefon ve tablette tarayıcıdan oynanır (Pages adresi). Dokunmatik kontroller:
+- **Haritada:** tek parmak asker yerleştirir (sürüklersen boyar; *Sil* aracındaysa siler), **iki parmak kaydırır ve sıkıştırarak yakınlaştırır**. Savaşta tek parmak da kaydırır.
+- **Alt çekmece:** yerleştirmede alttaki ince çubuk (takım, tür, araç, *Savaşı başlat* / *HAZIR*) yatay kaydırılır; tutamacına dokununca/sürükleyince tüm araçlar açılır. Silmede *Sil: seçili takım* masaüstündeki Shift+sağ tık'ın karşılığıdır.
+- **Savaş HUD'u:** hız / duraklat / kamera (+ − ⌖) / istatistik düğmeleri tek satırda kaydırılır; istatistik paneli dokunmatikte varsayılan kapalıdır.
+- **Çevrimiçi:** lobi dar ekranda *Oyuncular | Ayarlar* sekmeleri; sağ alttaki rozet bağlantı türünü ve lobi kodunu gösterir (dokununca davet linki kopyalanır); *Sohbet* düğmesi oyun içi sohbeti açar.
+- Diyaloglar (birimler, harita) tam ekran sayfadır; dikey ve yatay ekran desteklenir.
+
+Performans: ana cihazlarda (orta sınıf Android) 10.000 askerlik savaş ve ana iş parçacığındaki 8.000 askerlik simülasyon ~60 FPS çalışır. Kareler uzun süre yavaşlarsa çözünürlük otomatik düşürülür (Efektler: *Otomatik* iken).
+
 ## Birimler
 
 5 klasik tür (Savaşçı, Okçu, Rahip, **Kalkan Tankı**, **Çekiç Tankı**) ve [the reference roster](docs/UNITS.md)
