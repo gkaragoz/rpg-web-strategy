@@ -1,5 +1,5 @@
 import { SIM_DT } from '../sim/constants';
-import { packSnapshot, unpackSnapshot, type BattleSnapshot } from '../sim/snapshot';
+import { packSnapshot, unpackSnapshot, unwire, unwireRaw, wireIsCompressed, wireRaw, type BattleSnapshot } from '../sim/snapshot';
 import { CHECK_EVERY, type HostLobby } from './host';
 import type { OnlineModel } from './client';
 import { b64decode, b64encode, type ClientMsg } from './protocol';
@@ -17,7 +17,7 @@ export interface SimLike {
   readonly pending?: number;
   /** Worker-backed sims report the checkpoint hashes asynchronously through this callback (instead of hash()). */
   onHash?(cb: (step: number, hash: number) => void): void;
-  /** Worker-backed sims restore a packed snapshot (taken at `step`) without unpacking it on the main thread. */
+  /** Worker-backed sims restore a snapshot in wire form (taken at `step`) without unpacking it on the main thread. */
   restorePacked?(data: Uint8Array, step: number): void;
   /** Worker-backed sims take snapshots asynchronously. */
   snapshotPacked?(): Promise<{ step: number; data: Uint8Array }>;
@@ -60,7 +60,7 @@ export class LockstepRunner {
         snapshot: () =>
           sim.snapshotPacked
             ? sim.snapshotPacked().then((r) => ({ step: r.step, data: b64encode(r.data) }))
-            : { step: sim.stepCount, data: b64encode(packSnapshot(sim.serialize())) },
+            : { step: sim.stepCount, data: b64encode(wireRaw(packSnapshot(sim.serialize()))) },
       };
     }
     sim.onHash?.((step, hash) => {
@@ -81,8 +81,16 @@ export class LockstepRunner {
     if (!host && rs) {
       this.model.pendingResync = null;
       try {
-        if (this.sim.restorePacked) this.sim.restorePacked(b64decode(rs.data), rs.step);
-        else this.sim.restore(unpackSnapshot(b64decode(rs.data)));
+        const wire = b64decode(rs.data);
+        if (this.sim.restorePacked) this.sim.restorePacked(wire, rs.step);
+        else if (wireIsCompressed(wire)) {
+          // A compressed snapshot (from a worker host) needs the async gunzip; the sim keeps running until it is applied.
+          void unwire(wire).then((raw) => {
+            this.sim.restore(unpackSnapshot(raw));
+            this.acc = 0;
+            this.resyncs++;
+          });
+        } else this.sim.restore(unpackSnapshot(unwireRaw(wire)));
         this.resyncs++;
       } catch (e) {
         console.warn('[lockstep] snapshot ignored', e); // a bad snapshot must not end the battle for this player

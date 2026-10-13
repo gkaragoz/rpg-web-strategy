@@ -203,12 +203,29 @@ export class Placement {
   onMessage(msg: ServerMsg): void {
     const me = this.session.model.you;
     switch (msg.t) {
-      case 'placed':
-        for (const it of msg.items) this.onPlaced(it, msg.owner === me);
+      case 'placed': {
+        // Own units that were not placed from this editor (rejoin, rematch) are added in one go: one id lookup table and a
+        // single sprite refresh per message (per-unit lookups and refreshes were O(n^2) with thousands of units).
+        const known = new Set<number>();
+        for (const u of this.state.units) if (u.id !== undefined) known.add(u.id);
+        const added: PlacedUnit[] = [];
+        for (const it of msg.items) {
+          const nu = this.onPlaced(it, msg.owner === me, known);
+          if (nu) {
+            added.push(nu);
+            known.add(nu.id!);
+          }
+        }
+        if (added.length && this.editor) {
+          for (const u of added) this.state.units.push(u);
+          this.ensureKinds();
+          this.editor.refreshSprites();
+        }
         this.ensureKinds();
         this.syncRemote();
         this.flushReady();
         break;
+      }
       case 'unplaced':
         for (const id of msg.ids) {
           const s = this.remote.get(id);
@@ -270,7 +287,8 @@ export class Placement {
     }
   }
 
-  private onPlaced(it: PlacedItem, mine: boolean): void {
+  /** Handles one placed item; returns a new local unit when it is one of my own that is not known here yet (the caller adds it). */
+  private onPlaced(it: PlacedItem, mine: boolean, known: Set<number>): PlacedUnit | null {
     if (it.team === this.myTeam && this.editor) {
       const u = this.pending.get(it.cid);
       if (mine && u) {
@@ -280,16 +298,12 @@ export class Placement {
           this.session.send({ t: 'unplace', ids: [it.id] });
           this.editor.removeSilently([u]);
         } else u.id = it.id;
-        return;
+        return null;
       }
-      // One of my own units placed earlier (reconnect): add it to the local state.
-      if (!this.state.units.some((x) => x.id === it.id)) {
-        const nu: PlacedUnit = { team: it.team, kind: it.kind, x: it.x, y: it.y, id: it.id };
-        this.state.units.push(nu);
-        this.ensureKinds();
-        this.editor.refreshSprites();
-      }
+      // One of my own units placed earlier (reconnect, rematch): add it to the local state.
+      if (!known.has(it.id)) return { team: it.team, kind: it.kind, x: it.x, y: it.y, id: it.id };
     }
+    return null;
   }
 
   // ---------------------------------------------------------------- remote units

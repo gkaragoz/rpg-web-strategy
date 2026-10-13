@@ -6,7 +6,7 @@ import { GuestSession, HostSession, type Session } from '../../net/client';
 import { LockstepSim } from '../../net/lockstepSim';
 import { LockstepWorkerSim } from '../../net/lockstepWorkerSim';
 import type { SimBackend } from '../../sim/backend';
-import { battleConfig, makeCode, type ClientMsg, type GameInit, type ServerMsg } from '../../net/protocol';
+import { battleConfig, layoutOf, makeCode, type ClientMsg, type GameInit, type ServerMsg } from '../../net/protocol';
 import { PeerGuestTransport, PeerHostTransport } from '../../net/peerTransport';
 import type { Transport } from '../../net/transport';
 import { NetError, WsGuestTransport, WsHostTransport, lanUrl } from '../../net/wsTransport';
@@ -298,6 +298,7 @@ export class OnlineApp {
       return;
     }
     this.session = s;
+    (window as unknown as { __session: Session }).__session = s; // diagnostics / scripted load tests (like __sim)
     this.menu?.destroy();
     this.menu = null;
     this.cursors = new CursorLayer(s.model, (m) => s.send(m));
@@ -474,7 +475,8 @@ export class OnlineApp {
     env.setIconColors(this.colors);
     // The atlas of players who join midway must contain all kinds.
     const kinds = new Set<number>(Array.from({ length: LEGACY_COUNT }, (_, i) => i));
-    for (let i = 0; i < start.layout.length; i += 4) kinds.add(start.layout[i + 1]);
+    const lay = layoutOf(start);
+    for (let i = 0; i < lay.length; i += 4) kinds.add(lay[i + 1]);
     // The bone caller summons bone soldiers in battle (dormant skeletons exist in the sim from the start): their texture must be in the atlas.
     for (const k of [...kinds]) if (STATS[k]?.troop === 'bone-caller') kinds.add(KIND_OF_TROOP['bone-soldier']);
     env.bake(this.colors, this.biome, kinds);

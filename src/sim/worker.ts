@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import { Battle, DBG_KEYS, type BattleConfig, type SimEvent, projectileCapacity, unitCapacity } from './battle';
 import { SIM_DT } from './constants';
-import { packSnapshot, unpackSnapshot } from './snapshot';
+import { packSnapshot, unpackSnapshot, unwire, wireGzip } from './snapshot';
 import {
   F_ALIVE_BASE,
   F_DBG,
@@ -167,8 +167,14 @@ function zeroStats(): void {
   for (let i = 0; i < DBG_KEYS.length; i++) f[F_DBG + i] = 0;
 }
 
+let pending: Promise<void> = Promise.resolve();
+
+// Commands run strictly in arrival order, also after an asynchronous snapshot (gzip) or restore (gunzip).
 ctx.onmessage = (e: MessageEvent<WorkerCommand>) => {
-  const m = e.data;
+  pending = pending.then(() => handle(e.data)).catch((err) => console.error('[sim worker]', err));
+};
+
+function handle(m: WorkerCommand): void | Promise<void> {
   switch (m.type) {
     case 'init': {
       config = m.config;
@@ -206,16 +212,21 @@ ctx.onmessage = (e: MessageEvent<WorkerCommand>) => {
       break;
     }
     case 'snapshot': {
-      const data = packSnapshot(battle.serialize());
-      ctx.postMessage({ type: 'snapshot', id: m.id, step, data } satisfies WorkerEvent, [data.buffer]);
-      break;
+      const at = step;
+      const packed = packSnapshot(battle.serialize());
+      // gzip is asynchronous: later commands wait for it, so the order stays the lockstep order.
+      return (async () => {
+        const data = await wireGzip(packed);
+        ctx.postMessage({ type: 'snapshot', id: m.id, step: at, data } satisfies WorkerEvent, [data.buffer]);
+      })();
     }
     case 'restore': {
-      battle.restore(unpackSnapshot(m.data));
-      step = battle.stepCount;
-      publishStatic();
-      publish();
-      break;
+      return (async () => {
+        battle.restore(unpackSnapshot(await unwire(m.data)));
+        step = battle.stepCount;
+        publishStatic();
+        publish();
+      })();
     }
     case 'reset': {
       battle.reset(m.seed);
@@ -238,6 +249,6 @@ ctx.onmessage = (e: MessageEvent<WorkerCommand>) => {
       zeroStats();
       break;
   }
-};
+}
 
 void timer;

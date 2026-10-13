@@ -3,7 +3,7 @@ import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
 
 /** Protocol version: a client with a different version cannot join the lobby. */
-export const PROTOCOL = 9;
+export const PROTOCOL = 10;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;
@@ -66,8 +66,8 @@ export interface GameInit {
 export interface BattleStart {
   init: GameInit;
   simSeed: number;
-  /** Flat list: team, kind, x, y (sorted by unit id). */
-  layout: number[];
+  /** Packed start layout, sorted by unit id: 10 bytes per unit (u8 team, u8 kind, f32 x, f32 y), base64. Use `layoutOf()`. */
+  layout: string;
 }
 
 export interface LobbyState {
@@ -165,7 +165,7 @@ export function battleConfig(s: BattleStart): BattleConfig {
     terrainSeed: s.init.seed,
     map: s.init.spec,
     comedy: s.init.comedyPhysics,
-    layout: new Float32Array(s.layout),
+    layout: layoutOf(s),
   };
 }
 
@@ -187,6 +187,38 @@ export function b64encode(u8: Uint8Array): string {
   const CH = 0x8000;
   for (let i = 0; i < u8.length; i += CH) s += String.fromCharCode(...u8.subarray(i, i + CH));
   return btoa(s);
+}
+
+/** Packs units (already sorted by id) into the compact wire form of `BattleStart.layout`. */
+export function packLayout(units: ReadonlyArray<{ team: number; kind: number; x: number; y: number }>): string {
+  const buf = new Uint8Array(units.length * 10);
+  const dv = new DataView(buf.buffer);
+  units.forEach((u, i) => {
+    buf[i * 10] = u.team;
+    buf[i * 10 + 1] = u.kind;
+    dv.setFloat32(i * 10 + 2, u.x, true);
+    dv.setFloat32(i * 10 + 6, u.y, true);
+  });
+  return b64encode(buf);
+}
+
+let layoutCache: { key: string; arr: Float32Array } | null = null;
+
+/** The start layout as the simulation wants it: flat team, kind, x, y per unit (Float32, identical on every client). */
+export function layoutOf(s: { layout: string }): Float32Array {
+  if (layoutCache && layoutCache.key === s.layout) return layoutCache.arr;
+  const buf = b64decode(s.layout);
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const n = Math.floor(buf.length / 10);
+  const arr = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    arr[i * 4] = buf[i * 10];
+    arr[i * 4 + 1] = buf[i * 10 + 1];
+    arr[i * 4 + 2] = dv.getFloat32(i * 10 + 2, true);
+    arr[i * 4 + 3] = dv.getFloat32(i * 10 + 6, true);
+  }
+  layoutCache = { key: s.layout, arr };
+  return arr;
 }
 
 export function b64decode(s: string): Uint8Array {

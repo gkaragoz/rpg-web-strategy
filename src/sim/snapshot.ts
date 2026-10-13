@@ -96,3 +96,48 @@ export function unpackSnapshot(data: Uint8Array): BattleSnapshot {
   }
   return snap;
 }
+
+// ---- wire form: 1 header byte (0 = raw, 1 = gzip) + the packed snapshot ----
+
+const WIRE_RAW = 0;
+const WIRE_GZIP = 1;
+
+/** Wire form without compression (synchronous; used by the main-thread sim and in tests). */
+export function wireRaw(packed: Uint8Array): Uint8Array {
+  const out = new Uint8Array(packed.length + 1);
+  out[0] = WIRE_RAW;
+  out.set(packed, 1);
+  return out;
+}
+
+async function pipeBytes(data: Uint8Array, stream: { writable: WritableStream<Uint8Array>; readable: ReadableStream<Uint8Array> }): Promise<Uint8Array> {
+  const writer = stream.writable.getWriter();
+  void writer.write(data).then(() => writer.close());
+  return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+}
+
+/** Wire form with gzip (snapshots are mostly zeros and compress by a large factor); falls back to raw without CompressionStream. */
+export async function wireGzip(packed: Uint8Array): Promise<Uint8Array> {
+  if (typeof CompressionStream === 'undefined') return wireRaw(packed);
+  const z = await pipeBytes(packed, new CompressionStream('gzip') as unknown as Parameters<typeof pipeBytes>[1]);
+  const out = new Uint8Array(z.length + 1);
+  out[0] = WIRE_GZIP;
+  out.set(z, 1);
+  return out;
+}
+
+/** Whether decoding the wire form needs the asynchronous path. */
+export function wireIsCompressed(wire: Uint8Array): boolean {
+  return wire[0] === WIRE_GZIP;
+}
+
+/** Packed snapshot from a wire form (async because of gunzip). */
+export async function unwire(wire: Uint8Array): Promise<Uint8Array> {
+  if (wire[0] === WIRE_GZIP) return pipeBytes(wire.subarray(1), new DecompressionStream('gzip') as unknown as Parameters<typeof pipeBytes>[1]);
+  return wire.subarray(1);
+}
+
+/** Synchronous variant for uncompressed wire forms. */
+export function unwireRaw(wire: Uint8Array): Uint8Array {
+  return wire.subarray(1);
+}

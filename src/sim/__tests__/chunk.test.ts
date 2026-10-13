@@ -60,3 +60,21 @@ describe('message chunking', () => {
     expect(r3.push({ c: { id: 'x' } } as unknown as Msg)).toBeNull();
   });
 });
+
+describe('packed start layout', () => {
+  it('round-trips team, kind and Float32 positions and is far smaller than JSON', async () => {
+    const { packLayout, layoutOf } = await import('../../net/protocol');
+    const units = Array.from({ length: 5000 }, (_, i) => ({ team: i % 6, kind: i % 50, x: 0.5 + ((i * 7.3) % 250) + 0.123456789, y: 0.5 + ((i * 3.7) % 250) + 0.987654321 }));
+    const packed = packLayout(units);
+    const arr = layoutOf({ layout: packed });
+    expect(arr.length).toBe(units.length * 4);
+    for (const i of [0, 1, 4999]) {
+      expect(arr[i * 4]).toBe(units[i].team);
+      expect(arr[i * 4 + 1]).toBe(units[i].kind);
+      expect(arr[i * 4 + 2]).toBe(Math.fround(units[i].x));
+      expect(arr[i * 4 + 3]).toBe(Math.fround(units[i].y));
+    }
+    const json = JSON.stringify(units.flatMap((u) => [u.team, u.kind, u.x, u.y]));
+    expect(packed.length).toBeLessThan(json.length / 2);
+  });
+});

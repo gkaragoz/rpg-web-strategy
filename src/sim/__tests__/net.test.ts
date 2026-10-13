@@ -4,7 +4,7 @@ import { GuestSession, HostSession } from '../../net/client';
 import { teamZones } from '../../net/economy';
 import { HostLobby, CHECK_EVERY } from '../../net/host';
 import { LockstepRunner } from '../../net/lockstep';
-import { PROTOCOL, battleConfig, passHash, type PlaceItem } from '../../net/protocol';
+import { PROTOCOL, battleConfig, layoutOf, passHash, type PlaceItem } from '../../net/protocol';
 import { LoopbackHub } from '../../net/transport';
 import { Terrain } from '../terrain';
 import { mulberry32 } from '../random';
@@ -298,7 +298,7 @@ describe('placement', () => {
     const sh = r.hs.model.start!;
     expect(sa.layout).toEqual(sh.layout);
     expect(sb.layout).toEqual(sh.layout);
-    expect(sh.layout.length).toBe(8); // 2 units x 4 fields
+    expect(layoutOf(sh).length).toBe(8); // 2 units x 4 fields
     expect(sh.init.teams).toBe(3);
   });
 

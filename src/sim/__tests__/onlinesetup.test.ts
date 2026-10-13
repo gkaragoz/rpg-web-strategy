@@ -3,7 +3,7 @@ import { Battle } from '../battle';
 import { GuestSession, HostSession } from '../../net/client';
 import { teamZones } from '../../net/economy';
 import { HostLobby } from '../../net/host';
-import { battleConfig } from '../../net/protocol';
+import { battleConfig, layoutOf } from '../../net/protocol';
 import { LoopbackHub } from '../../net/transport';
 import { Terrain } from '../terrain';
 import { mulberry32 } from '../random';
@@ -44,14 +44,14 @@ describe('online battle setup (random map + placement)', () => {
       hub.pump();
       expect(hs.model.state!.phase).toBe('battle');
       const start = hs.model.start!;
-      expect(start.layout.length).toBeGreaterThan(0);
+      expect(layoutOf(start).length).toBeGreaterThan(0);
       for (const s of guests) expect(s.model.start).not.toBeNull();
       let sim: Battle | null = null;
       expect(() => {
         sim = new Battle(start.simSeed, battleConfig(start));
         for (let i = 0; i < 90; i++) sim.step(1 / 30);
       }).not.toThrow();
-      expect(sim!.units.count).toBe(start.layout.length / 4);
+      expect(sim!.units.count).toBe(layoutOf(start).length / 4);
     });
   }
 });

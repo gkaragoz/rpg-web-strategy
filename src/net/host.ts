@@ -13,6 +13,7 @@ import {
   REJOIN_SECS,
   cleanName,
   makeCode,
+  packLayout,
   passHash,
   type BattleStart,
   type ClientMsg,
@@ -597,9 +598,7 @@ export class HostLobby {
   private beginBattle(): void {
     if (!this.init) return;
     const sorted = this.units.all().sort((a, b) => a.id - b.id);
-    const layout: number[] = [];
-    for (const u of sorted) layout.push(u.team, u.kind, u.x, u.y);
-    this.battleStart = { init: this.init, simSeed: 1 + Math.floor(this.rnd() * 1000000), layout };
+    this.battleStart = { init: this.init, simSeed: 1 + Math.floor(this.rnd() * 1000000), layout: packLayout(sorted) };
     this.phase = 'battle';
     this.hashes.clear();
     this.refreshCounts();

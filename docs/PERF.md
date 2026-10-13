@@ -31,3 +31,8 @@ Render changes (`src/render/massRenderer.ts`): units outside the view are reject
 ## What is left (ideas, measured profile is flat at 30 000 units)
 `updateUnit` 12 %, `moveToward` 11 %, `separate` 9 %, `pickTarget` 7 %, terrain `walkable`/`lineWalkable` 11 %, A* ~4 %. Next candidates: time-slice route/path refresh per unit, an alive-index list instead of scanning dead slots, shared flow fields instead of per-unit line-of-sight checks, a lower sim rate for huge armies. Each changes results (still deterministic) and needs a balance re-check.
 
+## Online at ~28 000 units (v1.16.0, real two-page test)
+Two browser pages on one machine (LAN lobby, map 256, 1 000 000 gold, `__session.send({t:'place', ...})` batches to fill both zones: 14k + 14k units). Both pages ran the battle with the sim in the worker; the host page showed 75–77 fps (1 % low 47–55), main thread sim 0.00 ms/frame, no errors. Placing that many units needed two client fixes: `Placement.onMessage('placed')` handled own units one by one (O(n²) with a sprite refresh per unit) and now does one lookup table and one refresh per message.
+
+Wire changes (protocol 10): the start layout is packed (10 bytes per unit, base64: ~13 bytes instead of ~45 characters of JSON per unit); snapshots (`resync`) travel as `[header byte][packed]` and are gzip-compressed when produced by a worker host (1.9 MB → 0.34 MB for 6 000 units after 20 steps); the worker gzips/gunzips off the main thread and handles its commands strictly in arrival order. `placed` lists are sent in batches of 400.
+
