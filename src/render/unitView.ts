@@ -1,4 +1,5 @@
 import { Container, Graphics } from 'pixi.js';
+import { outlineFilter } from './outlineFilter';
 import { Kind, LEGACY_COUNT, STATS } from '../sim/units';
 import { comedy } from './comedyFlag';
 import { LOOKS, type Anim, type Rig } from './looks';
@@ -83,6 +84,8 @@ export class UnitView {
   /** Gold chevrons above the head while the unit stands on high ground (0-3). */
   private readonly mark = new Graphics();
   private markLevel = 0;
+  /** Outline colour (0xRRGGBB) while this unit is highlighted as an enemy of the focused team; -1 = none. */
+  private outlineColor = -1;
   private readonly shadow: Graphics;
   private weapon: Container | null = null;
   private shield: Container | null = null;
@@ -136,6 +139,13 @@ export class UnitView {
     this.root.addChild(this.bar);
     this.mark.y = -84 * this.kScale;
     this.root.addChild(this.mark);
+  }
+
+  /** Outlines the whole unit in `color` (-1 removes the outline). Only changes the filter when the colour changes. */
+  setOutline(color: number): void {
+    if (color === this.outlineColor) return;
+    this.outlineColor = color;
+    this.root.filters = color < 0 ? null : [outlineFilter(color)];
   }
 
   /** High-ground marker: `level` chevrons (0 hides it); only redrawn when the level changes. */

@@ -23,6 +23,7 @@ import {
 import { mulberry32 } from '../sim/random';
 import { T_BLOCKED, T_BRIDGE, T_GRASS, T_PATH, T_WATER, Terrain } from '../sim/terrain';
 import { trackDialog } from '../net/act';
+import { MinimapQueue, minimapKey, paintCached, storeMinimap } from './minimap';
 import { hex, saveState, type AppState } from './state';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -96,11 +97,22 @@ export function drawMinimap(canvas: HTMLCanvasElement, spec: MapSpec, seed: numb
   }
 }
 
+/** Minimap with a cache: a repeated recipe/seed/size is copied instantly instead of generating the terrain again. */
+export function drawMinimapCached(canvas: HTMLCanvasElement, spec: MapSpec, seed: number, size: number): void {
+  const key = minimapKey(spec, seed, size);
+  if (paintCached(canvas, key)) return;
+  drawMinimap(canvas, spec, seed, size);
+  storeMinimap(canvas, key);
+}
+
 /** Map picker: biome-filtered card gallery with previews, plus customization and a random card. */
 export class MapPicker {
   private readonly dlg: HTMLDialogElement;
   private filter: Biome | 'all' = 'all';
   private readonly actTrack: { open(): void };
+  /** Minimaps are generated one per frame, visible cards first (building a terrain is the slow part). */
+  private readonly queue = new MinimapQueue();
+  private observer: IntersectionObserver | null = null;
 
   constructor(
     private readonly state: AppState,
@@ -116,6 +128,13 @@ export class MapPicker {
     this.dlg.addEventListener('click', (e) => {
       if (e.target === this.dlg) this.dlg.close();
     });
+    this.dlg.addEventListener('close', () => this.stopPreviews());
+  }
+
+  private stopPreviews(): void {
+    this.queue.clear();
+    this.observer?.disconnect();
+    this.observer = null;
   }
 
   /** Short name of the selected map (shown on the studio button). */
@@ -128,6 +147,7 @@ export class MapPicker {
 
   /** Closes the dialog and removes it from the DOM. */
   destroy(): void {
+    this.stopPreviews();
     if (this.dlg.open) this.dlg.close();
     this.dlg.remove();
   }
@@ -253,6 +273,22 @@ export class MapPicker {
     // Previews (after the cards exist, one by one).
     const size = s.mapSize;
     const specFor = (id: string): MapSpec => (id === 'random' ? m : PRESETS.find((p) => p.id === id)!.spec);
-    this.dlg.querySelectorAll<HTMLCanvasElement>('canvas[data-prev]').forEach((c) => drawMinimap(c, specFor(c.dataset.prev!), s.seed, size));
+    this.stopPreviews();
+    const body = this.dlg.querySelector<HTMLElement>('.map-body');
+    if (typeof IntersectionObserver !== 'undefined') {
+      this.observer = new IntersectionObserver((entries) => entries.forEach((e) => e.isIntersecting && this.queue.bump((e.target as HTMLElement).dataset.prev!)), { root: body });
+    }
+    this.dlg.querySelectorAll<HTMLCanvasElement>('canvas[data-prev]').forEach((c) => {
+      const id = c.dataset.prev!;
+      const spec = specFor(id);
+      const key = minimapKey(spec, s.seed, size);
+      if (paintCached(c, key)) return; // already generated earlier: instant
+      this.observer?.observe(c);
+      this.queue.add(id, () => {
+        drawMinimap(c, spec, s.seed, size);
+        storeMinimap(c, key);
+        this.observer?.unobserve(c);
+      });
+    });
   }
 }

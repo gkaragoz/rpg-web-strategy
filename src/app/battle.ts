@@ -83,7 +83,13 @@ export class BattleScene {
   private views: UnitView[] = [];
   private arrowViews: Array<{ shadow: Graphics; arrow: Graphics; tag: number }> = [];
   private fx: FxSystem | null = null;
-  private massOpts: MassOptions = { bars: true, sort: true, cull: true };
+  private massOpts: MassOptions = { bars: true, sort: true, cull: true, focusTeam: -1, focusColor: 0xffffff };
+  /** Team whose enemies are outlined: hovered bar segment, or the one pinned by a tap. -1: none. */
+  private hoverTeam = -1;
+  private pinnedTeam = -1;
+  private segs: HTMLButtonElement[] = [];
+  private tip: HTMLElement | null = null;
+  private docDown: ((e: PointerEvent) => void) | null = null;
   private speed = 1;
   private paused = false;
   private resetting = false;
@@ -246,6 +252,10 @@ export class BattleScene {
       this.mass.destroy();
       this.mass = null;
     }
+    if (this.docDown) document.removeEventListener('pointerdown', this.docDown);
+    this.docDown = null;
+    this.segs = [];
+    this.hoverTeam = this.pinnedTeam = -1;
     this.d.hudRoot.innerHTML = '';
     this.d.hudRoot.hidden = true;
     this.d.banner.style.display = 'none';
@@ -263,6 +273,7 @@ export class BattleScene {
     }
     root.innerHTML = `
 <div class="hud-top" id="hud-teams"></div>
+<div class="hud-tip" id="hud-tip" role="status" hidden></div>
 <div class="hud-bottom">
   <div class="seg" id="hud-speed" role="group" aria-label="${t('battle.speed.aria')}"></div>
   <button type="button" id="hud-pause">${t('battle.pause')}</button>
@@ -314,8 +325,95 @@ export class BattleScene {
     q('#hud-restart').addEventListener('click', () => void this.restart());
     q('#hud-edit').addEventListener('click', () => this.opts.onEdit());
     this.renderSpeed();
+    this.buildTeamBar();
     this.updateHud(true);
   }
+
+  /** The focused team (hover or pinned): its enemies are outlined on the map. */
+  private get focusTeam(): number {
+    return this.pinnedTeam >= 0 ? this.pinnedTeam : this.hoverTeam;
+  }
+
+  /** One shared bar: every team is a segment whose width follows its share of the total remaining health. */
+  private buildTeamBar(): void {
+    const host = document.getElementById('hud-teams');
+    this.tip = document.getElementById('hud-tip');
+    this.segs = [];
+    this.hoverTeam = this.pinnedTeam = -1;
+    if (this.docDown) document.removeEventListener('pointerdown', this.docDown);
+    this.docDown = null;
+    if (!host || this.opts.bench) return;
+    const bar = document.createElement('div');
+    bar.className = 'hud-split';
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-label', t('battle.teams.aria'));
+    this.opts.colors.forEach((c, ti) => {
+      const seg = document.createElement('button');
+      seg.type = 'button';
+      seg.className = 'hud-seg';
+      seg.dataset.team = String(ti);
+      seg.style.background = hex(c.main);
+      seg.innerHTML = '<span class="hud-seg-n"></span>';
+      seg.addEventListener('pointerenter', (e) => {
+        if (e.pointerType === 'touch') return;
+        this.hoverTeam = ti;
+        this.showTip(ti);
+      });
+      seg.addEventListener('pointerleave', (e) => {
+        if (e.pointerType === 'touch') return;
+        if (this.hoverTeam === ti) this.hoverTeam = -1;
+        if (this.pinnedTeam < 0) this.hideTip();
+        else this.showTip(this.pinnedTeam);
+      });
+      seg.addEventListener('focus', () => {
+        this.hoverTeam = ti;
+        this.showTip(ti);
+      });
+      seg.addEventListener('blur', () => {
+        if (this.hoverTeam === ti) this.hoverTeam = -1;
+        if (this.pinnedTeam < 0) this.hideTip();
+      });
+      // Tap (touch) pins the team; tapping the same segment again, or anywhere else, clears it.
+      seg.addEventListener('click', () => {
+        this.pinnedTeam = this.pinnedTeam === ti ? -1 : ti;
+        if (this.pinnedTeam >= 0) this.showTip(ti);
+        else if (this.hoverTeam < 0) this.hideTip();
+      });
+      bar.appendChild(seg);
+      this.segs.push(seg);
+    });
+    host.replaceChildren(bar);
+    this.docDown = (e) => {
+      if (this.pinnedTeam >= 0 && !(e.target as HTMLElement | null)?.closest('.hud-split')) {
+        this.pinnedTeam = -1;
+        if (this.hoverTeam < 0) this.hideTip();
+      }
+    };
+    document.addEventListener('pointerdown', this.docDown);
+  }
+
+  private teamName(ti: number): string {
+    return this.opts.online?.teamNames[ti] || t('battle.team.name', { n: ti + 1 });
+  }
+
+  private showTip(ti: number): void {
+    const tip = this.tip;
+    const seg = this.segs[ti];
+    if (!tip || !seg) return;
+    const s = this.teamStats[ti];
+    tip.innerHTML = `<i class="dot" style="background:${hex(this.opts.colors[ti].main)}"></i><b>${this.teamName(ti).replace(/[&<>]/g, '')}</b><span>${t('battle.team.tip', { alive: s?.alive ?? 0, pct: s?.pct ?? 0, share: s?.share ?? 0 })}</span>`;
+    tip.hidden = false;
+    const r = seg.getBoundingClientRect();
+    const w = tip.offsetWidth;
+    tip.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`;
+    tip.style.top = `${Math.round(r.bottom + 8)}px`;
+  }
+
+  private hideTip(): void {
+    if (this.tip) this.tip.hidden = true;
+  }
+
+  private teamStats: Array<{ alive: number; pct: number; share: number }> = [];
 
   private renderSpeed(): void {
     const el = this.d.hudRoot.querySelector('#hud-speed') as HTMLElement | null;
@@ -335,19 +433,25 @@ export class BattleScene {
     const now = performance.now();
     if (!force && now - this.lastHud < 200) return;
     this.lastHud = now;
-    const teams = document.getElementById('hud-teams');
-    if (teams) {
+    if (this.segs.length > 0) {
       const u = this.sim.units;
       const hp = new Array(6).fill(0);
       for (let i = 0; i < u.count; i++) if (u.alive[i]) hp[u.team[i]] += u.hp[i];
-      teams.innerHTML = this.opts.colors
-        .map((c, ti) => {
-          const n = this.sim.alivePerTeam[ti];
-          const pct = Math.round(Math.min(1, hp[ti] / Math.max(1, this.initialHp[ti])) * 100);
-          const nm = this.opts.online ? `<b class="hud-name">${this.opts.online.teamNames[ti] ?? ''}</b>` : '';
-          return `<span class="hud-team${n === 0 ? ' out' : ''}" style="background:${hex(c.main)}22;color:${hex(c.main)}" title="${t('battle.team.title', { n: ti + 1, alive: n, pct })}"><i class="dot" style="background:${hex(c.main)}"></i>${nm}${n}<span class="hud-bar"><i style="width:${pct}%;background:${hex(c.main)}"></i></span></span>`;
-        })
-        .join('');
+      const total = hp.reduce((a: number, b: number) => a + b, 0);
+      this.opts.colors.forEach((_c, ti) => {
+        const seg = this.segs[ti];
+        const n = this.sim.alivePerTeam[ti];
+        const share = total > 0 ? hp[ti] / total : 0;
+        const pct = Math.round(Math.min(1, hp[ti] / Math.max(1, this.initialHp[ti])) * 100);
+        this.teamStats[ti] = { alive: n, pct, share: Math.round(share * 100) };
+        // Every living team keeps a readable minimum; the bar always adds up to 100%.
+        seg.style.flexGrow = String(n === 0 ? 0 : Math.max(share, 0.02));
+        seg.classList.toggle('out', n === 0);
+        seg.classList.toggle('focus', ti === this.focusTeam);
+        (seg.firstElementChild as HTMLElement).textContent = n === 0 ? '' : `${this.opts.online ? this.teamName(ti) + ' ' : ''}${n}`;
+        seg.setAttribute('aria-label', `${this.teamName(ti)}: ${t('battle.team.tip', this.teamStats[ti])}`);
+      });
+      if (this.focusTeam >= 0 && !this.tip?.hidden) this.showTip(this.focusTeam);
     }
     const w = this.sim.winner;
     const res = document.getElementById('hud-result');
@@ -558,6 +662,9 @@ export class BattleScene {
   // ---- mass drawing ----
 
   private syncMass(alpha: number): void {
+    const ft = this.focusTeam;
+    this.massOpts.focusTeam = ft;
+    this.massOpts.focusColor = ft >= 0 ? this.opts.colors[ft].main : 0xffffff;
     this.mass!.sync(this.time, alpha, this.viewRect(), this.massOpts);
     this.activeProjectiles = this.mass!.drawnArrows;
     this.drawnLine = `${t('battle.stats.drawn').padEnd(11)}${t('battle.stats.drawnLine', { units: this.mass!.drawnUnits, decor: this.mass!.drawnDecor, arrows: this.mass!.drawnArrows })}`;
@@ -606,6 +713,8 @@ export class BattleScene {
       const wx = u.px[i] + (u.x[i] - u.px[i]) * alpha;
       const wy = u.py[i] + (u.y[i] - u.py[i]) * alpha;
       v.root.visible = true;
+      const ft = this.focusTeam;
+      v.setOutline(alive && ft >= 0 && u.team[i] !== ft ? this.opts.colors[ft].main : -1);
       const ground = this.elev(wx, wy);
       v.root.position.set(isoX(wx, wy), isoY(wx, wy, ground + (u.lift ? u.lift[i] * 38 : 0)));
       // Height advantage over its current target (half steps): gold chevrons, one per step of advantage (max 3).

@@ -45,6 +45,8 @@ export const battle: StringTable = {
     // Team chips and result overlay
     'battle.team.name': 'Team {n}',
     'battle.team.title': 'Team {n}: {alive} soldiers, strength {pct}%',
+    'battle.team.tip': '{alive} alive · health {pct}% · {share}% of all health',
+    'battle.teams.aria': 'Remaining health of every team (hover a team to outline its enemies)',
     'battle.result.wins': '{name} wins',
     'battle.result.draw': 'Draw',
     'battle.result.stats': 'Time {dur} · Losses {losses}',
@@ -136,6 +138,8 @@ export const battle: StringTable = {
 
     'battle.team.name': 'Takım {n}',
     'battle.team.title': 'Takım {n}: {alive} asker, güç %{pct}',
+    'battle.team.tip': '{alive} canlı · can %{pct} · toplam canın %{share} kadarı',
+    'battle.teams.aria': 'Her takımın kalan canı (düşmanlarını çerçevelemek için bir takımın üzerine gel)',
     'battle.result.wins': '{name} kazandı',
     'battle.result.draw': 'Berabere',
     'battle.result.stats': 'Süre {dur} · Kayıp {losses}',

@@ -1,5 +1,8 @@
 import { defineConfig, type Plugin } from 'vite';
+import { readFileSync } from 'node:fs';
 import { attachLan } from './scripts/lan.mjs';
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 
 /** Gelistirme sunucusuna da LAN/WebSocket lobi odalarini ekler (/ws). */
 const lanPlugin = (): Plugin => ({
@@ -21,6 +24,8 @@ const isolation = {
 export default defineConfig({
   // Relative base: dist/ works from any subdirectory (GitHub Pages, local server).
   base: './',
+  // The version shown on screen always comes from package.json.
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   plugins: [lanPlugin()],
   server: { headers: isolation },
   preview: { headers: isolation },

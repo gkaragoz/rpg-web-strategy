@@ -4,7 +4,7 @@ import { act } from '../../net/act';
 import type { PlayerInfo } from '../../net/protocol';
 import { BIOME_NAMES, DEFAULT_MAP, LAYOUT_NAMES, type MapSpec } from '../../sim/mapSpec';
 import type { Rarity } from '../../sim/data/troops';
-import { MapPicker, drawMinimap } from '../mapPicker';
+import { MapPicker, drawMinimapCached } from '../mapPicker';
 import { PALETTES, defaultState, type AppState } from '../state';
 import { hex } from '../state';
 import { playerColor } from './cursors';
@@ -408,7 +408,7 @@ export class LobbyScreen {
       return;
     }
     const tmp = document.createElement('canvas');
-    drawMinimap(tmp, spec, seed, size || 56);
+    drawMinimapCached(tmp, spec, seed, size || 56);
     if (ctx) {
       ctx.clearRect(0, 0, c.width, c.height);
       ctx.fillStyle = '#0f1622';

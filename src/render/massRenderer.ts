@@ -9,8 +9,11 @@ import { SIM_DT } from '../sim/constants';
 import { MAX_TEAMS, STATS, isMelee, isRanged, isTank } from '../sim/units';
 import { DEATH_FADE, POSES, statusTint } from './unitView';
 import { projStyle } from './projectileStyle';
+import { flatColorFilter, setFlatColor } from './outlineFilter';
 
 const DEPTH_SCALE = 4;
+/** Most silhouette particles drawn for the focus outline (4 per enemy): beyond this the outline is thinned out. */
+const FOCUS_MAX = 12000;
 
 export interface MassViewport {
   /** Visible world rectangle (iso pixels). */
@@ -26,6 +29,9 @@ export interface MassOptions {
   bars: boolean;
   sort: boolean;
   cull: boolean;
+  /** Team whose enemies are outlined (-1: none) and the outline colour. */
+  focusTeam?: number;
+  focusColor?: number;
 }
 
 /**
@@ -52,6 +58,13 @@ export class MassRenderer {
   private markSx = new Float32Array(0);
   private markSy = new Float32Array(0);
   private markLevel = new Uint8Array(0);
+  /** Coloured silhouettes (4 offset copies per enemy) under the units: together they read as an outline. */
+  private readonly focusLayer = new ParticleContainer({
+    dynamicProperties: { vertex: true, position: true, rotation: true, uvs: true, color: false },
+  });
+  private readonly focusFilter = flatColorFilter(0xffffff);
+  private focusColorNow = -1;
+  private focusParticles: Particle[] = [];
   private readonly unitTex: Texture[]; // [(kind*MAX_TEAMS + team)*2 + pose]
   private readonly unitAnchor: Array<{ ax: number; ay: number }>;
   private readonly arrowTex: Texture;
@@ -94,7 +107,11 @@ export class MassRenderer {
     this.pixelTex = atlas.pixelTex;
     this.chevronTex = this.makeChevron();
     this.buildDecor(atlas);
-    this.layer.addChild(this.units, this.arrows, this.bars, this.marks);
+    const span = this.sim.mapSize * 34 + 300;
+    this.focusLayer.boundsArea = new Rectangle(-span, -400, span * 2, span + 800);
+    this.focusLayer.filters = [this.focusFilter];
+    this.focusLayer.visible = false;
+    this.layer.addChild(this.focusLayer, this.units, this.arrows, this.bars, this.marks);
     this.rebuild();
   }
 
@@ -179,6 +196,7 @@ export class MassRenderer {
     this.arrows.particleChildren = [];
     this.bars.particleChildren = [];
     this.marks.particleChildren = [];
+    this.focusLayer.particleChildren = [];
   }
 
   sync(time: number, alpha: number, view: MassViewport, opt: MassOptions): void {
@@ -199,6 +217,10 @@ export class MassRenderer {
 
     // 1) Collect visible units, write positions.
     this.markLevel.fill(0);
+    const focus = opt.focusTeam ?? -1;
+    const fOut = this.focusLayer.particleChildren;
+    let fn = 0;
+    const fd = 2.4 / Math.max(0.3, zoom);
     for (let i = 0; i < u.count; i++) {
       const alive = u.alive[i] === 1;
       if (!alive && (comedy.visual || u.deathT[i] > DEATH_FADE)) continue;
@@ -273,6 +295,22 @@ export class MassRenderer {
       }
       // In the air (comedy physics): spins fast.
       if (alive && lift > 0.04) p.rotation = (time * 13 + i) * u.facing[i];
+      if (focus >= 0 && alive && u.team[i] !== focus && fn < FOCUS_MAX) {
+        // Four copies shifted by ~2 px in the focus colour behind the unit = an outline.
+        for (let c = 0; c < 4; c++) {
+          let f = this.focusParticles[fn];
+          if (!f) f = this.focusParticles[fn] = new Particle({ texture: p.texture, anchorX: p.anchorX, anchorY: p.anchorY });
+          f.texture = p.texture;
+          f.anchorX = p.anchorX;
+          f.anchorY = p.anchorY;
+          f.x = p.x + (c === 0 ? fd : c === 1 ? -fd : 0);
+          f.y = p.y + (c === 2 ? fd : c === 3 ? -fd : 0);
+          f.scaleX = p.scaleX;
+          f.scaleY = p.scaleY;
+          f.rotation = p.rotation;
+          fOut[fn++] = f;
+        }
+      }
       // Depth key hysteresis: on small changes the order stays the same (overlapping units do not flicker).
       let key = Math.min(this.counts.length - 2, Math.max(0, ((wx + wy) * DEPTH_SCALE) | 0));
       const lk = this.lastKey[i];
@@ -281,6 +319,13 @@ export class MassRenderer {
       keys[n] = key;
       order[n] = i;
       n++;
+    }
+
+    fOut.length = fn;
+    this.focusLayer.visible = fn > 0;
+    if (fn > 0 && (opt.focusColor ?? 0xffffff) !== this.focusColorNow) {
+      this.focusColorNow = opt.focusColor ?? 0xffffff;
+      setFlatColor(this.focusFilter, this.focusColorNow);
     }
 
     // Decor: static; enters the same sort (index >= unit count).

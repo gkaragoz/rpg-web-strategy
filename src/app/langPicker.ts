@@ -37,6 +37,7 @@ export function mountLangPicker(opts: LangPickerOptions = {}): () => void {
   const cur = getLang();
   const label = (id: Lang): string => LANGS.find((l) => l.id === id)!.label;
   root.innerHTML = `
+<span class="app-ver" aria-hidden="true">v${typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : ''}</span>
 <button type="button" class="fs-btn" aria-label="${t('battle.fullscreen')}" title="${t('battle.fullscreen')}" hidden></button>
 <button type="button" class="lp-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="${t('sys.lang.aria')}">${FLAGS[cur]}<span class="lp-name">${label(cur)}</span><span class="lp-caret" aria-hidden="true">▾</span></button>
 <ul class="lp-list" role="listbox" tabindex="-1" aria-label="${t('sys.lang.aria')}" hidden>${LANGS.map(

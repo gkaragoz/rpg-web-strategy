@@ -7,7 +7,7 @@
     "type": "git",
     "url": "https://github.com/gkaragoz/rpg-web-strategy.git"
   },
-  "version": "1.8.0",
+  "version": "1.9.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
