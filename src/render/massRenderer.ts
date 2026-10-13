@@ -13,12 +13,12 @@ import { projStyle } from './projectileStyle';
 const DEPTH_SCALE = 4;
 
 export interface MassViewport {
-  /** Gorunur dunya dikdortgeni (iso piksel). */
+  /** Visible world rectangle (iso pixels). */
   left: number;
   top: number;
   right: number;
   bottom: number;
-  /** Kamera yakinlastirmasi (1 = normal); uzakta animasyon sakinlestirilir. */
+  /** Camera zoom (1 = normal); animation is calmed when zoomed out. */
   zoom?: number;
 }
 
@@ -29,8 +29,8 @@ export interface MassOptions {
 }
 
 /**
- * Buyuk olcek renderer'i: tum birimler tek bir atlas dokusundan ParticleContainer
- * parcaciklari olarak cizilir (birim basina Container/Graphics yok).
+   * Large-scale renderer: all units are drawn as ParticleContainer particles from a single
+   * atlas texture (no Container/Graphics per unit).
  */
 export class MassRenderer {
   readonly layer: Container;
@@ -43,7 +43,7 @@ export class MassRenderer {
   private readonly bars = new ParticleContainer({
     dynamicProperties: { vertex: true, position: true, rotation: false, uvs: false, color: true },
   });
-  private readonly unitTex: Texture[]; // [(kind*MAX_TEAMS + team)*2 + poz]
+  private readonly unitTex: Texture[]; // [(kind*MAX_TEAMS + team)*2 + pose]
   private readonly unitAnchor: Array<{ ax: number; ay: number }>;
   private readonly arrowTex: Texture;
   private readonly orbTex: Texture;
@@ -56,7 +56,7 @@ export class MassRenderer {
   private arrowParticles: Particle[] = [];
   private barBg: Particle[] = [];
   private barFill: Particle[] = [];
-  /** Birim basina: yuruyus fazi, hareket miktari (0..1, yumusak), son siralama anahtari, suzulmus ekran konumu. */
+  /** Per unit: walk phase, movement amount (0..1, smoothed), last sort key, smoothed screen position. */
   private phase = new Float32Array(0);
   private moveAmt = new Float32Array(0);
   private lastKey = new Int32Array(0);
@@ -66,7 +66,7 @@ export class MassRenderer {
   private keys = new Int32Array(0);
   private order = new Int32Array(0);
   private counts = new Int32Array(0);
-  /** Son karede cizilen birim ve ok sayilari. */
+  /** Unit and arrow counts drawn in the last frame. */
   drawnUnits = 0;
   drawnDecor = 0;
   drawnArrows = 0;
@@ -88,7 +88,7 @@ export class MassRenderer {
     this.rebuild();
   }
 
-  /** Zemin: iki tonlu elmas desenli TilingSprite, harita sekline maskeli. */
+  /** Ground: two-tone diamond-pattern TilingSprite, masked to the map shape. */
   buildGround(): Container {
     const n = this.sim.mapSize;
     const tile = new Container();
@@ -126,7 +126,7 @@ export class MassRenderer {
     });
   }
 
-  /** Birim sayisi degisince (restart) parcaciklari yeniden kurar. */
+  /** Rebuilds the particles when the unit count changes (restart). */
   rebuild(): void {
     const u = this.sim.units;
     this.particles = [];
@@ -165,12 +165,12 @@ export class MassRenderer {
     const zoom = view.zoom ?? 1;
     const terr = this.terrain;
     const relief = !!terr && terr.hasRelief;
-    // Uzakta (kucuk piksel) sekme ve poz degisimi titreme gibi gorunur: sakinlestir.
+    // When zoomed out (small pixels) bouncing and pose changes look like flicker: calm them.
     const calm = Math.min(1, Math.max(0, (zoom - 0.3) / 0.5));
     const follow = 1 - Math.exp(-dt * 30);
     const ease = 1 - Math.exp(-dt * 9);
 
-    // 1) Gorunur birimleri topla, konumlari yaz.
+    // 1) Collect visible units, write positions.
     for (let i = 0; i < u.count; i++) {
       const alive = u.alive[i] === 1;
       if (!alive && (comedy.visual || u.deathT[i] > DEATH_FADE)) continue;
@@ -179,7 +179,7 @@ export class MassRenderer {
       let sx = isoX(wx, wy);
       const lift = u.lift ? u.lift[i] : 0;
       let sy = isoY(wx, wy, (relief ? terr!.elevPx(wx, wy) : 0) + lift * 38);
-      // Hafif alcak gecirgen konum filtresi: sim-ici kucuk titresimler gorunmez (isinlanma: dogrudan).
+      // Slight low-pass position filter: tiny jitters inside the sim are not visible (teleport: direct).
       if (this.lastKey[i] >= 0 && dt > 0) {
         const jx = sx - this.fsx[i];
         const jy = sy - this.fsy[i];
@@ -194,7 +194,7 @@ export class MassRenderer {
 
       const p = this.particles[i];
       const kind = u.kind[i];
-      // Hareket miktari yumusak (histerezis): durup kalkan birim her karede poz degistirmez.
+      // Movement amount is smoothed (hysteresis): a unit that stops and starts does not change pose every frame.
       const target = u.moving[i] === 1 ? 1 : 0;
       this.moveAmt[i] += (target - this.moveAmt[i]) * ease;
       const amt = this.moveAmt[i];
@@ -208,14 +208,14 @@ export class MassRenderer {
       p.x = sx + off * u.facing[i];
       p.y = sy - bob;
       p.scaleX = u.facing[i];
-      // Poz: saldirida hazirlik/vurus, hareketteyse yuruyus A/B, degilse bekleme.
+      // Pose: wind-up/strike when attacking, walk A/B when moving, otherwise idle.
       let pose = 0;
       if (swing) pose = prog < 0.4 ? 3 : prog < 0.7 ? 4 : 0;
       else if (moving && calm > 0.25) pose = Math.sin(this.phase[i]) >= 0 ? 1 : 2;
       if (lift > 0.04) pose = 4;
       p.texture = this.unitTex[(kind * MAX_TEAMS + u.team[i]) * POSES + pose];
       if (alive && comedy.visual) {
-        // Komedi: yalpalayan yuruyus, yaylanan govde, vurusta squash-stretch, ara sira tokezleme.
+        // Comedy: wobbling walk, springy body, squash-stretch on strike, occasional stumble.
         const wob = Math.sin(this.phase[i] * 0.5 + i) * 0.22 * amt * calm;
         const trip = hash01(i * 31 + Math.floor(time * 0.35)) < 0.012 ? 0.9 * Math.sin((time * 0.35 % 1) * Math.PI) : 0;
         p.rotation = (moving ? 0.1 * calm * amt : 0) * u.facing[i] + wob + trip * u.facing[i];
@@ -236,9 +236,9 @@ export class MassRenderer {
         p.rotation = u.facing[i] * k * 1.2;
         p.scaleY = 1 - k * 0.2;
       }
-      // Havada (komedi fizigi): hizla doner.
+      // In the air (comedy physics): spins fast.
       if (alive && lift > 0.04) p.rotation = (time * 13 + i) * u.facing[i];
-      // Derinlik anahtari histerezisi: kucuk degisimde sira ayni kalir (ust uste birimler titremez).
+      // Depth key hysteresis: on small changes the order stays the same (overlapping units do not flicker).
       let key = Math.min(this.counts.length - 2, Math.max(0, ((wx + wy) * DEPTH_SCALE) | 0));
       const lk = this.lastKey[i];
       if (lk >= 0 && Math.abs(key - lk) < 2) key = lk;
@@ -248,7 +248,7 @@ export class MassRenderer {
       n++;
     }
 
-    // Dekor: statik; ayni siralamaya girer (indeks >= birim sayisi).
+    // Decor: static; enters the same sort (index >= unit count).
     const nUnits = n;
     const uc = this.particles.length;
     for (let d = 0; d < this.decorParticles.length; d++) {
@@ -260,7 +260,7 @@ export class MassRenderer {
       n++;
     }
 
-    // 2) Derinlik: x+y anahtarina gore sayma siralamasi (O(n)).
+    // 2) Depth: counting sort by the x+y key (O(n)).
     out.length = n;
     if (opt.sort) {
       const counts = this.counts;

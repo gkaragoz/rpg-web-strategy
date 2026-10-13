@@ -1,3 +1,4 @@
+import { loc, t, type Localized } from '../i18n';
 import { PALETTES } from '../render/biome';
 import {
   BIOMES,
@@ -26,10 +27,10 @@ import { hex, saveState, type AppState } from './state';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
-/** Kucuk izometrik onizleme: arazi bayraklarindan ve dekorlardan 2:1 bir canvas cizer. */
+/** Small isometric preview: draws a 2:1 canvas from the terrain flags and decor. */
 export function drawMinimap(canvas: HTMLCanvasElement, spec: MapSpec, seed: number, size: number): void {
   const n = Math.max(32, Math.min(72, size));
-  const t = new Terrain(n, { seed, spec, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
+  const ter = new Terrain(n, { seed, spec, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
   const pal = PALETTES[spec.biome];
   canvas.width = n * 2 + 2;
   canvas.height = n + 2;
@@ -53,17 +54,17 @@ export function drawMinimap(canvas: HTMLCanvasElement, spec: MapSpec, seed: numb
   const grassB = hex(pal.grassB);
   for (let ty = 0; ty < n; ty++) {
     for (let tx = 0; tx < n; tx++) {
-      const f = t.flags[ty * n + tx];
+      const f = ter.flags[ty * n + tx];
       let c: string;
       if (f === T_WATER) c = hex(pal.water);
       else if (f === T_BRIDGE) c = spec.crossing === 'ford' ? hex(pal.waterShine) : spec.crossing === 'stone' ? hex(pal.stoneDeck) : hex(pal.deck);
       else if (f === T_PATH) c = hex(pal.path);
       else {
         c = (tx + ty) % 2 === 0 ? grassA : grassB;
-        if (t.hasRelief) {
-          // Yukseklik golgesi: yuksek yerler acik, dik yamaclar (ucurum) koyu.
-          const h = (t.vertexH(tx, ty) + t.vertexH(tx + 1, ty + 1)) / 2;
-          const gx = t.vertexH(tx + 1, ty) - t.vertexH(tx, ty + 1);
+        if (ter.hasRelief) {
+          // Height shading: high ground is light, steep slopes (cliffs) are dark.
+          const h = (ter.vertexH(tx, ty) + ter.vertexH(tx + 1, ty + 1)) / 2;
+          const gx = ter.vertexH(tx + 1, ty) - ter.vertexH(tx, ty + 1);
           const k = Math.min(1.25, Math.max(0.55, 0.82 + 0.1 * h - 0.5 * Math.abs(gx)));
           const v = parseInt(c.slice(1), 16);
           const ch = (sh: number): number => Math.min(255, Math.round(((v >> sh) & 255) * k));
@@ -73,10 +74,10 @@ export function drawMinimap(canvas: HTMLCanvasElement, spec: MapSpec, seed: numb
       if (f === T_GRASS || f === T_BLOCKED || f === T_PATH || f === T_WATER || f === T_BRIDGE) tile(tx, ty, c);
     }
   }
-  for (const idx of t.landTiles) tile(idx % n, Math.floor(idx / n), hex(pal.bank));
+  for (const idx of ter.landTiles) tile(idx % n, Math.floor(idx / n), hex(pal.bank));
   const treeColor = { forest: '#2b6236', desert: '#4f8a45', snow: '#2c5a48', swamp: '#4a3b2a' }[spec.biome];
   const houseColor = { forest: '#a8815a', desert: '#d8b97c', snow: '#8d837b', swamp: '#5b4a31' }[spec.biome];
-  for (const d of t.decor) {
+  for (const d of ter.decor) {
     const x = px(d.x, d.y);
     const y = py(d.x, d.y);
     if (d.kind === 'tree') {
@@ -95,7 +96,7 @@ export function drawMinimap(canvas: HTMLCanvasElement, spec: MapSpec, seed: numb
   }
 }
 
-/** Harita secici: biyom filtreli, onizlemeli kart galerisi + ozellestirme + rastgele kart. */
+/** Map picker: biome-filtered card gallery with previews, plus customization and a random card. */
 export class MapPicker {
   private readonly dlg: HTMLDialogElement;
   private filter: Biome | 'all' = 'all';
@@ -104,28 +105,28 @@ export class MapPicker {
   constructor(
     private readonly state: AppState,
     private readonly onChange: () => void,
-    /** false: secimler localStorage'a yazilmaz (cevrimici lobi). */
+    /** false: choices are not written to localStorage (online lobby). */
     private readonly persist = true,
   ) {
     this.dlg = document.createElement('dialog');
     this.dlg.className = 'unit-dialog map-dialog';
-    this.dlg.setAttribute('aria-label', 'Harita seç');
+    this.dlg.setAttribute('aria-label', t('maps.dlg.title'));
     document.body.appendChild(this.dlg);
-    this.actTrack = trackDialog(this.dlg, 'Harita seçiyor');
+    this.actTrack = trackDialog(this.dlg, 'mapPicker');
     this.dlg.addEventListener('click', (e) => {
       if (e.target === this.dlg) this.dlg.close();
     });
   }
 
-  /** Secili haritanin kisa adi (stüdyo dügmesinde gösterilir). */
+  /** Short name of the selected map (shown on the studio button). */
   label(): string {
     const s = this.state;
-    if (s.mapPreset === 'random') return 'Rastgele harita';
+    if (s.mapPreset === 'random') return t('maps.label.random');
     const p = PRESETS.find((q) => q.id === s.mapPreset);
-    return p ? p.name : 'Özel harita';
+    return p ? loc(p.name) : t('maps.label.custom');
   }
 
-  /** Pencereyi kapatip DOM'dan kaldirir. */
+  /** Closes the dialog and removes it from the DOM. */
   destroy(): void {
     if (this.dlg.open) this.dlg.close();
     this.dlg.remove();
@@ -137,7 +138,7 @@ export class MapPicker {
     if (!this.dlg.open) this.dlg.showModal();
   }
 
-  /** Kart tiklandi: tarifi uygula. */
+  /** Card clicked: apply the recipe. */
   private pick(id: string): void {
     const s = this.state;
     if (id === 'random') {
@@ -151,7 +152,7 @@ export class MapPicker {
     this.commit();
   }
 
-  /** Her seyi rastgele sec ve tohumu da cek. */
+  /** Randomize everything, including the seed. */
   private roll(): void {
     const s = this.state;
     const rnd = mulberry32((Math.random() * 4294967296) >>> 0);
@@ -176,46 +177,46 @@ export class MapPicker {
 </button>`;
   }
 
-  private opt<T extends string>(list: readonly T[], names: Record<T, string>, cur: T): string {
-    return list.map((v) => `<option value="${v}"${v === cur ? ' selected' : ''}>${esc(names[v])}</option>`).join('');
+  private opt<T extends string>(list: readonly T[], names: Record<T, Localized>, cur: T): string {
+    return list.map((v) => `<option value="${v}"${v === cur ? ' selected' : ''}>${esc(loc(names[v]))}</option>`).join('');
   }
 
   private render(): void {
     const s = this.state;
     const m = s.map;
-    const chips = [{ id: 'all', name: 'Hepsi' }, ...BIOMES.map((b) => ({ id: b, name: BIOME_NAMES[b] }))]
+    const chips = [{ id: 'all', name: t('maps.filter.all') }, ...BIOMES.map((b) => ({ id: b, name: loc(BIOME_NAMES[b]) }))]
       .map((c) => `<button type="button" data-f="${c.id}" aria-pressed="${this.filter === c.id}">${esc(c.name)}</button>`)
       .join('');
     const list = PRESETS.filter((p) => this.filter === 'all' || p.spec.biome === this.filter);
-    const rnd = this.card('random', 'Rastgele', s.mapPreset === 'random' ? `${BIOME_NAMES[m.biome]} · tohum ${s.seed}` : 'Her şey rastgele');
-    const cards = list.map((p) => this.card(p.id, p.name, `${BIOME_NAMES[p.spec.biome]} · ${p.spec.layout !== 'classic' ? LAYOUT_NAMES[p.spec.layout] : p.spec.relief !== 'flat' ? RELIEF_NAMES[p.spec.relief] : RIVER_NAMES[p.spec.river]}`)).join('');
+    const rnd = this.card('random', t('maps.card.random'), s.mapPreset === 'random' ? t('maps.card.random.sub', { biome: loc(BIOME_NAMES[m.biome]), seed: s.seed }) : t('maps.card.random.idle'));
+    const cards = list.map((p) => this.card(p.id, loc(p.name), `${loc(BIOME_NAMES[p.spec.biome])} · ${loc(p.spec.layout !== 'classic' ? LAYOUT_NAMES[p.spec.layout] : p.spec.relief !== 'flat' ? RELIEF_NAMES[p.spec.relief] : RIVER_NAMES[p.spec.river])}`)).join('');
     const detail =
       s.mapPreset === 'random'
-        ? `<div class="map-rand"><b>Çekilen harita:</b> ${esc(BIOME_NAMES[m.biome])}, ${esc(RIVER_NAMES[m.river])} nehir, ${esc(FOREST_NAMES[m.forest])} orman, ${esc(VILLAGE_NAMES[m.village])}, ${esc(CROSSING_NAMES[m.crossing])} · tohum <b>${s.seed}</b>
-  <span class="inline"><button type="button" id="mp-reroll">Yeniden çek</button><button type="button" id="mp-lock">Kilitle</button></span></div>`
+        ? `<div class="map-rand"><b>${esc(t('maps.detail.title'))}</b> ${esc(t('maps.detail.body', { biome: loc(BIOME_NAMES[m.biome]), river: loc(RIVER_NAMES[m.river]), forest: loc(FOREST_NAMES[m.forest]), village: loc(VILLAGE_NAMES[m.village]), crossing: loc(CROSSING_NAMES[m.crossing]) }))} <b>${s.seed}</b>
+  <span class="inline"><button type="button" id="mp-reroll">${esc(t('maps.reroll'))}</button><button type="button" id="mp-lock">${esc(t('maps.lock'))}</button></span></div>`
         : '';
 
     this.dlg.innerHTML = `
 <form method="dialog">
-  <header><h2>Harita seç</h2><p>Biyom ve yapı çeşitleri; kartlar mevcut tohum ve boyutla önizlenir.</p></header>
-  <div class="map-chips seg" role="group" aria-label="Biyom filtresi">${chips}</div>
+  <header><h2>${esc(t('maps.dlg.title'))}</h2><p>${esc(t('maps.dlg.desc'))}</p></header>
+  <div class="map-chips seg" role="group" aria-label="${esc(t('maps.filter.aria'))}">${chips}</div>
   <div class="map-body">
     <div class="map-grid">${rnd}${cards}</div>
     ${detail}
     <div class="map-custom">
-      <h3>Özelleştir</h3>
+      <h3>${esc(t('maps.custom'))}</h3>
       <div class="map-fields">
-        <label>Biyom<select id="mp-biome">${this.opt(BIOMES, BIOME_NAMES, m.biome)}</select></label>
-        <label>Nehir<select id="mp-river"${m.layout === 'citadel' || m.layout === 'crossroads' || m.layout === 'archipelago' ? ' disabled' : ''}>${this.opt(RIVERS, RIVER_NAMES, m.river)}</select></label>
-        <label>Orman<select id="mp-forest">${this.opt(FORESTS, FOREST_NAMES, m.forest)}</select></label>
-        <label>Köy<select id="mp-village">${this.opt(VILLAGES, VILLAGE_NAMES, m.village)}</select></label>
-        <label>Kurgu<select id="mp-layout">${this.opt(LAYOUTS, LAYOUT_NAMES, m.layout)}</select></label>
-        <label>Kabartma<select id="mp-relief"${m.layout !== 'classic' ? ' disabled' : ''}>${this.opt(RELIEFS, RELIEF_NAMES, m.relief)}</select></label>
-        <label>Geçit<select id="mp-crossing"${m.river === 'none' ? ' disabled' : ''}>${this.opt(CROSSINGS, CROSSING_NAMES, m.crossing)}</select></label>
+        <label>${esc(t('maps.field.biome'))}<select id="mp-biome">${this.opt(BIOMES, BIOME_NAMES, m.biome)}</select></label>
+        <label>${esc(t('maps.field.river'))}<select id="mp-river"${m.layout === 'citadel' || m.layout === 'crossroads' || m.layout === 'archipelago' ? ' disabled' : ''}>${this.opt(RIVERS, RIVER_NAMES, m.river)}</select></label>
+        <label>${esc(t('maps.field.forest'))}<select id="mp-forest">${this.opt(FORESTS, FOREST_NAMES, m.forest)}</select></label>
+        <label>${esc(t('maps.field.village'))}<select id="mp-village">${this.opt(VILLAGES, VILLAGE_NAMES, m.village)}</select></label>
+        <label>${esc(t('maps.field.layout'))}<select id="mp-layout">${this.opt(LAYOUTS, LAYOUT_NAMES, m.layout)}</select></label>
+        <label>${esc(t('maps.field.relief'))}<select id="mp-relief"${m.layout !== 'classic' ? ' disabled' : ''}>${this.opt(RELIEFS, RELIEF_NAMES, m.relief)}</select></label>
+        <label>${esc(t('maps.field.crossing'))}<select id="mp-crossing"${m.river === 'none' ? ' disabled' : ''}>${this.opt(CROSSINGS, CROSSING_NAMES, m.crossing)}</select></label>
       </div>
     </div>
   </div>
-  <footer><span class="note">Seçili: ${esc(this.label())}</span><button type="submit" class="primary">Tamam</button></footer>
+  <footer><span class="note">${esc(t('maps.selected', { name: this.label() }))}</span><button type="submit" class="primary">${esc(t('maps.ok'))}</button></footer>
 </form>`;
 
     this.dlg.querySelectorAll<HTMLElement>('[data-f]').forEach((b) =>
@@ -245,7 +246,7 @@ export class MapPicker {
     field('#mp-layout', 'layout');
     field('#mp-relief', 'relief');
 
-    // Onizlemeler (kartlar olustuktan sonra, sirayla).
+    // Previews (after the cards exist, one by one).
     const size = s.mapSize;
     const specFor = (id: string): MapSpec => (id === 'random' ? m : PRESETS.find((p) => p.id === id)!.spec);
     this.dlg.querySelectorAll<HTMLCanvasElement>('canvas[data-prev]').forEach((c) => drawMinimap(c, specFor(c.dataset.prev!), s.seed, size));

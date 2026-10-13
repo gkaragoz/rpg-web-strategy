@@ -346,7 +346,7 @@ kbd {
   opacity: 0;
 }
 
-/* Savas HUD'i */
+/* Battle HUD */
 .hud-top {
   position: absolute;
   top: 12px;
@@ -447,7 +447,7 @@ kbd {
   }
 }
 
-/* Birim ayarlari penceresi */
+/* Unit settings window */
 .unit-dialog {
   max-width: min(760px, calc(100vw - 24px));
   width: 100%;
@@ -840,7 +840,7 @@ input[type='range'] {
   color: #f0c870;
 }
 
-/* ---- Birim ayarlari: genis pencere, onizlemeli satirlar, sabit baslik ---- */
+/* ---- Unit settings: wide window, rows with previews, fixed header ---- */
 .unit-dialog.unit-settings {
   width: min(1320px, 96vw);
   max-width: min(1320px, 96vw);
@@ -916,7 +916,7 @@ input[type='range'] {
   z-index: 1;
 }
 
-/* ---------------- Cevrimici mod ---------------- */
+/* ---------------- Online mode ---------------- */
 #online-root {
   position: fixed;
   inset: 0;
@@ -1216,7 +1216,7 @@ button.on {
   border-color: transparent;
   color: #fff;
 }
-/* yerlestirme */
+/* placement */
 .on-top {
   position: absolute;
   top: 10px;
@@ -1302,7 +1302,7 @@ button.on {
 .hud-name {
   margin-right: 4px;
 }
-/* imlecler */
+/* cursors */
 #online-cursors {
   position: fixed;
   inset: 0;
@@ -1389,7 +1389,7 @@ button.on {
   letter-spacing: 0.3px;
 }
 
-/* ---------------- Mobil / dokunmatik ---------------- */
+/* ---------------- Mobile / touch ---------------- */
 .sheet-handle {
   display: none;
 }
@@ -1438,7 +1438,7 @@ button.on {
   .on-panel input,
   .on-panel select {
     min-height: 40px;
-    font-size: 16px; /* iOS odaklaninca yakinlastirmasin */
+    font-size: 16px; /* keep iOS from zooming on focus */
   }
   .on-sw {
     width: 34px;
@@ -1461,7 +1461,7 @@ button.on {
 }
 
 @media (max-width: 760px), (max-height: 520px) {
-  /* Alt cekmece: kapaliyken tek satir, kaydirilabilir birincil ogeler; tutamaga dokununca tamami. */
+  /* Bottom drawer: when closed a single row of scrollable primary items; tapping the handle shows all. */
   .dock {
     display: block;
     left: 0;
@@ -1555,7 +1555,7 @@ button.on {
     z-index: 6;
   }
 
-  /* Savas HUD */
+  /* Battle HUD */
   .hud-top {
     top: calc(8px + env(safe-area-inset-top, 0px));
     max-width: calc(100vw - 16px);
@@ -1594,7 +1594,7 @@ button.on {
     background: rgba(10, 14, 20, 0.6);
     animation: hint-out 1s ease 6s forwards;
   }
-  /* Kamera dugmeleri hizli erisim icin hiz/duraklat'in hemen yaninda */
+  /* Camera buttons right next to speed/pause for quick access */
   .hud-bottom #hud-speed {
     order: 1;
   }
@@ -1631,13 +1631,13 @@ button.on {
     top: calc(4px + env(safe-area-inset-top, 0px));
   }
 
-  /* Paneller */
+  /* Panels */
   .panel {
     top: calc(8px + env(safe-area-inset-top, 0px));
     max-height: calc(100dvh - 100px);
   }
 
-  /* Diyaloglar: tam ekran sayfa */
+  /* Dialogs: full-screen page */
   .unit-dialog,
   .gallery-dialog,
   .map-dialog {
@@ -1671,7 +1671,7 @@ button.on {
     padding: 8px 10px 0;
   }
 
-  /* Cevrimici ekranlar */
+  /* Online screens */
   .on-screen {
     padding: 8px;
     align-items: flex-start;

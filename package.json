@@ -4,7 +4,7 @@
   "license": "SEE LICENSE IN LICENSE",
   "author": "gkaragoz",
   "repository": { "type": "git", "url": "https://github.com/gkaragoz/rpg-web-strategy.git" },
-  "version": "1.3.2",
+  "version": "1.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

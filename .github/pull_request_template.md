@@ -1,15 +1,16 @@
-## Ne değişti?
+## What changed?
 
-<!-- Kısa açıklama; ilgili issue varsa "Closes #123" yaz. -->
+<!-- Short description; "Closes #123" if there is a related issue. -->
 
-## Nasıl test ettim?
+## How did I test it?
 
-<!-- npm run check, tarayıcıda denediğin senaryolar, mobil denemesi vb. -->
+<!-- npm run check, scenarios tried in the browser, mobile test, etc. -->
 
-## Kontrol listesi
+## Checklist
 
-- [ ] `npm run check` temiz (tsc + testler)
-- [ ] Sim'e dokunduysam deterministik kaldı (Math.random / Date.now yok)
-- [ ] Ağ protokolünü değiştirdiysem `PROTOCOL` sürümünü artırdım
-- [ ] Başkasının kodu/görseli/verisi eklemedim (ya da kaynağını ve lisansını yazdım)
-- [ ] **CLA:** [`CLA.md`](../CLA.md) şartlarını okudum ve kabul ediyorum; katkım benim eserim ve proje sahibine bu koşullarla lisanslanır
+- [ ] `npm run check` is clean (tsc + tests)
+- [ ] If I touched the simulation it is still deterministic (no Math.random / Date.now)
+- [ ] If I changed the network protocol I bumped `PROTOCOL`
+- [ ] UI text goes through `src/i18n` (English + Türkçe)
+- [ ] I added no third-party code, art or data (or I listed its source and license)
+- [ ] **CLA:** I have read and accept [`CLA.md`](../CLA.md); my contribution is my own work and is licensed to the project owner on those terms

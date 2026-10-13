@@ -1,4 +1,16 @@
-/** Minimal i18n core: English is the default language, Turkish is the alternative. */
+/**
+ * Minimal i18n core: English is the default language, Turkish is the alternative.
+ * UI strings live in src/i18n/*.ts (flat dotted keys); use t with a dotted key and optional placeholder values.
+ * Changing the language reloads the page, so UI code can build its DOM once with `t()`.
+ */
+import { battle } from './i18n/battle';
+import { maps } from './i18n/maps';
+import { online } from './i18n/online';
+import { studio } from './i18n/studio';
+import { system } from './i18n/system';
+import type { Strings } from './i18n/types';
+import { units } from './i18n/units';
+
 export type Lang = 'en' | 'tr';
 export const LANGS: Array<{ id: Lang; label: string }> = [
   { id: 'en', label: 'English' },
@@ -48,3 +60,28 @@ export function onLang(f: (l: Lang) => void): () => void {
 
 /** Picks the current-language variant of a localized text. */
 export const loc = (l: Localized): string => l[lang];
+
+const TABLES = [studio, battle, maps, units, online, system];
+const EN: Strings = Object.assign({}, ...TABLES.map((x) => x.en));
+const TR: Strings = Object.assign({}, ...TABLES.map((x) => x.tr));
+
+/** All keys of both languages (used by the consistency test). */
+export const allStrings = (): { en: Strings; tr: Strings } => ({ en: EN, tr: TR });
+
+/** Looks up a UI string; falls back to English, then to the key itself. `{name}` placeholders come from `vars`. */
+export function t(key: string, vars?: Record<string, string | number>): string {
+  let s = (lang === 'tr' ? TR[key] : EN[key]) ?? EN[key] ?? key;
+  if (vars) for (const k of Object.keys(vars)) s = s.split(`{${k}}`).join(String(vars[k]));
+  return s;
+}
+
+/** Language switch that persists and reloads so every screen is rebuilt in the new language. */
+export function switchLang(l: Lang): void {
+  if (l === lang) return;
+  setLang(l);
+  try {
+    location.reload();
+  } catch {
+    /* no location (tests) */
+  }
+}

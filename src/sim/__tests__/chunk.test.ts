@@ -4,8 +4,8 @@ import type { Msg } from '../../net/protocol';
 
 const big = (n: number): Msg => ({ t: 'resync', step: 7, data: 'x'.repeat(n) }) as unknown as Msg;
 
-describe('mesaj parcalama', () => {
-  it('kucuk mesaj parcalanmaz', () => {
+describe('message chunking', () => {
+  it('a small message is not split', () => {
     const m = big(100);
     const parts = splitMsg(m, 1);
     expect(parts).toHaveLength(1);
@@ -13,7 +13,7 @@ describe('mesaj parcalama', () => {
     expect(new Reassembler().push(m)).toBe(m);
   });
 
-  it('3 MB mesaj parcalanir, her parca sinirin altinda, birlesince ayni', () => {
+  it('a 3 MB message is split, every piece is under the limit, and it reassembles identically', () => {
     const m = big(3_000_000);
     const parts = splitMsg(m, 5);
     expect(parts.length).toBeGreaterThan(10);
@@ -24,7 +24,7 @@ describe('mesaj parcalama', () => {
     expect(out).toEqual(m);
   });
 
-  it('parca sirasi bozuk gelse de birlesir; tekrar eden parca yok sayilir', () => {
+  it('reassembles even when pieces arrive out of order; a repeated piece is ignored', () => {
     const m = big(1_000_000);
     const parts = splitMsg(m, 2, 100_000);
     const shuffled = parts.slice().reverse();
@@ -32,15 +32,15 @@ describe('mesaj parcalama', () => {
     let out: Msg | null = null;
     for (const p of shuffled) {
       r.push(p);
-      expect(r.push(p)).toBeNull(); // kopya: sayilmaz
+      expect(r.push(p)).toBeNull(); // duplicate: not counted
     }
-    // son parca bir kez daha yollanirsa bos doner; tamamlanan mesaj yukaridaki dongude uretildi
+    // if the last piece is sent once more it returns null; the completed message was produced in the loop above
     const r2 = new Reassembler();
     for (const p of shuffled) out = r2.push(p) ?? out;
     expect(out).toEqual(m);
   });
 
-  it('eksik parca birlesmez; bozuk parca reddedilir; esles birden fazla mesaj karismaz', () => {
+  it('a missing piece does not reassemble; a malformed piece is rejected; several interleaved messages do not mix', () => {
     const a = big(500_000);
     const b = { t: 'resync', step: 9, data: 'y'.repeat(500_000) } as unknown as Msg;
     const pa = splitMsg(a, 1, 100_000);

@@ -4,7 +4,7 @@ import { GuestSession, HostSession } from '../../net/client';
 import { spent, teamZones } from '../../net/economy';
 import { HostLobby } from '../../net/host';
 import { LockstepRunner } from '../../net/lockstep';
-import { battleConfig, MAX_PLAYERS, type ClientMsg } from '../../net/protocol';
+import { PROTOCOL, battleConfig, MAX_PLAYERS, type ClientMsg } from '../../net/protocol';
 import { LoopbackHub, type LoopbackEndpoint } from '../../net/transport';
 import { Terrain } from '../terrain';
 import { mulberry32 } from '../random';
@@ -32,20 +32,20 @@ function zoneSpot(host: HostLobby, init: NonNullable<ReturnType<HostLobby['state
 function checkInvariants(host: HostLobby, hs: HostSession): void {
   const st = host.state();
   const players = st.players.filter((p) => p.role === 'player');
-  // kimlikler benzersiz
+  // ids are unique
   expect(new Set(st.players.map((p) => p.id)).size).toBe(st.players.length);
-  // oyuncu takimlari benzersiz ve seyirciler -1
+  // player teams are unique and spectators are -1
   const teams = players.map((p) => p.team);
   expect(new Set(teams).size).toBe(teams.length);
   for (const p of st.players) if (p.role === 'spectator') expect(p.team).toBe(-1);
   expect(players.length).toBeLessThanOrEqual(MAX_PLAYERS);
   expect(st.players.filter((p) => p.id === st.hostId).length).toBe(1);
   if (st.phase === 'lobby') {
-    // lobide kopuk/hayalet oyuncu kalmaz ve takimlar 0..n-1
+    // no disconnected/ghost players remain in the lobby and teams are 0..n-1
     expect(players.every((p) => p.connected)).toBe(true);
     expect([...teams].sort((a, b) => a - b)).toEqual(players.map((_, i) => i));
   } else if (st.init) {
-    // oyun surerken takim indeksleri init ile tutarli
+    // during a game, team indices are consistent with init
     for (const p of players) expect(p.team).toBeLessThan(st.init.teams);
     expect(st.init.teamPlayers.length).toBe(st.init.teams);
     const costs = st.init.costs;
@@ -60,9 +60,9 @@ function checkInvariants(host: HostLobby, hs: HostSession): void {
   }
 }
 
-describe('cevrimici rastgele islem dizileri (fuzz)', () => {
+describe('online random operation sequences (fuzz)', () => {
   for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
-    it(`degismezler korunur, host dusmez, savas senkron (seed ${seed})`, () => {
+    it(`invariants hold, the host survives, the battle stays in sync (seed ${seed})`, () => {
       const rnd = mulberry32(seed * 7919);
       const hub = new LoopbackHub();
       const clock = { t: 1000 };
@@ -120,11 +120,11 @@ describe('cevrimici rastgele islem dizileri (fuzz)', () => {
               if (c && rnd() < 0.5) {
                 c.alive = false;
                 c.token = c.s.model.token;
-                c.ep.close(); // baglanti kopar
+                c.ep.close(); // the connection drops
               }
               break;
             case 5: {
-              // geri baglanma
+              // reconnect
               const dead = clients.filter((x) => !x.alive && x.token);
               const d = pick(dead);
               if (d) {
@@ -159,18 +159,18 @@ describe('cevrimici rastgele islem dizileri (fuzz)', () => {
               hs.send({ t: 'ready', ready: true });
               break;
             case 13:
-              c?.ep.send('host', { t: 'join', name: 'dup', color: 1, version: 2 } as ClientMsg);
+              c?.ep.send('host', { t: 'join', name: 'dup', color: 1, version: PROTOCOL } as ClientMsg);
               break;
           }
           host.tick();
           hub.pump();
         } catch (e) {
-          throw new Error(`seed ${seed} adim ${step} op ${op}: ${(e as Error).message}\n${(e as Error).stack}`);
+          throw new Error(`seed ${seed} step ${step} op ${op}: ${(e as Error).message}\n${(e as Error).stack}`);
         }
         checkInvariants(host, hs);
       }
 
-      // Savas varsa tum bagli istemciler ayni hash ile bitirmeli.
+      // If there is a battle, all connected clients must finish with the same hash.
       if (host.state().phase === 'battle' && hs.model.start) {
         const start = hs.model.start;
         const guests = live().filter((x) => x.s.model.start);

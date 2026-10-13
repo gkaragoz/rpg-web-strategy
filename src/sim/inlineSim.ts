@@ -3,13 +3,13 @@ import { Battle, DBG_KEYS, type BattleConfig, type SimEvent } from './battle';
 import { SIM_DT } from './constants';
 
 const MAX_STEPS_PER_FRAME = 5;
-/** Bench modunda kare basina sim butcesi: asilirsa sim yavaslar, render akici kalir. */
+/** Per-frame sim budget in bench mode: if exceeded, the sim slows down while rendering stays smooth. */
 const SIM_BUDGET_MS = 12;
 
-/** Sim'i ana thread'de calistirir (karsilastirma ve worker'siz ortam icin). */
+/** Runs the sim on the main thread (for comparison and for environments without workers). */
 export class InlineSim implements SimBackend {
   readonly kind = 'inline' as const;
-  /** Hata ayiklama: dogrudan Battle erisimi ve her adimdan sonra cagrilan kanca. */
+  /** Debugging: direct Battle access and a hook called after every step. */
   readonly battle: Battle;
   onStep: (() => void) | null = null;
   private acc = 0;
@@ -72,7 +72,7 @@ export class InlineSim implements SimBackend {
         steps++;
         if (bench && performance.now() - t0 > SIM_BUDGET_MS) break;
       }
-      // Sim yetisemiyorsa birikmis zamani at: sim yavaslar ama kareler akici kalir.
+      // If the sim cannot keep up, drop the accumulated time: the sim slows down but frames stay smooth.
       if (this.acc > SIM_DT && (bench || steps === MAX_STEPS_PER_FRAME)) this.acc = 0;
     }
     return {

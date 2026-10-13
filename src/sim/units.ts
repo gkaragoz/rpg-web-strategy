@@ -1,11 +1,12 @@
+import { t } from '../i18n';
 import { TROOPS, type MoveClass, type SkillId, type TroopDef } from './data/troops';
 
 export const MAX_TEAMS = 6;
-/** Ilk 5 tur (klasik): sabit kimlikler. Sonrakiler roster birimleri (TROOPS sirasiyla). */
+/** The first 5 kinds (classic) have fixed ids. The rest are roster units (in TROOPS order). */
 export const Kind = { Warrior: 0, Archer: 1, Priest: 2, Shield: 3, Brute: 4 } as const;
 export const LEGACY_COUNT = 5;
 
-/** Savas rolu: hedefleme/vur-kac/iyilestirme davranisini belirler. */
+/** Combat role: determines targeting, kiting and healing behavior. */
 export const Role = { Melee: 0, Ranged: 1, Healer: 2, Tank: 3 } as const;
 
 export interface KindStats {
@@ -13,29 +14,29 @@ export interface KindStats {
   hp: number;
   speed: number;
   range: number;
-  /** Hasar (warrior/archer) veya iyilestirme miktari (priest). */
+  /** Damage (warrior/archer) or heal amount (priest). */
   power: number;
   cooldown: number;
-  /** Saldiri animasyonunun toplam suresi. */
+  /** Total duration of the attack animation. */
   swing: number;
-  /** Animasyonun basindan etkinin uygulandigi ana kadar gecen sure. */
+  /** Time from the start of the animation until the effect is applied. */
   hitAt: number;
-  /** Gelen hasari bu oranda azaltir (0..1). */
+  /** Reduces incoming damage by this fraction (0..1). */
   armor: number;
-  /** Cizim olcegi carpani (tank = 2). */
+  /** Render scale multiplier (tank = 2). */
   scale: number;
-  /** Alan etkisi: Kalkan = koni uzunlugu, Cekic = daire yaricapi (tile). */
+  /** Area effect: Shield = cone length, Hammer = circle radius (tiles). */
   aoe: number;
-  /** Alan etkisiyle geri itme mesafesi (tile). Cekic = Kalkan'in yarisi. */
+  /** Knockback distance of the area effect (tiles). Hammer = half of Shield. */
   knockback: number;
   role: number;
-  /** Temel saldirinin alan hasari yaricapi (tile; 0: tek hedef). */
+  /** Area damage radius of the basic attack (tiles; 0: single target). */
   splash: number;
-  /** Hasar sekli: 0 tek hedef, 1 daire, 2 dikdortgen, 3 delici. */
+  /** Damage shape: 0 single target, 1 circle, 2 rectangle, 3 piercing. */
   shape: number;
-  /** Buyulu hasar (gorsel/ses ipucu). */
+  /** Magical damage (visual/audio cue). */
   magical: boolean;
-  /** Roster birim kimligi (klasik turlerde yok) ve yetenegi. */
+  /** Roster unit id (absent for classic kinds) and its skill. */
   troop?: string;
   skill: SkillId | null;
 }
@@ -43,27 +44,27 @@ export interface KindStats {
 const classic = (s: Omit<KindStats, 'role' | 'splash' | 'shape' | 'magical' | 'skill'> & { role: number }): KindStats => ({ ...s, splash: 0, shape: 0, magical: false, skill: null });
 
 export const STATS: KindStats[] = [
-  classic({ name: 'Savaşçı', role: Role.Melee, hp: 160, speed: 3.0, range: 1.0, power: 16, cooldown: 0.9, swing: 0.35, hitAt: 0.2, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
-  classic({ name: 'Okçu', role: Role.Ranged, hp: 80, speed: 2.4, range: 9, power: 13, cooldown: 1.4, swing: 0.4, hitAt: 0.25, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
-  classic({ name: 'Rahip', role: Role.Healer, hp: 90, speed: 2.6, range: 6.5, power: 14, cooldown: 1.8, swing: 0.5, hitAt: 0.3, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
-  // Kalkan Tanki: onundeki konide itme (guclu knockback).
-  classic({ name: 'Kalkan Tankı', role: Role.Tank, hp: 520, speed: 1.9, range: 1.5, power: 12, cooldown: 1.6, swing: 0.5, hitAt: 0.28, armor: 0.35, scale: 2, aoe: 2.6, knockback: 3.0 }),
-  // Cekic Tanki: cevresinde daire darbe; knockback Kalkan'in yarisi.
-  classic({ name: 'Çekiç Tankı', role: Role.Tank, hp: 460, speed: 2.1, range: 1.8, power: 22, cooldown: 2.0, swing: 0.6, hitAt: 0.35, armor: 0.2, scale: 2, aoe: 2.2, knockback: 1.5 }),
+  classic({ name: 'Warrior', role: Role.Melee, hp: 160, speed: 3.0, range: 1.0, power: 16, cooldown: 0.9, swing: 0.35, hitAt: 0.2, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
+  classic({ name: 'Archer', role: Role.Ranged, hp: 80, speed: 2.4, range: 9, power: 13, cooldown: 1.4, swing: 0.4, hitAt: 0.25, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
+  classic({ name: 'Priest', role: Role.Healer, hp: 90, speed: 2.6, range: 6.5, power: 14, cooldown: 1.8, swing: 0.5, hitAt: 0.3, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
+  // Shield Tank: knocks back in the cone in front of it (strong knockback).
+  classic({ name: 'Shield Tank', role: Role.Tank, hp: 520, speed: 1.9, range: 1.5, power: 12, cooldown: 1.6, swing: 0.5, hitAt: 0.28, armor: 0.35, scale: 2, aoe: 2.6, knockback: 3.0 }),
+  // Hammer Tank: circular strike around it; knockback is half of the Shield's.
+  classic({ name: 'Hammer Tank', role: Role.Tank, hp: 460, speed: 2.1, range: 1.8, power: 22, cooldown: 2.0, swing: 0.6, hitAt: 0.35, armor: 0.2, scale: 2, aoe: 2.2, knockback: 1.5 }),
 ];
 
-// ---- Roster birimleri: seviyeye gore, oyun olcegine normalize edilir ----
+// ---- Roster units: level-dependent, normalized to the game scale ----
 
-/** Roster can/saldiri degerlerini oyun olcegine indirgeyen bolenler. */
+/** Divisors that scale the roster HP/attack values down to the game scale. */
 export const HP_DIV = 5;
 export const ATK_DIV = 6.5;
-/** Savunma -> zirh orani: def / (def + ARMOR_K). */
+/** Defense to armor ratio: def / (def + ARMOR_K). */
 export const ARMOR_K = 220;
 export const MOVE_SPEED: Record<MoveClass, number> = { 0: 2.2, 1: 2.6, 2: 3.0, 3: 3.6, 4: 4.4 };
 export const DEFAULT_LEVEL = 5;
 export const MAX_LEVEL = 10;
 
-/** Roster birim kimligi -> tur numarasi. */
+/** Roster unit id to kind number. */
 export const KIND_OF_TROOP: Record<string, number> = {};
 
 function troopStats(t: TroopDef, level: number): KindStats {
@@ -99,12 +100,17 @@ TROOPS.forEach((t, i) => {
 
 export const KIND_COUNT = STATS.length;
 
-/** Birim bayraklari (Units.flags). */
+/** Localized display name of a unit kind: classic units use the string table, roster units keep their English names. */
+export function unitDisplayName(kind: number): string {
+  return kind < LEGACY_COUNT ? t(`units.classic.${kind}`) : STATS[kind].name;
+}
+
+/** Unit flags (Units.flags). */
 export const F_REVIVED = 1;
 export const F_RAGE = 2;
 export const F_EXPLODED = 4;
 
-/** Gorsel durum maskesi (Units.status). */
+/** Visual status mask (Units.status). */
 export const ST_SLOW = 1;
 export const ST_BURN = 2;
 export const ST_STUN = 4;
@@ -113,24 +119,24 @@ export const ST_SHIELD = 16;
 export const ST_INVULN = 32;
 export const ST_TAUNT = 64;
 
-/** Rol sorgulari (sicak donguler icin tip dizileri). */
+/** Role queries (typed arrays for hot loops). */
 const ROLE_OF = new Uint8Array(KIND_COUNT);
 STATS.forEach((s, i) => (ROLE_OF[i] = s.role));
 
-/** Yakin-dovus birimleri: melee ve tanklar. */
+/** Close-combat units: melee and tanks. */
 export function isMelee(kind: number): boolean {
   const r = ROLE_OF[kind];
   return r === Role.Melee || r === Role.Tank;
 }
-/** Tanklar (2x boyut, alan etkili): yalniz klasik Kalkan/Cekic. */
+/** Tanks (2x size, area effect): only the classic Shield/Hammer. */
 export function isTank(kind: number): boolean {
   return ROLE_OF[kind] === Role.Tank;
 }
-/** Dost iyilestiren (hasar vermeyen) rol: Rahip, Nun. */
+/** Role that heals allies (deals no damage): Priest, Nun. */
 export function isHealer(kind: number): boolean {
   return ROLE_OF[kind] === Role.Healer;
 }
-/** Uzaktan saldiran (okcu benzeri): vur-kac yapar. */
+/** Ranged attacker (archer-like): kites. */
 export function isRanged(kind: number): boolean {
   return ROLE_OF[kind] === Role.Ranged;
 }
@@ -138,23 +144,23 @@ export function isRanged(kind: number): boolean {
 export type StatKey = 'hp' | 'speed' | 'power' | 'cooldown' | 'range' | 'armor' | 'knockback';
 export type StatOverrides = Array<Partial<Record<StatKey, number>>>;
 
-/** Arayuzde ayarlanabilen alanlar: sinirlar ve adimlar. */
+/** Fields adjustable in the UI: bounds and steps. Labels and hints are localized lazily via getters. */
 export const TUNABLE: Array<{ key: StatKey; label: string; hint: string; min: number; max: number; step: number; tankOnly?: boolean }> = [
-  { key: 'hp', label: 'Can', hint: 'Başlangıç canı', min: 10, max: 20000, step: 10 },
-  { key: 'speed', label: 'Hız', hint: 'Hareket hızı (tile/sn)', min: 0.5, max: 8, step: 0.1 },
-  { key: 'power', label: 'Güç', hint: 'Hasar (rahipte şifa miktarı)', min: 1, max: 1000, step: 1 },
-  { key: 'cooldown', label: 'Bekleme', hint: 'İki saldırı arası (sn)', min: 0.2, max: 6, step: 0.1 },
-  { key: 'range', label: 'Menzil', hint: 'Saldırı menzili (tile)', min: 0.5, max: 16, step: 0.1 },
-  { key: 'armor', label: 'Zırh', hint: 'Gelen hasarı azaltma (0 - 0.9)', min: 0, max: 0.9, step: 0.05 },
-  { key: 'knockback', label: 'İtme', hint: 'Tank itme mesafesi (tile)', min: 0, max: 8, step: 0.5, tankOnly: true },
+  { key: 'hp', get label() { return t('units.stat.hp.label'); }, get hint() { return t('units.stat.hp.hint'); }, min: 10, max: 20000, step: 10 },
+  { key: 'speed', get label() { return t('units.stat.speed.label'); }, get hint() { return t('units.stat.speed.hint'); }, min: 0.5, max: 8, step: 0.1 },
+  { key: 'power', get label() { return t('units.stat.power.label'); }, get hint() { return t('units.stat.power.hint'); }, min: 1, max: 1000, step: 1 },
+  { key: 'cooldown', get label() { return t('units.stat.cooldown.label'); }, get hint() { return t('units.stat.cooldown.hint'); }, min: 0.2, max: 6, step: 0.1 },
+  { key: 'range', get label() { return t('units.stat.range.label'); }, get hint() { return t('units.stat.range.hint'); }, min: 0.5, max: 16, step: 0.1 },
+  { key: 'armor', get label() { return t('units.stat.armor.label'); }, get hint() { return t('units.stat.armor.hint'); }, min: 0, max: 0.9, step: 0.05 },
+  { key: 'knockback', get label() { return t('units.stat.knockback.label'); }, get hint() { return t('units.stat.knockback.hint'); }, min: 0, max: 8, step: 0.5, tankOnly: true },
 ];
 
-/** Varsayilan degerler (arayuzdeki "sifirla" icin); seviye degisince roster birimleri yenilenir. */
+/** Default values (for the UI "reset"); roster units are refreshed when the level changes. */
 export const DEFAULT_STATS: KindStats[] = STATS.map((s) => ({ ...s }));
 
 let currentLevel = DEFAULT_LEVEL;
 
-/** Roster birimlerinin istatistiklerini verilen seviyeye ayarlar (STATS ve DEFAULT_STATS). */
+/** Sets the stats of roster units to the given level (STATS and DEFAULT_STATS). */
 export function setUnitLevel(level: number): void {
   const lv = Math.min(MAX_LEVEL, Math.max(1, Math.round(level)));
   currentLevel = lv;
@@ -169,7 +175,7 @@ export function unitLevel(): number {
   return currentLevel;
 }
 
-/** Kullanici ayarlarini STATS'a uygular; eksik alanlar varsayilana doner. Sim baslamadan once cagrilir. */
+/** Applies user overrides to STATS; missing fields fall back to defaults. Called before the sim starts. */
 export function applyStats(overrides: StatOverrides | undefined, level: number = DEFAULT_LEVEL): void {
   setUnitLevel(level);
   for (let k = 0; k < STATS.length; k++) {
@@ -181,29 +187,29 @@ export function applyStats(overrides: StatOverrides | undefined, level: number =
   }
 }
 
-/** Yumusak hareket: ivmelenme/frenleme (tile/sn^2) ve donus hizi (1/sn). */
+/** Smooth movement: acceleration/braking (tiles/s^2) and turn rate (1/s). */
 export const MOTION = {
   accel: 16,
-  /** Durma/hizli donus sirasinda hiz bu oranda kalir (adim basina). */
+  /** Speed retained per step while stopping or turning sharply. */
   brake: 0.6,
   turn: 12,
 };
 
-/** Tank etki sabitleri. */
+/** Tank effect constants. */
 export const TANK = {
-  /** Kalkan itmesi yari acisi icin cos(60 derece). */
+  /** cos(60 degrees) for the half-angle of the Shield knockback cone. */
   coneCos: 0.5,
   stun: 0.3,
-  /** Itme hizi adim basina bu oranda soner (30 Hz). */
+  /** Knockback speed decays by this factor per step (30 Hz). */
   kbDecay: 0.7,
-  /** Hedef puaninda tank bonusu (daha kucuk = daha cekici) ve tank icin melee yuva sayisi. */
+  /** Tank bonus in target scoring (smaller = more attractive) and the number of melee slots for a tank. */
   tauntBonus: 5,
   meleeSlots: 5,
-  /** Tank yakinindaki birimleri itme yaricapi. */
+  /** Radius within which a tank pushes nearby units. */
   pushRadius: 1.8,
 };
 
-/** Vur-kac (kite) ve yol bulma ayarlari: tek yerde, kolay ayar. */
+/** Kiting and pathfinding settings: kept in one place for easy tuning. */
 export const KITE = {
   archerDanger: 4.5,
   archerSafe: 6.5,
@@ -217,15 +223,15 @@ export const KITE = {
   priestStaminaDrain: 0.6,
   staminaRecharge: 0.35,
   staminaMin: 0.3,
-  /** Kacis yonunde kendi ordu merkezine dogru karisim agirligi. */
+  /** Blend weight toward the own army's center in the escape direction. */
   armyPull: 0.35,
-  /** Okcu/priest, kendi warrior merkezinin bu kadar onune gecmez. */
+  /** Archers/priests never get further than this in front of their own warrior center. */
   leash: 1.0,
-  /** Tehdit taramasi her N adimda bir (birim basina kaydirmali). */
+  /** Threat scan every N steps (staggered per unit). */
   scanEvery: 3,
 };
 
-/** Struct-of-arrays birim deposu: buyuk olcekli benchmark'a hazir. */
+/** Struct-of-arrays unit store: ready for large-scale benchmarks. */
 export class Units {
   count = 0;
   readonly cap: number;
@@ -253,41 +259,41 @@ export class Units {
   healers: Uint16Array;
   slotAngle: Float32Array;
   stamina: Float32Array;
-  /** 1: geri cekiliyor (kite). */
+  /** 1: retreating (kiting). */
   kiteState: Uint8Array;
-  /** En yakin yakin-dovus tehdidine mesafe (Infinity: yok) ve tehditten uzaga birim vektor. */
+  /** Distance to the nearest melee threat (Infinity: none) and the unit vector pointing away from it. */
   threatDist: Float32Array;
   threatDx: Float32Array;
   threatDy: Float32Array;
-  /** Nehir gecisi: secili kopru (-1: yok) ve evre (0: girise git, 1: karsiya gec). */
+  /** River crossing: chosen bridge (-1: none) and phase (0: go to the entrance, 1: cross over). */
   route: Int16Array;
   routePhase: Uint8Array;
-  /** Sikisma kirici: birikim ve yan adim suresi/yonu. */
+  /** Stuck breaker: accumulated time and sidestep time/direction. */
   stuckT: Float32Array;
   sideT: Float32Array;
   sideDir: Int8Array;
-  /** Geri itme hizi (tile/sn) ve sersemleme suresi. */
+  /** Knockback velocity (tiles/s) and stun duration. */
   kbVx: Float32Array;
   kbVy: Float32Array;
   stunT: Float32Array;
-  /** Yasaklanan hedef ve kalan sure (ilerleme bekcisi). */
+  /** Banned target and remaining time (progress watchdog). */
   banTarget: Int32Array;
   banT: Float32Array;
-  /** Hedefe kovalama suresi ve o zamana kadarki en yakin mesafe. */
+  /** Time spent chasing the target and the closest distance reached so far. */
   chaseT: Float32Array;
   chaseBest: Float32Array;
-  /** Leash yuzunden bekleme suresi ve leash'in devre disi kalacagi sure. */
+  /** Time spent waiting because of the leash and the time the leash stays disabled. */
   holdT: Float32Array;
   leashOffT: Float32Array;
-  /** Net yer degistirme penceresi: baslangic konumu ve gecen sure (sikisma tespiti). */
+  /** Net displacement window: start position and elapsed time (stuck detection). */
   winX: Float32Array;
   winY: Float32Array;
   winT: Float32Array;
-  /** Yumusak hareket: guncel hiz buyuklugu ve yon (birim vektor). */
+  /** Smooth movement: current speed magnitude and heading (unit vector). */
   spd: Float32Array;
   hx: Float32Array;
   hy: Float32Array;
-  /** Durum etkileri (yavaslatma, yanma, kalkan, korku, zayiflatma, dokunulmazlik, kiskirtma). */
+  /** Status effects (slow, burn, shield, fear, weaken, invulnerability, taunt). */
   slowT: Float32Array;
   slowK: Float32Array;
   slowA: Float32Array;
@@ -303,23 +309,23 @@ export class Units {
   invulnT: Float32Array;
   tauntT: Float32Array;
   tauntBy: Int32Array;
-  /** Yetenek sayaci (her N saldirida tetik), periyodik yetenek zamanlayicisi, yigin ve yigin suresi. */
+  /** Skill counter (triggers every N attacks), periodic skill timer, stacks and stack duration. */
   skillN: Uint8Array;
   skillT: Float32Array;
   stacks: Uint8Array;
   stackT: Float32Array;
-  /** Bit bayraklari (F_*): yeniden dogdu, ofke, patladi. */
+  /** Bit flags (F_*): revived, rage, exploded. */
   flags: Uint8Array;
-  /** Cagrilan birimin sahibi (-1: yok). */
+  /** Owner of a summoned unit (-1: none). */
   owner: Int32Array;
-  /** Gorsel durum maskesi (ST_*): renderer renklendirmek icin okur. */
+  /** Visual status mask (ST_*): read by the renderer for tinting. */
   status: Uint8Array;
-  /** Ayrisma itmesi (yumusatilmis hiz, tile/adim). */
+  /** Separation push (smoothed velocity, tiles/step). */
   sepX: Float32Array;
   sepY: Float32Array;
-  /** Hedef menzilinde kesintisiz gecen sure (ilerleme bekcisi sifirlamasi icin). */
+  /** Uninterrupted time spent in range of the target (for resetting the progress watchdog). */
   rangeT: Float32Array;
-  /** Komedi fizigi: ucus suresi (kalan/toplam), baslangic-bitis noktasi, tepe yuksekligi, anlik yukseklik (tile), yeniden firlatma bagisikligi. */
+  /** Comedy physics: flight time (remaining/total), start and end points, peak height, current height (tiles), re-launch immunity. */
   airT: Float32Array;
   airDur: Float32Array;
   airX0: Float32Array;
@@ -475,26 +481,26 @@ export class Units {
   }
 }
 
-/** Mermi gorunumu: 0 ok, 1 ates topu, 2 buz, 3 bomba, 4 kaya, 5 kutsal kure, 6 karanlik kure, 7 gulle, 8 mizrak, 9 balta, 10 enerji. */
+/** Projectile look: 0 arrow, 1 fireball, 2 ice, 3 bomb, 4 rock, 5 holy orb, 6 dark orb, 7 cannonball, 8 spear, 9 axe, 10 energy. */
 const TAG_OF: Record<string, number> = {
   'ember-adept': 1,
   'sun-priest': 1,
   'horned-seer': 1,
   'flame-herald': 1,
-  pyre-sling: 4,
+  'pyre-sling': 4,
   'cinder-golem': 4,
   'frost-adept': 2,
   'rime-archers': 2,
   grenadier: 3,
   lorekeeper: 5,
-  nun: 5,
-  bone-caller: 6,
+  mender: 5,
+  'bone-caller': 6,
   'hex-witch': 6,
   'war-barge': 7,
   javelineers: 8,
-  bolt-thrower: 8,
+  'bolt-thrower': 8,
   'axe-warden': 9,
-  sand-king: 10,
+  'sand-king': 10,
 };
 export const PROJ_TAG = new Uint8Array(KIND_COUNT);
 STATS.forEach((s, i) => (PROJ_TAG[i] = s.troop ? (TAG_OF[s.troop] ?? 0) : 0));

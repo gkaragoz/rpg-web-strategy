@@ -1,4 +1,5 @@
 import { Application, Container, Rectangle } from 'pixi.js';
+import { getLang, t } from './i18n';
 import './app/studio.css';
 import { BattleScene, type BattleOptions } from './app/battle';
 import { Editor } from './app/editor';
@@ -15,25 +16,29 @@ import type { BattleConfig } from './sim/battle';
 import { KIND_OF_TROOP, LEGACY_COUNT, STATS, setUnitLevel } from './sim/units';
 import { STATS_DEFAULT_SHOWN, StatsPanel } from './ui/stats';
 
-// Benchmark ve hata ayiklama parametreleri (stüdyoyu atlar):
-//   ?bench=10000&auto=30  -> takim basina birim, otomatik rapor
-//   ?sim=main             -> sim'i worker yerine ana thread'de calistir
-//   ?debug=1              -> takilma izleme katmani (H/T/P/G tuslari)
-//   ?comedy=1             -> komedi modu (gorunum + fizik)
-//   ?env=off  ?kite=off  ?seed=3  -> stüdyo ayarlarini gecici olarak ezer
+// Benchmark and debug parameters (they skip the studio):
+//   ?bench=10000&auto=30  -> units per team, automatic report
+//   ?sim=main             -> run the sim on the main thread instead of a worker
+//   ?debug=1              -> stall-tracking overlay (H/T/P/G keys)
+//   ?comedy=1             -> comedy mode (visuals + physics)
+//   ?env=off  ?kite=off  ?seed=3  -> temporarily override studio settings
+//   ?lang=en|tr           -> interface language
 const loading = document.getElementById('loading');
+document.documentElement.lang = getLang();
+document.title = t('sys.title');
+if (loading?.firstElementChild) loading.firstElementChild.textContent = t('sys.loading');
 
-/** Beklenmeyen hata: kullaniciya kisa, kapanan bir bildirim; konsola ayrinti. */
+/** Unexpected error: a short, self-dismissing notice for the user; details go to the console. */
 function showError(msg: string): void {
   const el = document.createElement('div');
   el.className = 'err-toast';
-  el.textContent = `Beklenmeyen bir hata oluştu: ${msg.slice(0, 160)}`;
+  el.textContent = t('sys.error.unexpected', { msg: msg.slice(0, 160) });
   document.body.appendChild(el);
   window.setTimeout(() => el.remove(), 6000);
 }
 window.addEventListener('error', (e) => {
   console.error(e.error ?? e.message);
-  showError(e.message || 'bilinmeyen');
+  showError(e.message || t('sys.error.unknown'));
 });
 window.addEventListener('unhandledrejection', (e) => {
   console.error(e.reason);
@@ -45,13 +50,13 @@ const benchPer = params.has('bench') ? Math.max(10, Number(params.get('bench')) 
 const autoSeconds = Number(params.get('auto')) || 0;
 const isBench = benchPer > 0;
 const canUseWorker = typeof SharedArrayBuffer !== 'undefined' && self.crossOriginIsolated;
-// ?debug=1: takilma izleme katmani sim'e dogrudan erisim ister, bu yuzden sim ana thread'de calisir.
+// ?debug=1: the stall-tracking overlay needs direct access to the sim, so the sim runs on the main thread.
 const debugParam = params.get('debug') === '1';
-// ?comedy=1: komedi gorunumu + komedi fizigi birlikte acik.
+// ?comedy=1: comedy visuals + comedy physics are both on.
 const comedyParam = params.get('comedy') === '1';
 const comedyVisualOn = (): boolean => comedyParam || state.options.comedyVisual;
 const comedyPhysicsOn = (): boolean => comedyParam || state.options.comedyPhysics;
-/** Debug acik mi (URL veya secenek) ve sim worker'da mi calisacak. */
+/** Whether debug is on (URL or option) and whether the sim will run in a worker. */
 const debugOn = (): boolean => debugParam || state.options.debug;
 const workerOk = (): boolean => params.get('sim') !== 'main' && canUseWorker && !debugOn();
 
@@ -67,12 +72,12 @@ await app.init({
 document.body.prepend(app.canvas);
 app.ticker.stop();
 
-// WebGL baglami kaybolursa (GPU sifirlama, bellek baskisi) sayfayi yenilemeyi oner.
+// If the WebGL context is lost (GPU reset, memory pressure), suggest reloading the page.
 app.canvas.addEventListener('webglcontextlost', (e) => {
   e.preventDefault();
   const el = document.createElement('div');
   el.className = 'fatal';
-  el.innerHTML = '<div>Grafik bağlamı kayboldu.<br /><button type="button" id="reload-btn">Sayfayı yenile</button></div>';
+  el.innerHTML = `<div>${t('sys.gl.lost')}<br /><button type="button" id="reload-btn">${t('sys.gl.reload')}</button></div>`;
   document.body.appendChild(el);
   el.querySelector('#reload-btn')!.addEventListener('click', () => location.reload());
 });
@@ -92,7 +97,7 @@ const hudRoot = document.getElementById('hud')!;
 
 setUnitLevel(state.level);
 
-/** Atlas'ta dokusu gereken turler: klasikler, yerlestirilenler, secili tur ve bagimliliklari (Bone Caller -> Skeleton). */
+/** Types that need a texture in the atlas: the classics, placed ones, the selected type and its dependencies (Bone Caller -> Bone Soldier). */
 function neededKinds(): Set<number> {
   const set = new Set<number>(Array.from({ length: LEGACY_COUNT }, (_, i) => i));
   for (const u of state.units) set.add(u.kind);
@@ -113,7 +118,7 @@ function applyOptions(): void {
   UnitView.barMode = state.options.bars;
 }
 applyOptions();
-// Tarayici politikasi: ses baglami ilk kullanici hareketinde acilir.
+// Browser policy: the audio context is unlocked on the first user gesture.
 for (const ev of ['pointerdown', 'keydown'] as const) window.addEventListener(ev, () => audio.unlock());
 
 const battle = new BattleScene({
@@ -157,7 +162,7 @@ const battle = new BattleScene({
 });
 let mode: 'studio' | 'battle' | 'online' = 'studio';
 let online: OnlineApp | null = null;
-/** Cevrimici mod: simge renkleri (null: stüdyo paleti). */
+/** Online mode: icon colors (null: studio palette). */
 let iconColors: TeamColors[] | null = null;
 
 function studioConfig(): BattleConfig {
@@ -175,7 +180,7 @@ function layoutArray(): Float32Array {
   return a;
 }
 
-// ---- Stüdyo ----
+// ---- Studio ----
 
 let studio!: Studio;
 const editor = new Editor({
@@ -189,7 +194,7 @@ const editor = new Editor({
   toast: (m) => studio?.toast(m),
 });
 
-/** Harita ayarlari (tohum/cevre/boyut) degisince dunyayi yeniler, gecersiz askerleri tasir. */
+/** Refreshes the world when map settings (seed/environment/size) change and moves invalid soldiers. */
 function rebuildWorld(announce: boolean): void {
   if (state.map.biome !== atlasBiome) rebakeAtlas();
   world.rebuild(studioConfig(), atlas, true);
@@ -198,7 +203,7 @@ function rebuildWorld(announce: boolean): void {
   editor.setSeedForRandom(state.seed);
   const r = editor.revalidate();
   if (announce && (r.moved > 0 || r.removed > 0)) {
-    studio.toast(`Harita değişti: ${r.moved} asker taşındı${r.removed ? `, ${r.removed} asker kaldırıldı` : ''}.`);
+    studio.toast(r.removed ? t('sys.mapChangedRemoved', { moved: r.moved, removed: r.removed }) : t('sys.mapChanged', { moved: r.moved }));
   }
   studio.render();
 }
@@ -209,7 +214,7 @@ function onMapChange(): void {
   mapTimer = window.setTimeout(() => rebuildWorld(true), 120);
 }
 
-/** Takim sayisi/palet degisti: atlas'i yeni renklerle yeniden pisirir. */
+/** Team count/palette changed: re-bakes the atlas with the new colors. */
 function rebakeAtlas(): void {
   const old = atlas;
   atlasBiome = state.map.biome;
@@ -220,7 +225,7 @@ function rebakeAtlas(): void {
   iconCache.clear();
 }
 
-/** Gereken turlerin dokusu atlas'ta yoksa yeniden pisirir. */
+/** Re-bakes the atlas if the textures of the needed types are missing. */
 function ensureAtlas(): void {
   for (const k of neededKinds()) {
     if (!atlas.kinds.has(k)) {
@@ -231,7 +236,7 @@ function ensureAtlas(): void {
 }
 
 const iconCache = new Map<string, HTMLCanvasElement>();
-/** Birim simgesi: UnitView'den bir kez cizilip onbellege alinir; her cagrida kopya doner. */
+/** Unit icon: drawn once from UnitView and cached; a copy is returned on every call. */
 function renderIcon(kind: number, team: number): HTMLCanvasElement {
   const colors = iconColors ?? teamColors(state.palette, state.teamCount);
   const key = `${kind}:${team}:${iconColors ? iconColors.map((c) => c.main).join('.') : state.palette}:${state.level}`;
@@ -304,7 +309,7 @@ function battleOptions(): BattleOptions {
   };
 }
 
-/** Savasi ayni dizilimle bastan kurar (debug anahtari sim turunu degistirir). */
+/** Restarts the battle with the same layout (the debug toggle changes the sim kind). */
 async function restartBattle(): Promise<void> {
   ensureAtlas();
   mode = 'studio';
@@ -354,7 +359,7 @@ async function startBench(): Promise<void> {
   mode = 'battle';
 }
 
-// ---- Cevrimici ----
+// ---- Online ----
 
 function startOnline(joinCode?: string): void {
   if (online) return;
@@ -404,20 +409,20 @@ function startOnline(joinCode?: string): void {
   app2.openMenu(joinCode);
 }
 
-// ---- Ana dongu ----
+// ---- Main loop ----
 
 let last = performance.now();
-/** Uyarlanir cozunurluk: savasta kareler uzun suredir yavassa (zayif cihaz) cozunurluk kademeli duser. */
+/** Adaptive resolution: if frames have been slow for a long time during battle (weak device), the resolution drops step by step. */
 let slowRun = 0;
 let resTier = Math.min(window.devicePixelRatio || 1, 2);
 function adaptResolution(frameMs: number): void {
-  if (frameMs > 500) return; // sekme arka plandan donus vb.
+  if (frameMs > 500) return; // returning from a background tab, etc.
   slowRun = frameMs > 38 ? slowRun + 1 : Math.max(0, slowRun - 2);
   if (slowRun < 90 || resTier <= 1 || state.options.fx !== 'auto') return;
   slowRun = 0;
   resTier = resTier > 1.5 ? 1.5 : 1;
   app.renderer.resize(app.screen.width, app.screen.height, resTier);
-  studio.toast(`Kareler yavaş: grafik çözünürlüğü düşürüldü (${resTier}×)`);
+  studio.toast(t('sys.slow', { res: resTier }));
 }
 function frame(now: number): void {
   requestAnimationFrame(frame);

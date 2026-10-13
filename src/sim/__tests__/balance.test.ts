@@ -6,7 +6,7 @@ import { TROOPS } from '../data/troops';
 import { KIND_OF_TROOP, STATS } from '../units';
 
 // BALANCE=1 LEVEL=6 npx vitest run src/sim/__tests__/balance.test.ts
-// Her roster birimi (n adet) her digeriyle (n adet) dovusur; test-results/balance.txt'ye kazanma oranlari yazilir.
+// Every roster unit (n of them) fights every other (n of them); win rates are written to test-results/balance.txt.
 const ON = process.env.BALANCE === '1';
 const LEVEL = Number(process.env.LEVEL ?? 6);
 const N = Number(process.env.N ?? 5);
@@ -20,10 +20,10 @@ function fight(a: number, b: number, seed: number): number {
   const config: BattleConfig = { mode: 'custom', perTeam: 0, teamCount: 2, mapSize: 56, env: false, kite: true, map: DEFAULT_MAP, level: LEVEL, layout: new Float32Array(layout) };
   const bt = new Battle(seed, config);
   for (let s = 0; s < 30 * 200 && bt.winner === -1; s++) bt.step(1 / 30);
-  return bt.winner; // 0, 1, -2 (berabere), -1 (bitmedi)
+  return bt.winner; // 0, 1, -2 (draw), -1 (unfinished)
 }
 
-describe.skipIf(!ON)('denge turnuvasi', () => {
+describe.skipIf(!ON)('balance tournament', () => {
   it('round-robin', () => {
     const ids = TROOPS.filter((t) => !t.summoned).map((t) => KIND_OF_TROOP[t.id]);
     const wins = new Map<number, number>();

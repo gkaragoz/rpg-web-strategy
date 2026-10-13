@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { DEFAULT_LEVEL, KIND_COUNT, MAX_LEVEL, MAX_TEAMS, TUNABLE, type StatOverrides } from '../sim/units';
 import type { TeamColors } from '../render/unitView';
 import { DEFAULT_MAP, PRESETS, sanitizeSpec, type MapSpec } from '../sim/mapSpec';
@@ -8,27 +9,27 @@ export interface PaletteSet {
   colors: number[];
 }
 
-/** Hazir tema setleri: renkler takimlara sirayla atanir. */
+/** Preset color themes: colors are assigned to teams in order. */
 export const PALETTES: PaletteSet[] = [
-  { id: 'classic', name: 'Klasik', colors: [0x4a8fe8, 0xe85a4f, 0x4cc35b, 0xe6b73a, 0xa76ad8, 0xee8a3c] },
-  { id: 'desert', name: 'Çöl', colors: [0x2e86c1, 0xc0392b, 0xd4ac0d, 0x17a589, 0x6c3483, 0x7d6608] },
-  { id: 'night', name: 'Gece', colors: [0x4dd0e1, 0xff5d73, 0xb388ff, 0xffd54f, 0x69f0ae, 0xff8a65] },
-  { id: 'pastel', name: 'Pastel', colors: [0x9cc5f0, 0xf4a6a0, 0xa8dba8, 0xf7dc8a, 0xcdb4e6, 0xf6c28f] },
+  { id: 'classic', name: t('studio.pal.classic'), colors: [0x4a8fe8, 0xe85a4f, 0x4cc35b, 0xe6b73a, 0xa76ad8, 0xee8a3c] },
+  { id: 'desert', name: t('studio.pal.desert'), colors: [0x2e86c1, 0xc0392b, 0xd4ac0d, 0x17a589, 0x6c3483, 0x7d6608] },
+  { id: 'night', name: t('studio.pal.night'), colors: [0x4dd0e1, 0xff5d73, 0xb388ff, 0xffd54f, 0x69f0ae, 0xff8a65] },
+  { id: 'pastel', name: t('studio.pal.pastel'), colors: [0x9cc5f0, 0xf4a6a0, 0xa8dba8, 0xf7dc8a, 0xcdb4e6, 0xf6c28f] },
 ];
 
 export const MAP_SIZES = [
-  { id: 40, name: 'Küçük' },
-  { id: 56, name: 'Orta' },
-  { id: 80, name: 'Büyük' },
+  { id: 40, name: t('studio.size.small') },
+  { id: 56, name: t('studio.size.medium') },
+  { id: 80, name: t('studio.size.large') },
 ] as const;
 
-/** Editorde yerlestirilebilecek en fazla birim (benchmark ayri). */
+/** Maximum units that can be placed in the editor (the benchmark is separate). */
 export const MAX_PLACED = 3000;
 
 export const BRUSHES = [
-  { id: 0, name: 'Tek', radius: 0.6, count: 1 },
-  { id: 1, name: 'Küçük', radius: 2.2, count: 5 },
-  { id: 2, name: 'Büyük', radius: 4.5, count: 15 },
+  { id: 0, name: t('studio.brush.single'), radius: 0.6, count: 1 },
+  { id: 1, name: t('studio.brush.small'), radius: 2.2, count: 5 },
+  { id: 2, name: t('studio.brush.large'), radius: 4.5, count: 15 },
 ] as const;
 
 export interface PlacedUnit {
@@ -36,21 +37,21 @@ export interface PlacedUnit {
   kind: number;
   x: number;
   y: number;
-  /** Cevrimici: host'un verdigi birim kimligi ve bekleyen istemci kimligi. */
+  /** Online: the unit id assigned by the host and the pending client id. */
   id?: number;
   cid?: number;
 }
 
-/** Gorunum ve ses secenekleri. */
+/** Display and sound options. */
 export interface Options {
   sound: boolean;
   volume: number;
   fx: 'auto' | 'high' | 'low' | 'off';
   numbers: boolean;
   bars: 'damaged' | 'always' | 'never';
-  /** Hata ayiklama katmani (sim ana thread'de calisir). */
+  /** Debug overlay (the sim runs on the main thread). */
   debug: boolean;
-  /** Komedi gorunumu (ragdoll olum, abartili animasyon/efekt/ses) ve komedi fizigi (sim: firlatma). */
+  /** Comedy visuals (ragdoll death, exaggerated animation/effects/sound) and comedy physics (sim: launching). */
   comedyVisual: boolean;
   comedyPhysics: boolean;
 }
@@ -62,9 +63,9 @@ export function defaultOptions(): Options {
 export interface AppState {
   mapSize: number;
   env: boolean;
-  /** Harita tarifi (biyom, nehir, orman, koy, gecit). */
+  /** Map recipe (biome, river, forest, village, pass). */
   map: MapSpec;
-  /** Secili hazir harita: preset kimligi, 'random' (son cekilen) veya 'custom'. */
+  /** Selected preset map: preset id, 'random' (last drawn) or 'custom'. */
   mapPreset: string;
   kite: boolean;
   seed: number;
@@ -75,27 +76,27 @@ export interface AppState {
   selKind: number;
   brush: number;
   tool: 'place' | 'erase';
-  /** Silme yalniz secili takimin birimlerine uygulanir (Shift'in dokunmatik karsiligi). */
+  /** Erasing only affects the selected team's units (the touch equivalent of Shift). */
   eraseTeamOnly: boolean;
   benchPerTeam: number;
-  /** Roster birimlerinin seviyesi (1-10). */
+  /** Level of the roster units (1-10). */
   level: number;
-  /** Birim istatistik ayarlari (yalniz degistirilenler). */
+  /** Unit stat overrides (only the changed ones). */
   stats: StatOverrides;
   options: Options;
   units: PlacedUnit[];
-  /** Cevrimici yerlestirme gibi gecici durumlar localStorage'a yazilmaz. */
+  /** Temporary states such as online placement are not written to localStorage. */
   ephemeral?: boolean;
-  /** Takim renkleri (palet yerine); cevrimicide oyuncu renkleri. */
+  /** Team colors (instead of the palette); player colors when online. */
   customColors?: TeamColors[];
-  /** Hic kaydedilmis kurulum yoksa ilk acilista hizli dizilim kurulur. */
+  /** If there is no saved setup, a quick formation is built on first launch. */
   fresh: boolean;
-  /** Tur tablosu surumu (KINDS_VER). */
+  /** Unit type table version (KINDS_VER). */
   kindsVer: number;
 }
 
 const KEY = 'rpgweb.studio.v1';
-/** Tur numaralari degisince (birim eklendi/cikarildi) eski yerlesimler gecersizdir. */
+/** When type numbers change (a unit was added/removed), old placements are invalid. */
 const KINDS_VER = 2;
 
 export function defaultState(): AppState {
@@ -135,13 +136,12 @@ export function paletteById(id: string): PaletteSet {
   return PALETTES.find((p) => p.id === id) ?? PALETTES[0];
 }
 
-/** Secili palet ve takim sayisi icin takim renk ciftleri. */
-/** Durumun takim renkleri: ozel renkler varsa onlar, yoksa palet. */
+/** The state's team colors: custom colors if present, otherwise the palette. */
 export function colorsOf(s: AppState): TeamColors[] {
   return s.customColors ?? teamColors(s.palette, s.teamCount);
 }
 
-/** Tek bir ana renkten takim rengi (koyu ton turetilir). */
+/** Team color from a single main color (the dark shade is derived). */
 export function makeTeamColor(main: number): TeamColors {
   return { main, dark: darken(main, 0.55) };
 }
@@ -158,7 +158,7 @@ export function hex(c: number): string {
   return '#' + c.toString(16).padStart(6, '0');
 }
 
-/** localStorage'dan yukler; bozuk/eksik veride varsayilanlara duser. */
+/** Loads from localStorage; falls back to defaults on corrupt/missing data. */
 export function loadState(): AppState {
   const d = defaultState();
   try {
@@ -205,9 +205,9 @@ export function loadState(): AppState {
     if (!stale && Array.isArray(o.stats)) {
       o.stats.slice(0, KIND_COUNT).forEach((row, k) => {
         if (!row || typeof row !== 'object') return;
-        for (const t of TUNABLE) {
-          const v = (row as Record<string, unknown>)[t.key];
-          if (typeof v === 'number' && Number.isFinite(v)) s.stats[k][t.key] = Math.min(t.max, Math.max(t.min, v));
+        for (const tn of TUNABLE) {
+          const v = (row as Record<string, unknown>)[tn.key];
+          if (typeof v === 'number' && Number.isFinite(v)) s.stats[k][tn.key] = Math.min(tn.max, Math.max(tn.min, v));
         }
       });
     }
@@ -230,7 +230,7 @@ export function loadState(): AppState {
 }
 
 let saveTimer: number | undefined;
-/** Kaydi biraz geciktirir (surukleyerek boyarken her adimda yazmasin). */
+/** Delays saving slightly (so it does not write on every step while painting by dragging). */
 export function saveState(s: AppState): void {
   if (s.ephemeral) return;
   window.clearTimeout(saveTimer);
@@ -238,7 +238,7 @@ export function saveState(s: AppState): void {
     try {
       localStorage.setItem(KEY, JSON.stringify(s));
     } catch {
-      /* kota dolu / ozel mod: sessizce gec */
+      /* quota full / private mode: ignore silently */
     }
   }, 250);
 }

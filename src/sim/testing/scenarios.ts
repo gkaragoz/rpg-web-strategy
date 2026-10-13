@@ -69,7 +69,7 @@ function placement(rng: () => number, style: Style, team: number, teams: number,
       out.push([clamp(ctr[0] + (rng() - 0.5) * 6), clamp(ctr[1] + (rng() - 0.5) * 6)]);
     }
   } else if (style === 'twoSides') {
-    // Takimlar nehrin iki yakasinda, yan yana
+    // Teams on the two banks of the river, side by side
     const a = (team % 2 === 0 ? -1 : 1) * 0.707;
     const bx = c + a * size * 0.3;
     const by = c - a * size * 0.3;
@@ -84,7 +84,7 @@ function placement(rng: () => number, style: Style, team: number, teams: number,
   return out;
 }
 
-/** Varsayilanin 0.5x-2.2x'i (uc degerler yalniz nadiren): savaslar makul surede bitebilsin. */
+/** 0.5x-2.2x of the default (extreme values only rarely): so battles can finish in a reasonable time. */
 function statOverrides(rng: () => number): StatOverrides | undefined {
   if (rng() > 0.3) return undefined;
   const out: StatOverrides = Array.from({ length: KIND_COUNT }, () => ({}));
@@ -99,7 +99,7 @@ function statOverrides(rng: () => number): StatOverrides | undefined {
   return out;
 }
 
-/** Tohumlu rastgele senaryo: ayni id her zaman ayni senaryoyu uretir. */
+/** Seeded random scenario: the same id always produces the same scenario. */
 export function makeScenario(id: number): Scenario {
   const rng = mulberry32(id * 7919 + 13);
   const teams = pick(rng, [2, 2, 2, 3, 3, 4, 5, 6]);
@@ -120,7 +120,7 @@ export function makeScenario(id: number): Scenario {
   }
   return {
     id,
-    desc: `#${id} ${teams} takim ${size}x${size} ${style} env=${env} kite=${kite} [${names.join(',')}]`,
+    desc: `#${id} ${teams} teams ${size}x${size} ${style} env=${env} kite=${kite} [${names.join(',')}]`,
     simSeed: 1 + Math.floor(rng() * 1000),
     config: {
       mode: 'custom',
@@ -128,7 +128,7 @@ export function makeScenario(id: number): Scenario {
       teamCount: teams,
       mapSize: size,
       env,
-      // Harita tarifi ayri bir uretecten: eski senaryo dizisi degismez.
+      // The map recipe comes from a separate generator: the old scenario sequence stays unchanged.
       map: id % 2 === 0 ? undefined : randomSpec(mulberry32(id * 7919 + 13)),
       kite,
       terrainSeed: 1 + Math.floor(rng() * 50),
@@ -139,8 +139,8 @@ export function makeScenario(id: number): Scenario {
 }
 
 /**
- * Roster birimli senaryo: makeScenario'nun dizilimini/haritasini korur, turleri takim basina
- * 1-3 rastgele roster birimiyle degistirir ve seviyeyi rastgele secer.
+ * Roster-unit scenario: keeps makeScenario's layout/map, replaces the kinds with 1-3 random
+ * roster units per team and picks the level at random.
  */
 export function makeRosterScenario(id: number): Scenario {
   const sc = makeScenario(id);

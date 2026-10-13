@@ -8,15 +8,15 @@ import { mapSizeFor, terrainFor, type BattleConfig } from '../sim/battle';
 import type { Terrain } from '../sim/terrain';
 
 /**
- * Sahnelerin paylastigi dunya: zemin + nehir/kopru katmani (statik), birim/dekor katmani
- * (zIndex = x+y ile siralanir) ve efekt katmani.
+ * The world shared by the scenes: ground + river/bridge layer (static), unit/decor layer
+ * (sorted by zIndex = x+y) and the effects layer.
  */
 export class WorldView {
   readonly root = new Container();
   readonly staticLayer = new Container();
-  /** Birim golgeleri/ok golgeleri: birimlerin altinda. */
+  /** Unit shadows/arrow shadows: below the units. */
   readonly shadowLayer = new Container();
-  /** Birimler ve (ayrintili modda) dekor sprite'lari burada, zIndex = x+y ile siralanir. */
+  /** Units and (in detailed mode) decor sprites live here, sorted by zIndex = x+y. */
   readonly entityLayer = new Container();
   readonly fxLayer = new Container();
   terrain: Terrain | null = null;
@@ -28,7 +28,7 @@ export class WorldView {
     this.root.addChild(this.staticLayer, this.shadowLayer, this.entityLayer, this.fxLayer);
   }
 
-  /** Haritayi (zemin, nehir, kopru) yeniden kurar. decorSprites: dekor Sprite olarak mi eklensin. */
+  /** Rebuilds the map (ground, river, bridge). decorSprites: whether decor is added as Sprites. */
   rebuild(config: BattleConfig, atlas: Atlas | null, decorSprites: boolean, ground = true): void {
     for (const s of this.decorSprites) s.destroy();
     this.decorSprites = [];
@@ -41,7 +41,7 @@ export class WorldView {
     if (this.terrain && atlas && decorSprites) this.addDecor(this.terrain, atlas);
   }
 
-  /** Palet degisince atlas yenilenir: dekor sprite'larini yeni dokularla yeniden kurar. */
+  /** When the palette changes the atlas is renewed: rebuilds the decor sprites with the new textures. */
   setAtlas(atlas: Atlas, decorSprites: boolean): void {
     for (const s of this.decorSprites) s.destroy();
     this.decorSprites = [];

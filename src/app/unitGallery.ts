@@ -1,6 +1,6 @@
-import { loc } from '../i18n';
+import { loc, t } from '../i18n';
 import { RACE_NAMES, RARITY_NAMES, TROOP_BY_ID, type Race, type Rarity } from '../sim/data/troops';
-import { KIND_COUNT, LEGACY_COUNT, MAX_LEVEL, STATS, isHealer, isMelee } from '../sim/units';
+import { KIND_COUNT, LEGACY_COUNT, MAX_LEVEL, STATS, isHealer, isMelee, unitDisplayName } from '../sim/units';
 import { trackDialog } from '../net/act';
 import { saveState, type AppState } from './state';
 
@@ -14,17 +14,17 @@ const RACES: Race[] = ['human', 'dark', 'sacred', 'wild'];
 
 export interface GalleryDeps {
   state: AppState;
-  /** Birim simgesi (secili takim renginde). */
+  /** Unit icon (in the selected team color). */
   icon: (kind: number, team: number) => HTMLCanvasElement;
-  /** Seviye degisti: STATS yenilendi, arayuz tazelenmeli. */
+  /** Level changed: STATS was refreshed, the UI must be updated. */
   onLevel: () => void;
-  /** Birim secildi (atlas gerekiyorsa pisirilir). */
+  /** A unit was picked (the atlas is baked if needed). */
   onPick: (kind: number) => void;
-  /** Cevrimici: birim gold maliyeti ve kapali nadirlikler; seviye secici gizlenir. */
+  /** Online: unit gold cost and disabled rarities; the level picker is hidden. */
   online?: { cost(kind: number): number; banned(): string[] };
 }
 
-/** Birim galerisi: nadirlik/irk filtreli, aramali, simgeli kart listesi + seviye secici. */
+/** Unit gallery: card list with rarity/race filters, search and icons, plus a level picker. */
 export class UnitGallery {
   private readonly dlg: HTMLDialogElement;
   private rarity: RarityFilter = 'all';
@@ -35,15 +35,15 @@ export class UnitGallery {
   constructor(private readonly d: GalleryDeps) {
     this.dlg = document.createElement('dialog');
     this.dlg.className = 'unit-dialog gallery-dialog';
-    this.dlg.setAttribute('aria-label', 'Birim galerisi');
+    this.dlg.setAttribute('aria-label', t('units.gallery.aria'));
     document.body.appendChild(this.dlg);
-    this.actTrack = trackDialog(this.dlg, 'Birim seçiyor');
+    this.actTrack = trackDialog(this.dlg, 'unitPicker');
     this.dlg.addEventListener('click', (e) => {
       if (e.target === this.dlg) this.dlg.close();
     });
   }
 
-  /** Pencereyi kapatip DOM'dan kaldirir (acik modal ekrani kilitli birakmasin; eylem etiketi temizlenir). */
+  /** Closes the dialog and removes it from the DOM (so an open modal cannot leave the screen locked; the action label is cleared). */
   destroy(): void {
     if (this.dlg.open) this.dlg.close();
     this.dlg.remove();
@@ -55,25 +55,25 @@ export class UnitGallery {
     if (!this.dlg.open) this.dlg.showModal();
   }
 
-  /** Secili birimin kisa ozeti (dock'taki dugme icin). */
+  /** Short summary of the selected unit (for the dock button). */
   static summary(kind: number): string {
-    return STATS[kind].name;
+    return unitDisplayName(kind);
   }
 
   private kinds(): number[] {
     const q = this.query.trim().toLocaleLowerCase('tr');
     const out: number[] = [];
     for (let k = 0; k < KIND_COUNT; k++) {
-      const t = k >= LEGACY_COUNT ? TROOP_BY_ID[STATS[k].troop ?? ''] : undefined;
-      if (t?.summoned) continue; // iskelet yalniz Bone Caller ile gelir
-      if (this.d.online && t && this.d.online.banned().includes(t.rarity)) continue;
+      const tr = k >= LEGACY_COUNT ? TROOP_BY_ID[STATS[k].troop ?? ''] : undefined;
+      if (tr?.summoned) continue; // bone soldiers only come with the Bone Caller
+      if (this.d.online && tr && this.d.online.banned().includes(tr.rarity)) continue;
       if (this.rarity === 'legacy') {
         if (k >= LEGACY_COUNT) continue;
       } else if (this.rarity !== 'all') {
-        if (!t || t.rarity !== this.rarity) continue;
+        if (!tr || tr.rarity !== this.rarity) continue;
       }
-      if (this.race !== 'all' && (!t || t.race !== this.race)) continue;
-      if (q && !STATS[k].name.toLocaleLowerCase('tr').includes(q)) continue;
+      if (this.race !== 'all' && (!tr || tr.race !== this.race)) continue;
+      if (q && !unitDisplayName(k).toLocaleLowerCase('tr').includes(q)) continue;
       out.push(k);
     }
     return out;
@@ -81,16 +81,16 @@ export class UnitGallery {
 
   private card(k: number): string {
     const s = STATS[k];
-    const t = k >= LEGACY_COUNT ? TROOP_BY_ID[s.troop ?? ''] : undefined;
-    const role = isHealer(k) ? 'Şifacı' : isMelee(k) ? 'Yakın' : 'Uzak';
-    const meta = t ? `${loc(RARITY_NAMES[t.rarity])} · ${loc(RACE_NAMES[t.race])}` : 'Klasik';
-    const stats = `Can ${Math.round(s.hp)} · Güç ${Math.round(s.power)} · Menzil ${s.range.toFixed(1)} · ${role}`;
-    const skill = t?.skillText ? `<span class="ug-skill">${esc(loc(t.skillText))}</span>` : '';
+    const tr = k >= LEGACY_COUNT ? TROOP_BY_ID[s.troop ?? ''] : undefined;
+    const role = isHealer(k) ? t('units.role.healer') : isMelee(k) ? t('units.role.melee') : t('units.role.ranged');
+    const meta = tr ? `${loc(RARITY_NAMES[tr.rarity])} · ${loc(RACE_NAMES[tr.race])}` : t('units.classic');
+    const stats = t('units.statline', { hp: Math.round(s.hp), power: Math.round(s.power), range: s.range.toFixed(1), role });
+    const skill = tr?.skillText ? `<span class="ug-skill">${esc(loc(tr.skillText))}</span>` : '';
     const sel = this.d.state.selKind === k;
-    const price = this.d.online ? `<span class="ug-price">${this.d.online.cost(k)} gold</span>` : '';
-    return `<button type="button" class="ug-card r-${t ? t.rarity : 'legacy'}${sel ? ' sel' : ''}" data-kind="${k}" aria-pressed="${sel}">${price}
+    const price = this.d.online ? `<span class="ug-price">${esc(t('units.gold', { n: this.d.online.cost(k) }))}</span>` : '';
+    return `<button type="button" class="ug-card r-${tr ? tr.rarity : 'legacy'}${sel ? ' sel' : ''}" data-kind="${k}" aria-pressed="${sel}">${price}
   <span class="ug-icon" data-icon="${k}"></span>
-  <span class="ug-name">${esc(s.name)}</span>
+  <span class="ug-name">${esc(unitDisplayName(k))}</span>
   <span class="ug-meta">${esc(meta)}</span>
   <span class="ug-stats">${esc(stats)}</span>${skill}
 </button>`;
@@ -103,24 +103,24 @@ export class UnitGallery {
   private render(): void {
     const s = this.d.state;
     const rarityChips = [
-      this.chip('data-r', 'all', 'Hepsi', this.rarity === 'all'),
-      this.chip('data-r', 'legacy', 'Klasik', this.rarity === 'legacy'),
+      this.chip('data-r', 'all', t('units.gallery.all'), this.rarity === 'all'),
+      this.chip('data-r', 'legacy', t('units.classic'), this.rarity === 'legacy'),
       ...RARITIES.map((r) => this.chip('data-r', r, loc(RARITY_NAMES[r]), this.rarity === r)),
     ].join('');
-    const raceChips = [this.chip('data-c', 'all', 'Tüm ırklar', this.race === 'all'), ...RACES.map((r) => this.chip('data-c', r, loc(RACE_NAMES[r]), this.race === r))].join('');
+    const raceChips = [this.chip('data-c', 'all', t('units.gallery.allRaces'), this.race === 'all'), ...RACES.map((r) => this.chip('data-c', r, loc(RACE_NAMES[r]), this.race === r))].join('');
     const levels = Array.from({ length: MAX_LEVEL }, (_, i) => `<option value="${i + 1}"${i + 1 === s.level ? ' selected' : ''}>${i + 1}</option>`).join('');
     const list = this.kinds();
     this.dlg.innerHTML = `
 <form method="dialog">
-  <header><h2>Birimler</h2><p>Birimler; seviye 1-10 arasındaki değerleri seçer. Birime tıkla: seçilir ve yerleştirmeye hazır olur.</p></header>
+  <header><h2>${esc(t('units.gallery.title'))}</h2><p>${esc(t('units.gallery.hint'))}</p></header>
   <div class="ug-bar">
-    <div class="seg" role="group" aria-label="Nadirlik">${rarityChips}</div>
-    <div class="seg" role="group" aria-label="Irk">${raceChips}</div>
-    ${this.d.online ? '' : `<label class="ug-field">Seviye <select id="ug-level">${levels}</select></label>`}
-    <input id="ug-search" type="search" placeholder="Ara…" value="${esc(this.query)}" aria-label="Birim ara" />
+    <div class="seg" role="group" aria-label="${esc(t('units.gallery.rarity'))}">${rarityChips}</div>
+    <div class="seg" role="group" aria-label="${esc(t('units.gallery.race'))}">${raceChips}</div>
+    ${this.d.online ? '' : `<label class="ug-field">${esc(t('units.gallery.level'))} <select id="ug-level">${levels}</select></label>`}
+    <input id="ug-search" type="search" placeholder="${esc(t('units.gallery.search'))}" value="${esc(this.query)}" aria-label="${esc(t('units.gallery.searchAria'))}" />
   </div>
-  <div class="ug-grid">${list.map((k) => this.card(k)).join('') || '<p class="note">Eşleşen birim yok.</p>'}</div>
-  <footer><span class="note">${list.length} birim · seçili: ${esc(STATS[s.selKind]?.name ?? '')}</span><button type="submit" class="primary">Kapat</button></footer>
+  <div class="ug-grid">${list.map((k) => this.card(k)).join('') || `<p class="note">${esc(t('units.gallery.none'))}</p>`}</div>
+  <footer><span class="note">${esc(t('units.gallery.footer', { n: list.length, name: STATS[s.selKind] ? unitDisplayName(s.selKind) : '' }))}</span><button type="submit" class="primary">${esc(t('units.close'))}</button></footer>
 </form>`;
 
     this.dlg.querySelectorAll<HTMLElement>('[data-r]').forEach((b) =>
@@ -159,7 +159,7 @@ export class UnitGallery {
         this.dlg.close();
       }),
     );
-    // Simgeler (kartlar olustuktan sonra).
+    // Icons (after the cards are created).
     this.dlg.querySelectorAll<HTMLElement>('[data-icon]').forEach((el) => el.appendChild(this.d.icon(Number(el.dataset.icon), s.selTeam)));
   }
 }

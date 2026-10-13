@@ -10,7 +10,7 @@ import { POSES } from './unitView';
 export { comedy } from './comedyFlag';
 
 const MAX_BODIES = 160;
-const GRAV = 1150; // piksel/sn^2
+const GRAV = 1150; // pixels/s^2
 const SLIDE_FRICTION = 5.2;
 
 const St = { Free: 0, Fly: 1, Slide: 2, Rest: 3, Sink: 4 } as const;
@@ -18,13 +18,13 @@ const St = { Free: 0, Fly: 1, Slide: 2, Rest: 3, Sink: 4 } as const;
 const hash = hash01;
 
 /**
- * Ragdoll olum sistemi: olen birim atlas dokusuyla havaya firlar, doner, 1-2 kez seker, kayar, yerde
- * kisa sure kalir ve solar. Su ustune dusen batar. Ara sira kucuk bir parca (sapka/yildiz) ayrilip ucar.
- * Render-only: sim'e etkisi yoktur. Ses/efekt icin sentetik olaylar `events` dizisine yazilir.
+    * Ragdoll death system: a dead unit launches into the air with its atlas texture, spins, bounces 1-2 times, slides, stays
+    * on the ground briefly and fades. Units that fall onto water sink. Occasionally a small piece (hat/star) breaks off and flies.
+    * Render-only: no effect on the sim. For sound/effects, synthetic events are written to the `events` array.
  */
 export class ComedySystem {
   readonly layer: ParticleContainer;
-  /** update() sirasinda uretilen sentetik olaylar (burst: element 7 = konfeti/splat, 8 = whoosh). */
+  /** Synthetic events produced during update() (burst: element 7 = confetti/splat, 8 = whoosh). */
   readonly events: SimEvent[] = [];
   private readonly parts: Particle[] = [];
   private readonly n = MAX_BODIES;
@@ -69,9 +69,9 @@ export class ComedySystem {
     this.events.length = 0;
   }
 
-  /** Olum olayindan ragdoll dogurur. power: son vurus hasari; angle: vurustan uzaga yon (dunya). */
+  /** Spawns a ragdoll from a death event. power: damage of the final blow; angle: direction away from the hit (world). */
   spawnDeath(x: number, y: number, angle: number, power: number, kind: number, team: number, facing: number, crowd: number): void {
-    // Cok kalabalikta ragdoll sayisi kisilir (okunurluk/performans).
+    // With very large crowds the ragdoll count is limited (readability/performance).
     if (crowd > 1500 && hash(this.seq * 7) > 0.3) return;
     if (crowd > 600 && hash(this.seq * 5) > 0.7) return;
     const idx = (kind * MAX_TEAMS + team) * POSES;
@@ -103,11 +103,11 @@ export class ComedySystem {
     p.scaleX = this.flip[i];
     p.scaleY = 1;
     p.tint = 0xffffff;
-    // Ayak noktasi anchor'da; govde merkezi icin dusey kaydirma (doku pikseli).
+    // The foot point is at the anchor; vertical shift for the body center (texture pixels).
     this.centerDy[i] = (anc.ay - 0.5) * tex.height;
     this.live++;
     this.events.push({ type: 'burst', x, y, unit: -1, value: 0.8, element: 8 });
-    // Ara sira ayrilan parca: sapka / yildiz.
+    // Occasionally a piece breaks off: hat / star.
     if (hash(this.seq++) < 0.45) this.spawnBit(x, y, angle, power);
   }
 
@@ -139,7 +139,7 @@ export class ComedySystem {
     this.live++;
   }
 
-  /** Bos yuva (doluysa en eskisini geri alir). */
+  /** Free slot (if full, reuses the oldest). */
   private take(): number {
     for (let k = 0; k < this.n; k++) {
       const i = (this.cursor + k) % this.n;
@@ -209,7 +209,7 @@ export class ComedySystem {
         const f = Math.exp(-SLIDE_FRICTION * dt);
         this.vx[i] *= f;
         this.vy[i] *= f;
-        // Yere yatma: en yakin yatis acisina (±90 derece) yumusakca yaklas.
+        // Lying down: ease toward the nearest lying angle (±90 degrees).
         const target = Math.round(this.rot[i] / Math.PI) * Math.PI + (this.flip[i] > 0 ? 1 : -1) * (Math.PI / 2) * (1 - 0);
         this.rot[i] += (target - this.rot[i]) * Math.min(1, dt * 7);
         if (Math.hypot(this.vx[i], this.vy[i]) < 0.35) {

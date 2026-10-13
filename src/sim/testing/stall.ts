@@ -7,7 +7,7 @@ export type FlagType = 'idleChaser' | 'cannotHit' | 'oscillation' | 'noProgress'
 
 export interface Flag {
   type: FlagType;
-  /** Sim saniyesi. */
+  /** Sim seconds. */
   t: number;
   unit?: number;
   info: string;
@@ -15,7 +15,7 @@ export interface Flag {
 
 const SIM_DT = 1 / 30;
 
-/** Yurunebilir karolari bagli bilesenlere boler (8 komsuluk, kose kesme yok). -1: yurunemez. */
+/** Splits walkable tiles into connected components (8-neighborhood, no corner cutting). -1: not walkable. */
 export function computeRegions(terrain: Terrain): Int32Array {
   const n = terrain.size;
   const region = new Int32Array(n * n).fill(-1);
@@ -49,8 +49,8 @@ export function computeRegions(terrain: Terrain): Int32Array {
 }
 
 /**
- * Savasi her adimda izler ve "askerler savasmayi birakti / vuramayacaklari donguye girdi"
- * durumlarini siniflandirir. Testlerde ve (ileride) ?debug katmaninda kullanilir.
+ * Watches the battle at every step and classifies the "soldiers stopped fighting / got stuck in a loop where
+ * they cannot hit" situations. Used in tests and (later) in the ?debug layer.
  */
 export class StallDetector {
   readonly flags: Flag[] = [];
@@ -92,15 +92,15 @@ export class StallDetector {
 
   private describe(i: number): string {
     const u = this.b.units;
-    return `#${i} ${STATS[u.kind[i]].name} takim${u.team[i] + 1} @${u.x[i].toFixed(1)},${u.y[i].toFixed(1)} hedef=${u.target[i]}`;
+    return `#${i} ${STATS[u.kind[i]].name} team${u.team[i] + 1} @${u.x[i].toFixed(1)},${u.y[i].toFixed(1)} target=${u.target[i]}`;
   }
 
-  /** Bosta kalmanin olasi nedenleri: leash, rota, kite, sikisma. */
+  /** Possible causes of idling: leash, route, kite, stuck. */
   private reasons(i: number): string {
     const u = this.b.units;
     const leash = (this.b as unknown as { beyondLeash(i: number): boolean }).beyondLeash(i);
     const crowd = this.nearbyFriends(i);
-    return `[leash=${leash ? 1 : 0} rota=${u.route[i]} kite=${u.kiteState[i]} yanAdim=${u.sideT[i] > 0 ? 1 : 0} komsu=${crowd}]`;
+    return `[leash=${leash ? 1 : 0} route=${u.route[i]} kite=${u.kiteState[i]} sidestep=${u.sideT[i] > 0 ? 1 : 0} neighbors=${crowd}]`;
   }
 
   private nearbyFriends(i: number): number {
@@ -113,14 +113,14 @@ export class StallDetector {
     return n;
   }
 
-  /** Her b.step()'ten sonra cagir. */
+  /** Call after every b.step(). */
   observe(): void {
     const b = this.b;
     const u = b.units;
     this.step++;
     const aliveTeams = b.alivePerTeam.filter((n) => n > 0).length;
 
-    // --- hedef degisimi (salinim) ---
+    // --- target switching (oscillation) ---
     for (let i = 0; i < u.count; i++) {
       if (!u.alive[i]) continue;
       const t = u.target[i];
@@ -129,12 +129,12 @@ export class StallDetector {
           const arr = this.switches[i];
           arr.push(b.time);
           while (arr.length && b.time - arr[0] > 6) arr.shift();
-          if (arr.length >= 6) this.flag('oscillation', i, `${this.describe(i)} 6 sn'de ${arr.length} kez hedef degistirdi`, 30);
+          if (arr.length >= 6) this.flag('oscillation', i, `${this.describe(i)} switched target ${arr.length} times in 6 s`, 30);
         }
         this.lastTarget[i] = t;
       }
 
-      // --- vuramayan: menzilde, hazir, ama saldirmiyor ---
+      // --- cannot hit: in range, ready, but not attacking ---
       const tt = u.target[i];
       if (tt >= 0 && u.alive[tt] && u.kiteState[i] !== 1 && u.stunT[i] <= 0 && u.fearT[i] <= 0 && u.airT[i] <= 0 && u.swing[i] <= 0) {
         const dx = u.x[tt] - u.x[i];
@@ -144,12 +144,12 @@ export class StallDetector {
         const reach = isMelee(u.kind[i]) ? s.range : s.range * 0.95;
         const hurtOk = u.kind[i] !== Kind.Priest || u.hp[tt] < u.maxHp[tt];
         if (dist <= reach && u.cooldown[i] <= 0 && hurtOk) {
-          if (++this.cantHit[i] >= 60) this.flag('cannotHit', i, `${this.describe(i)} menzilde ve hazir ama 2 sn'dir saldirmiyor (mesafe ${dist.toFixed(2)})`);
+          if (++this.cantHit[i] >= 60) this.flag('cannotHit', i, `${this.describe(i)} in range and ready but has not attacked for 2 s (distance ${dist.toFixed(2)})`);
         } else this.cantHit[i] = 0;
       } else this.cantHit[i] = 0;
     }
 
-    // --- saniyede bir: bosta kovalayici + ulasilamaz hedef ---
+    // --- once per second: idle chaser + unreachable target ---
     if (this.step % 30 === 0) {
       for (let i = 0; i < u.count; i++) {
         if (!u.alive[i]) continue;
@@ -157,27 +157,27 @@ export class StallDetector {
         this.lastX[i] = u.x[i];
         this.lastY[i] = u.y[i];
         const t = u.target[i];
-        // holdT > 0: leash yuzunden kasitli bekleme (en fazla LEASH_HOLD_MAX sn), hata degil.
+        // holdT > 0: deliberate wait because of the leash (at most LEASH_HOLD_MAX s), not an error.
         if (t >= 0 && u.alive[t] && u.kiteState[i] !== 1 && u.stunT[i] <= 0 && u.fearT[i] <= 0 && u.airT[i] <= 0 && u.swing[i] <= 0 && u.holdT[i] <= 0) {
           const dist = Math.hypot(u.x[t] - u.x[i], u.y[t] - u.y[i]);
           const s = STATS[u.kind[i]];
           const reach = isMelee(u.kind[i]) ? s.range + 0.6 : s.range;
           if (dist > reach && moved < 0.25) {
-            // Ilerleme bekcisi 6 sn'de hedefi birakir: 8 sn'yi asan bekleme gercek takilmadir.
-            // Yalniz yakininda dost olmayan (izole) birimler: kalabalik baskisi gercek takilma degildir.
-            if (++this.idleSec[i] >= 8 && this.nearbyFriends(i) === 0) this.flag('idleChaser', i, `${this.describe(i)} hedefe ${dist.toFixed(1)} tile uzakta ${this.idleSec[i]} sn'dir yerinde ${this.reasons(i)}`);
+            // The progress watchdog drops the target after 6 s: a wait beyond 8 s is a real stall.
+            // Only isolated units with no friends nearby: crowd pressure is not a real stall.
+            if (++this.idleSec[i] >= 8 && this.nearbyFriends(i) === 0) this.flag('idleChaser', i, `${this.describe(i)} has been idle for ${this.idleSec[i]} s, ${dist.toFixed(1)} tiles from its target ${this.reasons(i)}`);
           } else this.idleSec[i] = 0;
           if (this.region) {
             const n = b.terrain!.size;
             const ri = this.region[(Math.floor(u.y[i]) * n + Math.floor(u.x[i])) | 0];
             const rt = this.region[(Math.floor(u.y[t]) * n + Math.floor(u.x[t])) | 0];
-            if (ri !== rt && ri !== -1 && rt !== -1 && dist > reach && u.airT[t] <= 0 && u.airImm[t] <= 0) this.flag('unreachable', i, `${this.describe(i)} hedefi farkli bolgede (${ri} -> ${rt})`, 60);
+            if (ri !== rt && ri !== -1 && rt !== -1 && dist > reach && u.airT[t] <= 0 && u.airImm[t] <= 0) this.flag('unreachable', i, `${this.describe(i)} target is in a different region (${ri} -> ${rt})`, 60);
           }
         } else this.idleSec[i] = 0;
       }
     }
 
-    // --- takim ilerlemesizligi ---
+    // --- team lack of progress ---
     const dmg = b.counters.damage;
     if (dmg - this.lastDamage > 0.01 || aliveTeams < 2) {
       this.lastProgressT = b.time;
@@ -192,18 +192,18 @@ export class StallDetector {
     }
     if (aliveTeams >= 2 && !canDamage) {
       if (this.noDamageSince < 0) this.noDamageSince = b.time;
-      if (b.time - this.noDamageSince > 5) this.flag('noDamagePossible', undefined, `Kimse hasar veremiyor ama ${aliveTeams} takim canli`, 60);
+      if (b.time - this.noDamageSince > 5) this.flag('noDamagePossible', undefined, `Nobody can deal damage but ${aliveTeams} teams are alive`, 60);
     } else this.noDamageSince = -1;
-    // Ilk temas oncesi yaklasma suresi (buyuk harita, yavas birim) bayrak sayilmaz.
-    // Sim 90/150 sn'de beraberlik ilan eder; bayrak yalniz bu kural isleyemezse atilir.
+    // Approach time before first contact (big map, slow unit) is not flagged.
+    // The sim declares a draw at 90/150 s; the flag is raised only if that rule cannot kick in.
     const grace = b.counters.damage > 0 ? 100 : 160;
     if (aliveTeams >= 2 && canDamage && b.time - this.lastProgressT > grace) {
-      this.flag('noProgress', undefined, `25 sn'dir hic hasar yok (${aliveTeams} takim canli, alive=${b.alivePerTeam.slice(0, 6).join('/')})`, 25);
+      this.flag('noProgress', undefined, `No damage for 25 s (${aliveTeams} teams alive, alive=${b.alivePerTeam.slice(0, 6).join('/')})`, 25);
     }
   }
 }
 
-/** Her an gecerli olmasi gereken degismezler. */
+/** Invariants that must hold at all times. */
 export function checkInvariants(b: Battle): string[] {
   const errs: string[] = [];
   const u = b.units;
@@ -214,13 +214,13 @@ export function checkInvariants(b: Battle): string[] {
     const x = u.x[i];
     const y = u.y[i];
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(u.hp[i])) {
-      errs.push(`birim ${i} NaN/Infinity`);
+      errs.push(`unit ${i} NaN/Infinity`);
       continue;
     }
-    if (x < 0 || y < 0 || x > n || y > n) errs.push(`birim ${i} harita disinda (${x.toFixed(2)},${y.toFixed(2)})`);
-    if (t && u.airT[i] <= 0 && !t.walkable(x, y)) errs.push(`birim ${i} (${STATS[u.kind[i]].name}) yurunemez karoda (${x.toFixed(2)},${y.toFixed(2)})`);
-    if (u.attackers[i] > 60000) errs.push(`birim ${i} attackers sayaci ${u.attackers[i]} (tasma suphesi)`);
-    if (u.hp[i] > u.maxHp[i] + 1e-3) errs.push(`birim ${i} can maxHp'yi asti`);
+    if (x < 0 || y < 0 || x > n || y > n) errs.push(`unit ${i} is off the map (${x.toFixed(2)},${y.toFixed(2)})`);
+    if (t && u.airT[i] <= 0 && !t.walkable(x, y)) errs.push(`unit ${i} (${STATS[u.kind[i]].name}) on an unwalkable tile (${x.toFixed(2)},${y.toFixed(2)})`);
+    if (u.attackers[i] > 60000) errs.push(`unit ${i} attackers counter ${u.attackers[i]} (suspected overflow)`);
+    if (u.hp[i] > u.maxHp[i] + 1e-3) errs.push(`unit ${i} hp exceeds maxHp`);
   }
   return errs;
 }
@@ -234,7 +234,7 @@ export interface RunResult {
   counters: { damage: number; heal: number; kills: number };
   alive: number[];
   initialUnits: number;
-  /** Determinizm kontrolu icin sonuc imzasi. */
+  /** Result signature for the determinism check. */
   signature: string;
 }
 
@@ -252,17 +252,17 @@ export function runScenario(sc: Scenario, maxSeconds = 300, detect = true): RunR
     if (steps % 15 === 0 && invariants.length < 5) invariants.push(...checkInvariants(b).slice(0, 2));
   }
   const flags = det ? [...det.flags] : [];
-  // Yavas ama ilerleyen savas (son 60 sn icinde olum var) zaman asimi sayilmaz.
+  // A slow but progressing battle (a death within the last 60 s) does not count as a timeout.
   const staleSecs = b.time - (b as unknown as { lastDeathTime: number }).lastDeathTime;
   if (b.winner === -1 && staleSecs > 60) {
-    const names = ['Sav', 'Okc', 'Rah', 'Kal', 'Cek'];
+    const names = ['War', 'Arc', 'Pri', 'Shi', 'Ham'];
     const comp: string[] = [];
     for (let tm = 0; tm < sc.config.teamCount!; tm++) {
       const c = [0, 0, 0, 0, 0];
       for (let i = 0; i < b.units.count; i++) if (b.units.alive[i] && b.units.team[i] === tm) c[b.units.kind[i]]++;
       if (c.some((v) => v)) comp.push(`T${tm + 1}:` + c.map((v, k) => (v ? `${names[k]}${v}` : '')).join(''));
     }
-    flags.push({ type: 'timeout', t: +b.time.toFixed(1), info: `${maxSeconds} sn'de sonuc yok, kalan ${comp.join(' ')} sonHasar=${(b.time - (b as unknown as { lastDeathTime: number }).lastDeathTime).toFixed(0)}sn once olum` });
+    flags.push({ type: 'timeout', t: +b.time.toFixed(1), info: `no result in ${maxSeconds} s, remaining ${comp.join(' ')}, last death ${(b.time - (b as unknown as { lastDeathTime: number }).lastDeathTime).toFixed(0)} s ago` });
   }
   for (const e of invariants) flags.push({ type: 'invariant', t: +b.time.toFixed(1), info: e });
   let sig = '';

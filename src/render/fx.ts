@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { comedy, hash01 } from './comedyFlag';
 import { Container, Particle, ParticleContainer, Text, type TextStyleOptions } from 'pixi.js';
 import type { Camera } from '../camera';
@@ -22,16 +23,16 @@ const NUMBER_STYLE: TextStyleOptions = {
 };
 
 /**
- * Olay tabanli efekt sistemi: vurus kivilcimi, olum tozu, sifa, kalkan/cekic sok dalgasi,
- * ok izi/ok inisi, kamera sarsintisi ve yuzen hasar sayilari. Parcaciklar atlas'tan
- * tek ParticleContainer ile cizilir; sayilar havuzlu Text'tir.
+    * Event-driven effect system: hit sparks, death dust, healing, shield/hammer shockwaves,
+    * arrow trails/impacts, camera shake and floating damage numbers. Particles are drawn from
+    * the atlas with a single ParticleContainer; the numbers are pooled Text objects.
  */
 export class FxSystem {
   readonly layer: ParticleContainer;
   readonly numbers = new Container();
   quality: FxQuality;
   numbersOn: boolean;
-  /** Komedi yazilari (BONK!, AAAH!...) acik mi: az birimde ve sayilar aciksa. */
+  /** Whether comic texts (BONK!, AAAH!...) are on: with few units and when numbers are enabled. */
   comicOn = false;
   private comicLast = 0;
   private comicN = 1;
@@ -39,7 +40,7 @@ export class FxSystem {
   private readonly parts: Particle[] = [];
   private readonly free: number[] = [];
   private readonly live: number[] = [];
-  // Parcacik durumu (SoA)
+  // Particle state (SoA)
   private readonly vx = new Float32Array(MAX_PARTICLES);
   private readonly vy = new Float32Array(MAX_PARTICLES);
   private readonly life = new Float32Array(MAX_PARTICLES);
@@ -56,7 +57,7 @@ export class FxSystem {
   private readonly textVy = new Float32Array(MAX_NUMBERS);
   private textCursor = 0;
 
-  /** Arazi yuksekligi (ekran pikseli); olaylar yamacta dogru yerde cizilsin. */
+  /** Terrain height (screen pixels); so events are drawn in the right place on slopes. */
   elev: (x: number, y: number) => number = () => 0;
 
   constructor(
@@ -120,7 +121,7 @@ export class FxSystem {
     this.live.push(i);
   }
 
-  /** Dunya yonunu (dx,dy) ekran yonune cevirir (izometrik). */
+  /** Converts a world direction (dx,dy) to a screen direction (isometric). */
   private screenDir(dx: number, dy: number): { x: number; y: number } {
     const sx = dx - dy;
     const sy = (dx + dy) * 0.5;
@@ -132,7 +133,7 @@ export class FxSystem {
     return sx > v.left - 100 && sx < v.right + 100 && sy > v.top - 100 && sy < v.bottom + 100;
   }
 
-  /** Simden gelen olaylari efektlere cevirir. */
+  /** Turns events coming from the sim into effects. */
   handle(events: SimEvent[], view: MassViewport): void {
     if (this.quality === 'off') return;
     const high = this.quality === 'high';
@@ -170,12 +171,12 @@ export class FxSystem {
     }
   }
 
-  /** Komedi gorunumunde efekt buyuklugu carpani. */
+  /** Effect size multiplier in comedy view. */
   private big(): number {
     return comedy.visual ? 1.8 : 1;
   }
 
-  /** Komik yazi: hiz sinirli, sadece uygun oldugunda (komedi gorunumu + az birim + yakinlastirma). */
+  /** Comic text: rate-limited, only when appropriate (comedy view + few units + zoomed in). */
   private comic(sx: number, sy: number, words: string[], color: number, size = 22): void {
     if (!comedy.visual || !this.comicOn || this.camera.zoom < 0.45) return;
     const now = performance.now();
@@ -198,21 +199,21 @@ export class FxSystem {
     }
     if (high) this.spawn('ring', sx, cy, 0, 0, 0.18, 0.16, (isTank(kind) ? 0.7 : 0.45) * this.big(), 0xffffff, 0.75);
     if (dmg >= 30) this.comic(sx, sy, ['BONK!', 'POW!', 'BAM!', 'OOF!', 'WHAM!'], 0xffd84a);
-    else if (dmg >= 14 && hash01(this.comicN * 3) < 0.25) this.comic(sx, sy, ['bop', 'pok', 'BIFF!', 'tak'], 0xffffff, 18);
+    else if (dmg >= 14 && hash01(this.comicN * 3) < 0.25) this.comic(sx, sy, [t('battle.comic.bop'), t('battle.comic.pok'), 'BIFF!', t('battle.comic.tak')], 0xffffff, 18);
     if (high && this.numbersOn && this.camera.zoom >= 0.5) this.number(sx, sy - 44 * (isTank(kind) ? 2 : 1), String(Math.max(1, Math.round(dmg))), dmg >= 18 ? 0xffb347 : 0xffffff, dmg >= 18 ? 18 : 15);
   }
 
   private death(sx: number, sy: number, kind: number, high: boolean): void {
     const k = isTank(kind) ? 1.8 : 1;
     if (comedy.visual) {
-      // Konfeti ve komik yazi (ragdoll ayri sistemde ucar).
+      // Confetti and comic text (the ragdoll flies in a separate system).
       const cols = [0xff4fa0, 0x4fd0ff, 0xffe04a, 0x7aff7a, 0xb04fff];
       const m = high ? 9 : 4;
       for (let i = 0; i < m; i++) {
         const a = Math.random() * Math.PI * 2;
         this.spawn('star', sx, sy - 22, Math.cos(a) * 90, -70 - Math.random() * 90, 0.9, 0.55 * k, 0.1, cols[i % cols.length], 1, { vrot: 7, grav: 220 });
       }
-      this.comic(sx, sy, ['AAAH!', 'NOOO!', 'POOF!', 'ÖLDÜM!', 'YAPMAAA!', 'bye~'], 0xff9ad0, 24);
+      this.comic(sx, sy, ['AAAH!', 'NOOO!', 'POOF!', t('battle.comic.dead'), t('battle.comic.noway'), 'bye~'], 0xff9ad0, 24);
     }
     const n = high ? 8 : 3;
     for (let i = 0; i < n; i++) {
@@ -268,12 +269,12 @@ export class FxSystem {
     this.comic(sx, sy, ['KABOOM!', 'BOOM!', 'SMASH!', 'KABLAM!'], 0xff8a2a, 28);
   }
 
-  /** Yetenek patlamasi/halkasi: unsura gore renkli halka ve parcaciklar (yaricap tile). */
+  /** Ability burst/ring: colored ring and particles by element (radius in tiles). */
   private burstFx(sx: number, sy: number, radius: number, element: number, high: boolean): void {
-    if (element === 8) return; // whoosh: yalniz ses
+    if (element === 8) return; // whoosh: sound only
     const COLORS = [0xe9e1c8, 0xff8a2a, 0x9ae0ff, 0xffe27a, 0xb04fff, 0x7aff9a, 0x4fc3ff, 0xffffff, 0xffffff, 0x5ab4ff];
     if (element === 9) {
-      // Suya dusus: buyuk sicrama halkasi + damlalar.
+      // Falling into water: big splash ring + droplets.
       this.spawn('ring', sx, sy - 4, 0, 0, 0.6, 0.3, 2.4 * this.big(), 0xbfe6ff, 0.95);
       for (let i = 0; i < (high ? 9 : 4); i++) {
         const a = Math.random() * Math.PI * 2;
@@ -284,7 +285,7 @@ export class FxSystem {
       return;
     }
     if (element === 7) {
-      // Ragdoll yere carpti: konfeti toz bulutu + komik yazi.
+      // Ragdoll hit the ground: confetti dust cloud + comic text.
       const cols = [0xff4fa0, 0x4fd0ff, 0xffe04a, 0x7aff7a, 0xb04fff];
       for (let i = 0; i < (high ? 8 : 3); i++) {
         const a = Math.random() * Math.PI * 2;
@@ -377,7 +378,7 @@ export class FxSystem {
     }
   }
 
-  /** Aktif parcacik sayisi (istatistik). */
+  /** Active particle count (stats). */
   get count(): number {
     return this.live.length;
   }

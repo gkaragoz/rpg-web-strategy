@@ -9,31 +9,31 @@ const PAD = 3;
 
 export interface Sprite9 {
   texture: Texture;
-  /** Anchor (0..1): birimin/dekorun yere basan noktasi. */
+  /** Anchor (0..1): the point where the unit/decor touches the ground. */
   ax: number;
   ay: number;
 }
 
 export interface Atlas {
-  /** Dokusu pisirilmis birim turleri. */
+  /** Unit kinds whose textures have been baked. */
   kinds: Set<number>;
-  /** [(kind*MAX_TEAMS + team)*POSES + poz] (0 bekleme, 1-2 yuruyus, 3 hazirlik, 4 vurus) */
+  /** [(kind*MAX_TEAMS + team)*POSES + pose] (0 idle, 1-2 walk, 3 wind-up, 4 strike) */
   unitTex: Texture[];
-  /** unitTex ile ayni indeks: dokunun yere bastigi nokta (0..1). */
+  /** Same index as unitTex: the point where the texture touches the ground (0..1). */
   unitAnchor: Array<{ ax: number; ay: number }>;
   arrowTex: Texture;
   pixelTex: Texture;
   decor: Record<DecorKind, Sprite9[]>;
-  /** Efekt parcacik dokulari (beyaz; calisma aninda renklendirilir). */
+  /** Effect particle textures (white; tinted at runtime). */
   fx: Record<'puff' | 'spark' | 'star' | 'ring', Sprite9>;
-  /** Atlas dokusunu GPU'dan birakir (palet degisince eskisi icin). */
+  /** Releases the atlas texture from the GPU (for the old one when the palette changes). */
   dispose: () => void;
 }
 
 interface Item {
   w: number;
   h: number;
-  /** Anchor, hucre ici piksel. */
+  /** Anchor, in-cell pixels. */
   ax: number;
   ay: number;
   draw: (c: Container, x: number, y: number) => void;
@@ -46,7 +46,7 @@ function box(g: Graphics, pts: number[], fill: number, strokeA = 0.28): void {
   g.poly(pts).fill(fill).stroke({ width: 1, color: SKIN_D, alpha: strokeA });
 }
 
-/** Cam ormani: koyu cam agaci (B stili). */
+/** Glass forest: dark glass tree (style B). */
 function drawPine(g: Graphics, k: number): void {
   g.ellipse(0, 0, 11 * k, 4 * k).fill({ color: 0x000000, alpha: 0.22 });
   g.rect(-2.5 * k, -8 * k, 5 * k, 8 * k).fill(0x5b3d22);
@@ -87,7 +87,7 @@ const HOUSES: Record<Biome, HouseTheme> = {
   swamp: { right: 0x6f5a3c, left: 0x57462e, top: 0x7c8a4c, door: 0x241c14, hole: 0x2c231a, beam: 0x3d2f1e, rubble: 0x6b5a3e, rubbleStroke: 0x3d3224, snow: false },
 };
 
-/** Tas yapi (kale kulesi / hisar): w x h ayak izi, H yukseklik, siperlikli ust. */
+/** Stone structure (castle tower / keep): w x h footprint, H height, crenellated top. */
 function drawStone(g: Graphics, w: number, h: number, H: number, th: RockTheme, flag: number | null): void {
   const S = 32;
   const P = (a: number, b: number, z = 0): [number, number] => [((a - w) - (b - h)) * S, (((a - w) + (b - h)) * S) / 2 - z];
@@ -96,7 +96,7 @@ function drawStone(g: Graphics, w: number, h: number, H: number, th: RockTheme, 
   box(g, flat(P(w, 0, 0), P(w, h, 0), P(w, h, H), P(w, 0, H)), th.side);
   box(g, flat(P(0, h, 0), P(w, h, 0), P(w, h, H), P(0, h, H)), th.fill);
   box(g, flat(P(0, 0, H), P(w, 0, H), P(w, h, H), P(0, h, H)), th.top);
-  // Siperlikler (ust kenar boyunca kucuk bloklar) ve kapi/pencere.
+  // Crenellations (small blocks along the top edge) and door/window.
   const steps = Math.max(2, Math.round((w + h) * 1.4));
   for (let k = 0; k < steps; k++) {
     const t = (k + 0.5) / steps;
@@ -115,7 +115,7 @@ function drawStone(g: Graphics, w: number, h: number, H: number, th: RockTheme, 
   }
 }
 
-/** Kar cami: koyu yesil katlar, uclarda kar. */
+/** Snow glass: dark green tiers, snow on the tips. */
 function drawSnowPine(g: Graphics, k: number): void {
   g.ellipse(0, 0, 11 * k, 4 * k).fill({ color: 0x4a5a6a, alpha: 0.22 });
   g.rect(-2.5 * k, -8 * k, 5 * k, 8 * k).fill(0x5b3d22);
@@ -130,7 +130,7 @@ function drawSnowPine(g: Graphics, k: number): void {
   tier(-30, -46, 8.5, 0x3e7a68);
 }
 
-/** Palmiye (col): kavisli govde, yelpaze yapraklar. */
+/** Palm (desert): curved trunk, fan leaves. */
 function drawPalm(g: Graphics, k: number): void {
   g.ellipse(0, 0, 9 * k, 3.5 * k).fill({ color: 0x000000, alpha: 0.2 });
   g.moveTo(0, 0).quadraticCurveTo(5 * k, -18 * k, 1 * k, -34 * k).stroke({ width: 4 * k, color: 0x8a6a45 });
@@ -165,7 +165,7 @@ function drawCactus(g: Graphics, k: number): void {
   g.moveTo(-0.8 * k, -26 * k).lineTo(-0.8 * k, -2 * k).stroke({ width: 1, color: 0x6fae62, alpha: 0.8 });
 }
 
-/** Olu agac (bataklik): egri kara govde, sarkan yosun. */
+/** Dead tree (swamp): crooked dark trunk, hanging moss. */
 function drawDeadTree(g: Graphics, k: number): void {
   g.ellipse(0, 0, 10 * k, 3.6 * k).fill({ color: 0x000000, alpha: 0.25 });
   g.poly([-3 * k, 0, -2 * k, -22 * k, -0.5 * k, -34 * k, 1.5 * k, -34 * k, 2.5 * k, -20 * k, 3.5 * k, 0]).fill(0x4a3b2a).stroke({ width: 0.8, color: 0x2b2118 });
@@ -193,7 +193,7 @@ function drawRock(g: Graphics, k: number, big: boolean, th: RockTheme = ROCKS.fo
   if (th.snow) g.poly([-5 * k, -5 * k, -4 * k, -6.5 * k, 4 * k, -7.5 * k, 6 * k, -5 * k, 2 * k, -5.8 * k]).fill(0xffffff);
 }
 
-/** Kerpic (kil) ev: ayak izi w x h tile, alt kose noktasina demirli. style 0/1: hangi kose cokmus. */
+/** Mud-brick (clay) house: w x h tile footprint, anchored at the bottom corner point. style 0/1: which corner has collapsed. */
 function drawHouse(g: Graphics, w: number, h: number, H: number, style: number, th: HouseTheme = HOUSES.forest): void {
   const S = 32;
   const P = (a: number, b: number, z = 0): [number, number] => [((a - w) - (b - h)) * S, (((a - w) + (b - h)) * S) / 2 - z];
@@ -209,7 +209,7 @@ function drawHouse(g: Graphics, w: number, h: number, H: number, style: number, 
   box(g, flat(P(0, 0, h00), P(w, 0, h10), P(w, h, h11), P(0, h, h01)), th.top);
   if (th.snow) g.poly(flat(P(0.1, 0.1, h00 + 1), P(w - 0.1, 0.1, h10 + 1), P(w - 0.1, h - 0.1, h11 + 1), P(0.1, h - 0.1, h01 + 1))).fill({ color: 0xffffff, alpha: 0.82 });
 
-  // Cokmus cati deligi ve kirisler.
+  // Collapsed roof hole and beams.
   const z = H * 0.9;
   const hole = flat(P(w * 0.22, h * 0.28, z), P(w * 0.72, h * 0.28, z), P(w * 0.72, h * 0.78, z), P(w * 0.22, h * 0.78, z));
   g.poly(hole).fill(th.hole);
@@ -218,7 +218,7 @@ function drawHouse(g: Graphics, w: number, h: number, H: number, style: number, 
     const b = P(w * (0.3 + i * 0.22 + 0.1), h * 0.85, z + 2);
     g.moveTo(a[0], a[1]).lineTo(b[0], b[1]).stroke({ width: 3, color: th.beam });
   }
-  // Kapi (sag yuz) ve pencere (sol yuz), catlak.
+  // Door (right face) and window (left face), cracks.
   const b0 = h * 0.3;
   const b1 = b0 + 0.9;
   g.poly(flat(P(w, b0, 0), P(w, b1, 0), P(w, b1, H * 0.6), P(w, b0, H * 0.62))).fill(th.door);
@@ -228,7 +228,7 @@ function drawHouse(g: Graphics, w: number, h: number, H: number, style: number, 
   const c0 = P(w, h, H);
   const c1 = P(w, h - 0.45, H * 0.4);
   g.moveTo(c0[0], c0[1]).lineTo(c1[0], c1[1]).stroke({ width: 1, color: SKIN_D, alpha: 0.45 });
-  // Taban enkazi.
+  // Base rubble.
   const r0 = P(w + 0.2, h * 0.5, 0);
   g.poly([r0[0] - 6, r0[1], r0[0] - 2, r0[1] - 5, r0[0] + 5, r0[1] - 3, r0[0] + 8, r0[1] + 1]).fill(th.rubble).stroke({ width: 0.8, color: th.rubbleStroke });
 }
@@ -257,7 +257,7 @@ function drawRubble(g: Graphics, style: number, th: HouseTheme = HOUSES.forest):
   pieces.forEach((p, i) => g.poly(p).fill(cols[i]).stroke({ width: 0.8, color: th.rubbleStroke }));
 }
 
-/** Birim, ok ve dekor dokularini tek bir atlas dokusunda pisirir (ParticleContainer tek doku ister). */
+/** Bakes unit, arrow and decor textures into a single atlas texture (ParticleContainer needs a single texture). */
 export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: Biome = 'forest', kinds: Iterable<number> = [0, 1, 2, 3, 4]): Atlas {
   const kindList = [...new Set([...kinds, ...Array.from({ length: LEGACY_COUNT }, (_, i) => i)])].sort((a, b) => a - b);
   const items: Item[] = [];
@@ -268,7 +268,7 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
   let pixelTex!: Texture;
   const fx = {} as Record<'puff' | 'spark' | 'star' | 'ring', Sprite9>;
 
-  // Birimler: (kind*MAX_TEAMS + team)*2 + poz. Tanklar 2x buyuk hucre kullanir.
+  // Units: (kind*MAX_TEAMS + team)*2 + pose. Tanks use a 2x larger cell.
   const teams = Math.min(MAX_TEAMS, Math.max(1, teamColors.length));
   for (const kind of kindList) {
     const k = STATS[kind].scale;
@@ -321,7 +321,7 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
     done: (t) => (pixelTex = t),
   });
 
-  // Efekt dokulari (beyaz, merkez anchor): yumusak toz, kivilcim, 4 uclu yildiz, elips halka.
+  // Effect textures (white, center anchor): soft dust, spark, 4-point star, elliptical ring.
   const addFx = (name: 'puff' | 'spark' | 'star' | 'ring', w: number, h: number, paint: (g: Graphics) => void): void => {
     items.push({
       w,
@@ -371,7 +371,7 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
 
   const rockTheme = ROCKS[biome];
   const houseTheme = HOUSES[biome];
-  // Agac: biyoma gore cam, kaktus/palmiye, kar cami, olu agac (uc boy).
+  // Trees: glass by biome, cactus/palm, snow glass, dead tree (three sizes).
   const treeDraw: Array<(g: Graphics) => void> =
     biome === 'desert'
       ? [(g) => drawCactus(g, 1.0), (g) => drawPalm(g, 1.15), (g) => drawCactus(g, 1.5)]
@@ -391,7 +391,7 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
   for (const [w, h] of sizes) {
     for (let style = 0; style < 2; style++) {
       const H = 34;
-      // Anchor = ayak izinin alt koseyi; x araligi [-w*32, h*32], y araligi [-(w+h)*16-H, 0].
+      // Anchor = bottom corner of the footprint; x range [-w*32, h*32], y range [-(w+h)*16-H, 0].
       const W = (w + h) * 32 + 16;
       const Hh = (w + h) * 16 + H + 20;
       add('house', W, Hh, w * 32 + 8, (w + h) * 16 + H + 6, (g) => drawHouse(g, w, h, H, style, houseTheme));
@@ -402,7 +402,7 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
   add('keep', 272, 220, 136, 206, (g) => drawStone(g, 4, 4, 52, rockTheme, 0xd8333a));
   for (let style = 0; style < 2; style++) add('rubble', 30, 18, 15, 12, (g) => drawRubble(g, style, houseTheme));
 
-  // Raf paketleme.
+  // Shelf packing.
   const sheet = new Container();
   const placed: Array<{ item: Item; x: number; y: number }> = [];
   let x = 0;
@@ -420,7 +420,7 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
     rowH = Math.max(rowH, item.h);
   }
   const sheetH = y + rowH + PAD;
-  // GPU doku siniri: cok yuksek atlas'ta cozunurluk 1'e iner.
+  // GPU texture limit: for a very tall atlas the resolution drops to 1.
   const resolution = sheetH * 2 > 4096 ? 1 : 2;
   const atlas = renderer.generateTexture({ target: sheet, frame: new Rectangle(0, 0, SHEET_W, sheetH), resolution, antialias: true });
   sheet.destroy({ children: true });

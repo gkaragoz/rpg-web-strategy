@@ -1,8 +1,8 @@
 import type { Msg } from './protocol';
 
 /**
- * Buyuk mesajlari WebSocket tek-mesaj sinirinin (Cloudflare ~1 MB) altinda parcalara boler.
- * Parca `{c:{id,i,n,d}}` bicimindedir ve sunucu tarafindan oldugu gibi iletilir; alici birlestirir.
+ * Splits large messages into pieces below the WebSocket single-message limit (Cloudflare ~1 MB).
+ * A piece has the form `{c:{id,i,n,d}}`, is relayed by the server unchanged, and the receiver reassembles it.
  */
 export interface ChunkPart {
   id: number;
@@ -11,13 +11,13 @@ export interface ChunkPart {
   d: string;
 }
 
-/** Bir parcanin en cok karakter sayisi (JSON'da kacis payi ve UTF-8 icin 1 MB'in epey altinda). */
+/** Most characters in one piece (well below 1 MB, leaving room for JSON escaping and UTF-8). */
 export const CHUNK_CHARS = 200_000;
-/** Birlestirilen tek mesajin ust siniri (bellek koruma). */
+/** Upper limit for one reassembled message (memory protection). */
 const MAX_TOTAL_CHARS = 64 * 1024 * 1024;
 const MAX_PENDING = 8;
 
-/** Mesaji tek parca (kendisi) ya da sirali parcalar olarak dondurur. */
+/** Returns the message as a single piece (itself) or as ordered pieces. */
 export function splitMsg(msg: Msg, id: number, size = CHUNK_CHARS): Msg[] {
   const s = JSON.stringify(msg);
   if (s.length <= size) return [msg];
@@ -27,11 +27,11 @@ export function splitMsg(msg: Msg, id: number, size = CHUNK_CHARS): Msg[] {
   return out;
 }
 
-/** Gonderen basina parcalari toplar; tamamlaninca ilk mesaji dondurur. */
+/** Collects pieces per sender; returns the original message once complete. */
 export class Reassembler {
   private readonly pending = new Map<number, { n: number; got: number; parts: string[]; chars: number }>();
 
-  /** Parca degilse mesaj aynen doner; parcaysa eksikken null, tamamlaninca birlesmis mesaj. */
+  /** A non-piece message is returned unchanged; for a piece, null while incomplete and the reassembled message once complete. */
   push(m: Msg): Msg | null {
     const c = (m as unknown as { c?: ChunkPart }).c;
     if (!c || typeof c !== 'object') return m;

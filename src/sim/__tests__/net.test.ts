@@ -28,7 +28,7 @@ function join(r: Rig, name: string, extra: Partial<ConstructorParameters<typeof 
   return new GuestSession(r.hub.connect(), { name, color: 1, ...extra });
 }
 
-/** Oyuncunun bolgesinde, birbirinden >= 1 uzak n yurunebilir nokta bulur. */
+/** Finds n walkable points inside the player's zone, at least 1 apart from each other. */
 function spots(r: Rig, team: number, n: number): { x: number; y: number }[] {
   const init = r.hs.model.state!.init!;
   const t = new Terrain(init.size, { seed: init.seed, spec: init.spec, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
@@ -50,11 +50,11 @@ function toPlacing(r: Rig, guests: GuestSession[]): void {
   expect(r.hs.model.state!.phase).toBe('placing');
 }
 
-describe('lobi', () => {
-  it('katilim, takim = oyuncu sirasi, benzersiz ad ve renk', () => {
+describe('lobby', () => {
+  it('joining: team = player order, unique name and color', () => {
     const r = rig();
     const a = join(r, 'Can');
-    const b = join(r, 'Can'); // ayni ad + ayni renk
+    const b = join(r, 'Can'); // same name + same color
     const pl = r.hs.model.state!.players;
     expect(pl.length).toBe(3);
     expect(pl.map((p) => p.team)).toEqual([0, 1, 2]);
@@ -64,11 +64,11 @@ describe('lobi', () => {
     expect(b.model.you).toBe('g2');
   });
 
-  it('surum, parola ve dolu lobi reddi', () => {
+  it('version mismatch, wrong password and full lobby are rejected', () => {
     const r = rig();
     const bad = new GuestSession(r.hub.connect(), { name: 'x', color: 0 });
     bad.model.rejected = null;
-    // Surum uyusmazligi icin ham mesaj.
+    // Raw message for the version mismatch.
     const g = r.hub.connect();
     let reason = '';
     g.onMessage = (_f, m) => {
@@ -96,7 +96,7 @@ describe('lobi', () => {
     expect(spec.model.me!.role).toBe('spectator');
   });
 
-  it('ayarlari yalniz host degistirir; degisince hazir isaretleri duser', () => {
+  it('only the host changes settings; ready flags drop when they change', () => {
     const r = rig();
     const g = join(r, 'Can');
     g.send({ t: 'ready', ready: true });
@@ -112,7 +112,7 @@ describe('lobi', () => {
     expect(g.model.state!.settings.level).toBe(10);
   });
 
-  it('kick: atilan haber alir, listeden cikar, ayni jetonla geri giremez', () => {
+  it('kick: the kicked player is told, leaves the list, and cannot rejoin with the same token', () => {
     const r = rig();
     const a = join(r, 'A');
     join(r, 'B');
@@ -122,14 +122,14 @@ describe('lobi', () => {
     expect(r.hs.model.state!.players.map((p) => p.name)).toEqual(['Host', 'B']);
     const back = join(r, 'A2', { token });
     expect(back.model.rejected).toBe('kicked');
-    // Misafir baskasini atamaz.
+    // A guest cannot kick anyone.
     const b = r.hs.model.state!.players[1];
     const c = join(r, 'C');
     c.send({ t: 'kick', id: b.id });
     expect(r.hs.model.state!.players.length).toBe(3);
   });
 
-  it('baslat: en az 2 oyuncu ve herkes hazir; takim sayisi oyuncu sayisi', () => {
+  it('start: at least 2 players and everyone ready; team count = player count', () => {
     const r = rig();
     r.hs.send({ t: 'start' });
     expect(r.hs.model.state!.phase).toBe('lobby');
@@ -139,7 +139,7 @@ describe('lobi', () => {
     expect(r.hs.model.state!.phase).toBe('lobby');
     a.send({ t: 'ready', ready: true });
     b.send({ t: 'ready', ready: true });
-    a.send({ t: 'start' }); // misafir baslatamaz
+    a.send({ t: 'start' }); // a guest cannot start
     expect(r.hs.model.state!.phase).toBe('lobby');
     r.hs.send({ t: 'start' });
     const st = r.hs.model.state!;
@@ -148,12 +148,12 @@ describe('lobi', () => {
     expect(st.init!.teamPlayers.length).toBe(3);
     expect(st.init!.costs.length).toBeGreaterThan(40);
     expect(b.model.state!.phase).toBe('placing');
-    // Gozlemci lobiye sonradan giremez (oyuncu olarak).
+    // A latecomer cannot join as a player after the game started.
     const late = join(r, 'Gec');
     expect(late.model.rejected).toBe('started');
   });
 
-  it('sohbet: spam siniri ve susturma', () => {
+  it('chat: spam limit and muting', () => {
     const r = rig();
     const a = join(r, 'A');
     for (let i = 0; i < 8; i++) a.send({ t: 'chat', text: `m${i}` });
@@ -167,26 +167,26 @@ describe('lobi', () => {
     expect(r.hs.model.chat.length).toBe(6);
   });
 
-  it('presence: baskalarina iletilir, gonderene geri donmez; hiz siniri son degeri tutar', () => {
+  it('presence: relayed to others, not echoed to the sender; the rate limit keeps the latest value', () => {
     const r = rig();
     const a = join(r, 'A');
     const b = join(r, 'B');
-    a.send({ t: 'presence', x: 10, y: 20, ctx: 'world', act: 'Birim seciyor' });
-    expect(b.model.presence.get(a.model.you)).toMatchObject({ x: 10, y: 20, act: 'Birim seciyor' });
+    a.send({ t: 'presence', x: 10, y: 20, ctx: 'world', act: 'unitPicker' });
+    expect(b.model.presence.get(a.model.you)).toMatchObject({ x: 10, y: 20, act: 'unitPicker' });
     expect(r.hs.model.presence.get(a.model.you)).toMatchObject({ x: 10, y: 20 });
     expect(a.model.presence.has(a.model.you)).toBe(false);
-    a.send({ t: 'presence', x: 11, y: 21, ctx: 'world' }); // 50 ms icinde: bekler
+    a.send({ t: 'presence', x: 11, y: 21, ctx: 'world' }); // within 50 ms: held back
     expect(b.model.presence.get(a.model.you)!.x).toBe(10);
     r.clock.t += 60;
     r.host.tick();
     expect(b.model.presence.get(a.model.you)!.x).toBe(11);
-    // Ayrilan oyuncunun imleci temizlenir.
+    // The departed player's cursor is cleared.
     a.leave();
     expect(b.model.presence.has(a.model.you)).toBe(false);
   });
 });
 
-describe('yerlestirme', () => {
+describe('placement', () => {
   function placing(open: boolean): { r: Rig; a: GuestSession; b: GuestSession } {
     const r = rig(3);
     const a = join(r, 'A');
@@ -197,30 +197,30 @@ describe('yerlestirme', () => {
   }
   const item = (cid: number, kind: number, p: { x: number; y: number }): PlaceItem => ({ cid, kind, x: p.x, y: p.y });
 
-  it('kendi bolgene yerlestirir; bolge disi, butce ve yakinlik reddedilir', () => {
+  it('places in your own zone; out-of-zone, budget and proximity are rejected', () => {
     const { r, a } = placing(true);
     const mine = spots(r, a.model.me!.team, 40);
     a.send({ t: 'place', items: [item(1, 0, mine[0]), item(2, 0, mine[1])] });
     expect(a.model.placed.size).toBe(2);
-    // Rakibin bolgesi.
+    // The opponent's zone.
     const theirs = spots(r, 0, 3);
     a.send({ t: 'place', items: [item(3, 0, theirs[0])] });
-    expect(a.model.lastFail!.reason).toBe('Bolge disi');
-    // Cok yakin.
+    expect(a.model.lastFail!.reason).toBe('zone');
+    // Too close.
     a.send({ t: 'place', items: [item(4, 0, { x: mine[0].x + 0.2, y: mine[0].y })] });
-    expect(a.model.lastFail!.reason).toBe('Cok yakin');
-    // Butce: Savasci 10 gold; 300 gold ile en cok 30.
+    expect(a.model.lastFail!.reason).toBe('close');
+    // Budget: the basic unit costs 10 gold; with 300 gold at most 30.
     const many = mine.slice(2, 40).map((p, i) => item(10 + i, 0, p));
     a.send({ t: 'place', items: many });
     expect(a.model.placed.size).toBe(30);
-    expect(a.model.lastFail!.reason).toBe('Gold yetersiz');
+    expect(a.model.lastFail!.reason).toBe('gold');
     r.host.tick();
     r.clock.t += 300;
     r.host.tick();
     expect(r.hs.model.state!.players[a.model.me!.team].gold).toBe(0);
   });
 
-  it('acik yerlestirmede herkes gorur; kapaliysa yalniz sahibi', () => {
+  it('with open placement everyone sees units; otherwise only the owner', () => {
     for (const open of [true, false]) {
       const { r, a, b } = placing(open);
       const mine = spots(r, a.model.me!.team, 3);
@@ -232,13 +232,13 @@ describe('yerlestirme', () => {
       a.send({ t: 'unplace', ids: [ids[0]] });
       expect(a.model.placed.size).toBe(1);
       expect(b.model.placed.size).toBe(open ? 1 : 0);
-      // Baskasinin birimini silemez.
+      // Cannot remove another player's unit.
       b.send({ t: 'unplace', ids: [ids[1]] });
       expect(a.model.placed.size).toBe(1);
     }
   });
 
-  it('hazir olunca yerlestirme kilitlenir; herkes hazir -> savas baslar, yerlesim herkeste ayni', () => {
+  it('placement locks when ready; everyone ready -> battle starts, same layout for everyone', () => {
     const { r, a, b } = placing(true);
     const ma = spots(r, a.model.me!.team, 2);
     const mb = spots(r, b.model.me!.team, 2);
@@ -256,11 +256,11 @@ describe('yerlestirme', () => {
     const sh = r.hs.model.start!;
     expect(sa.layout).toEqual(sh.layout);
     expect(sb.layout).toEqual(sh.layout);
-    expect(sh.layout.length).toBe(8); // 2 birim x 4 alan
+    expect(sh.layout.length).toBe(8); // 2 units x 4 fields
     expect(sh.init.teams).toBe(3);
   });
 
-  it('sure dolunca savas baslar', () => {
+  it('the battle starts when the time runs out', () => {
     const { r } = placing(true);
     r.clock.t += 61000;
     r.host.tick();
@@ -268,7 +268,7 @@ describe('yerlestirme', () => {
   });
 });
 
-/** Host + misafirlerin gercek Battle'larini lockstep ile kosturur. */
+/** Runs the real Battles of the host + guests in lockstep. */
 function runLockstep(r: Rig, guests: GuestSession[], frames: number, hook?: (f: number, sims: Battle[]) => void, stopWhenDone = false): { sims: Battle[]; runners: LockstepRunner[] } {
   const start = r.hs.model.start!;
   const mk = (): Battle => new Battle(start.simSeed, battleConfig(start));
@@ -287,7 +287,7 @@ function runLockstep(r: Rig, guests: GuestSession[], frames: number, hook?: (f: 
   return { sims, runners };
 }
 
-describe('lockstep savas', () => {
+describe('lockstep battle', () => {
   function battleRig(extra: Record<string, unknown> = {}): { r: Rig; a: GuestSession; b: GuestSession } {
     const r = rig(5);
     const a = join(r, 'A');
@@ -307,7 +307,7 @@ describe('lockstep savas', () => {
     return { r, a, b };
   }
 
-  it('host ve iki misafir ayni hash ile bitirir; sonuc yayinlanir', () => {
+  it('host and two guests finish with the same hash; the result is broadcast', () => {
     const { r, a, b } = battleRig();
     const { sims } = runLockstep(r, [a, b], 60 * 500, undefined, true);
     const h = sims[0].hash();
@@ -319,13 +319,13 @@ describe('lockstep savas', () => {
     expect(r.hs.model.state!.phase).toBe('result');
   }, 120000);
 
-  it('sapan istemci kontrol toplamiyla yakalanir ve durum goruntusuyle duzelir', () => {
+  it('a diverging client is caught by the checksum and fixed with a state snapshot', () => {
     const { r, a, b } = battleRig();
     let injected = false;
     const { sims, runners } = runLockstep(r, [a, b], 60 * 40, (f, s) => {
       if (f === 200 && !injected) {
         injected = true;
-        // b'nin sim durumunu boz: bir birimi isinla, rng'yi kaydir.
+        // Corrupt b's sim state: teleport one unit, shift the rng.
         s[2].units.x[0] += 3;
         s[2].restore(s[2].serialize());
       }
@@ -333,7 +333,7 @@ describe('lockstep savas', () => {
     expect(injected).toBe(true);
     expect(runners[2].resyncs).toBeGreaterThan(0);
     expect(runners[1].resyncs).toBe(0);
-    // Duzeltmeden sonra son kontrol noktasinda esit.
+    // After the fix they are equal at the last checkpoint.
     for (let f = 0; f < 60; f++) {
       for (const rn of runners) rn.advance(1 / 60);
       r.hub.pump();
@@ -343,7 +343,7 @@ describe('lockstep savas', () => {
     expect(sims[2].hash() === sims[0].hash() || sims[2].stepCount !== sims[0].stepCount).toBe(true);
   }, 120000);
 
-  it('host hiz ve duraklatma komutlari; misafir komut veremez', () => {
+  it('host speed and pause commands; a guest cannot command', () => {
     const { r, a, b } = battleRig();
     r.hs.send({ t: 'cmd', speed: 4 });
     expect(a.model.speed).toBe(4);
@@ -354,7 +354,7 @@ describe('lockstep savas', () => {
     expect(b.model.paused).toBe(true);
   });
 
-  it('seyirci savas ortasinda katilir, durum goruntusuyle yetisir', () => {
+  it('a spectator joins mid-battle and catches up with a state snapshot', () => {
     const { r, a, b } = battleRig();
     const start = r.hs.model.start!;
     const hostSim = new Battle(start.simSeed, battleConfig(start));
@@ -379,7 +379,7 @@ describe('lockstep savas', () => {
       specRun.advance(1 / 60);
       r.hub.pump();
     }
-    // Yetisme toleransi icinde (<= 3 adim); ayni adima getirip hash'i karsilastir.
+    // Within the catch-up tolerance (<= 3 steps); bring both to the same step and compare the hash.
     expect(Math.abs(specSim.stepCount - hostSim.stepCount)).toBeLessThanOrEqual(3);
     while (specSim.stepCount < hostSim.stepCount) specSim.step(1 / 30);
     while (hostSim.stepCount < specSim.stepCount) hostSim.step(1 / 30);
@@ -387,8 +387,8 @@ describe('lockstep savas', () => {
   }, 120000);
 });
 
-describe('baglanti', () => {
-  it('kopan oyuncu jetonuyla ayni takima geri doner; lobide kopan silinir', () => {
+describe('connection', () => {
+  it('a dropped player returns to the same team with their token; a dropped player in the lobby is removed', () => {
     const r = rig(7);
     const a = join(r, 'A');
     const b = join(r, 'B');
@@ -396,19 +396,19 @@ describe('baglanti', () => {
     const token = b.model.token;
     const team = b.model.me!.team;
     const tp = (b as unknown as { tp: { close(): void } }).tp;
-    tp.close(); // baglanti kopar (host onPeerLeave alir)
+    tp.close(); // the connection drops (the host gets onPeerLeave)
     const bp = r.hs.model.state!.players.find((p) => p.team === team)!;
     expect(bp.connected).toBe(false);
     const back = join(r, 'B', { token });
     expect(back.model.rejected).toBeNull();
     expect(back.model.me!.team).toBe(team);
     expect(back.model.me!.connected).toBe(true);
-    // Yerlestirme asamasinda kopmadan once hazir degildi: geri donunce kilitli olmamali.
+    // They were not ready before dropping during placement: they must not be locked on return.
     expect(back.model.me!.ready).toBe(false);
     expect(r.hs.model.state!.players.length).toBe(3);
   });
 
-  it('host ayrilirsa misafirlere kapandi bildirilir', () => {
+  it('when the host leaves, guests are told the lobby closed', () => {
     const r = rig();
     const a = join(r, 'A');
     r.hs.leave();

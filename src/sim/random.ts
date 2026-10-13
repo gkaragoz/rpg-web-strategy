@@ -9,7 +9,7 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
-/** Durumu disaridan okunup yazilabilen mulberry32 (cevrimici yeniden senkron icin). */
+/** mulberry32 whose state can be read and written from outside (for online resync). */
 export class Mulberry {
   a: number;
   constructor(seed: number) {

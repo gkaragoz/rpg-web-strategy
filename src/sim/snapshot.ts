@@ -1,4 +1,4 @@
-/** Tipli diziler + JSON-uyumlu ek durum iceren sim durum goruntusu (structured-clone ve aga paketlenebilir). */
+/** Sim state snapshot made of typed arrays plus JSON-compatible extra state (structured-clone friendly and packable for the network). */
 export interface BattleSnapshot {
   v: 1;
   scalars: Record<string, number>;
@@ -18,14 +18,14 @@ export function isTyped(v: unknown): v is Typed {
   return ArrayBuffer.isView(v) && !(v instanceof DataView);
 }
 
-/** Nesnenin tipli dizi alanlarindan ilk n elemani kopyalar. */
+/** Copies the first n elements of the object's typed-array fields. */
 export function copyTyped(obj: object, n: number): Record<string, ArrayBufferView> {
   const out: Record<string, ArrayBufferView> = {};
   for (const [k, v] of Object.entries(obj)) if (isTyped(v)) out[k] = (v as Typed).slice(0, n);
   return out;
 }
 
-/** copyTyped'in tersi: goruntu dizilerini nesnedeki dizilere yazar. */
+/** Inverse of copyTyped: writes the snapshot arrays back into the object's arrays. */
 export function pasteTyped(obj: object, snap: Record<string, ArrayBufferView>): void {
   const o = obj as Record<string, unknown>;
   for (const [k, v] of Object.entries(snap)) {
@@ -34,7 +34,7 @@ export function pasteTyped(obj: object, snap: Record<string, ArrayBufferView>): 
   }
 }
 
-/** FNV-1a (32 bit) uzerine tipli dizi baytlari. */
+/** FNV-1a (32-bit) over the bytes of typed arrays. */
 export function fnv(h: number, arr: ArrayBufferView, n: number, bytesPer: number): number {
   const u8 = new Uint8Array(arr.buffer, arr.byteOffset, Math.min(arr.byteLength, n * bytesPer));
   for (let i = 0; i < u8.length; i++) {
@@ -44,7 +44,7 @@ export function fnv(h: number, arr: ArrayBufferView, n: number, bytesPer: number
   return h;
 }
 
-/** Goruntuyu tek bir Uint8Array'e paketler (baslik JSON + ham tampon) ve geri acar. */
+/** Packs the snapshot into a single Uint8Array (JSON header + raw buffer) and unpacks it again. */
 export function packSnapshot(s: BattleSnapshot): Uint8Array {
   const meta: { name: string; section: 'units' | 'projectiles'; type: string; len: number }[] = [];
   const bufs: Uint8Array[] = [];
@@ -87,7 +87,7 @@ export function unpackSnapshot(data: Uint8Array): BattleSnapshot {
   for (const m of head.meta as { name: string; section: 'units' | 'projectiles'; type: string; len: number }[]) {
     const C = CTORS[m.type];
     const bytes = m.len * C.prototype.constructor.BYTES_PER_ELEMENT;
-    // Hizalama icin kopya (data'nin ofseti 4'un kati olmayabilir).
+    // Copy for alignment (the offset of data may not be a multiple of 4).
     const copy = data.slice(off, off + bytes).buffer;
     snap[m.section][m.name] = new C(copy, 0, m.len);
     off += bytes;

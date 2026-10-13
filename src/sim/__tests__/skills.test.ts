@@ -5,7 +5,7 @@ import { F_REVIVED, KIND_OF_TROOP, STATS } from '../units';
 
 const K = (id: string): number => KIND_OF_TROOP[id];
 
-/** A takimi `a` birimleri, B takimi `b` birimleri; temiz (cevresiz) harita, yakin dizilim. */
+/** Team A gets units `a`, team B gets units `b`; clean (no environment) map, close formation. */
 function arena(a: string[], b: string[], level = 6, gap = 5): Battle {
   const layout: number[] = [];
   a.forEach((id, i) => layout.push(0, K(id), 20 + (i % 3) * 1.2, 28 + Math.floor(i / 3) * 1.2));
@@ -21,8 +21,8 @@ function run(b: Battle, seconds: number, each?: (b: Battle) => void): void {
   }
 }
 
-describe('yetenekler', () => {
-  it('Bone Caller iskelet cagirir (havuzdan uyandirir), iskeletler dusmana saldirir', () => {
+describe('skills', () => {
+  it('Bone Caller summons skeletons (wakes them from the pool), skeletons attack the enemy', () => {
     const b = arena(['bone-caller'], ['militia', 'militia', 'militia'], 8, 14);
     const u = b.units;
     const skel = K('bone-soldier');
@@ -36,7 +36,7 @@ describe('yetenekler', () => {
     expect(b.counters.damage).toBeGreaterThan(0);
   });
 
-  it('Undead Soldier bir kez yeniden dirilir', () => {
+  it('Undead Soldier revives once', () => {
     const b = arena(['risen-guard'], ['longbowmen', 'longbowmen', 'longbowmen', 'longbowmen'], 3, 6);
     const u = b.units;
     let revived = false;
@@ -46,14 +46,14 @@ describe('yetenekler', () => {
     expect(revived).toBe(true);
   });
 
-  it('Blast Imps dusmana degince patlar: kendisi olur, alan hasari verir', () => {
+  it('Blast Imps explode on contact with the enemy: they die and deal area damage', () => {
     const b = arena(['blast-imps', 'blast-imps'], ['militia', 'militia', 'militia'], 4, 4);
     run(b, 15);
     expect(b.units.alive[0] === 0 || b.units.alive[1] === 0).toBe(true);
     expect(b.counters.damage).toBeGreaterThan(0);
   });
 
-  it('Ice Mage dusmani yavaslatir', () => {
+  it('Ice Mage slows the enemy', () => {
     const b = arena(['frost-adept', 'frost-adept', 'frost-adept'], ['bulwark-guard', 'bulwark-guard'], 6, 8);
     const u = b.units;
     let slowed = false;
@@ -63,7 +63,7 @@ describe('yetenekler', () => {
     expect(slowed).toBe(true);
   });
 
-  it('Nun dostu iyilestirir ve kontrol etkisini temizler', () => {
+  it('Nun heals an ally and clears crowd-control effects', () => {
     const b = arena(['mender', 'militia'], ['longbowmen', 'longbowmen'], 6, 7);
     const u = b.units;
     let healed = false;
@@ -73,7 +73,7 @@ describe('yetenekler', () => {
     expect(healed || u.alive[0] === 0).toBe(true);
   });
 
-  it('Scarecrow Sentinel kiskirtir: yakin dusmanlarin hedefi guard olur', () => {
+  it('Scarecrow Sentinel taunts: nearby enemies target the guard', () => {
     const b = arena(['scarecrow', 'militia'], ['militia', 'militia', 'militia'], 6, 3);
     const u = b.units;
     let taunted = false;
@@ -83,7 +83,7 @@ describe('yetenekler', () => {
     expect(taunted).toBe(true);
   });
 
-  it('Dread Totem dusmani korkutur', () => {
+  it('Dread Totem frightens the enemy', () => {
     const b = arena(['dread-totem'], ['militia', 'militia', 'militia'], 6, 3);
     const u = b.units;
     let feared = false;
@@ -93,7 +93,7 @@ describe('yetenekler', () => {
     expect(feared).toBe(true);
   });
 
-  it('Hex Poppets zarar gorunce bagli dusmanlar da zarar alir', () => {
+  it('Hex Poppets: when one takes damage, the linked enemies take damage too', () => {
     const b = arena(['hex-poppets', 'militia'], ['longbowmen', 'longbowmen', 'longbowmen'], 6, 6);
     const u = b.units;
     let mirrored = false;
@@ -104,13 +104,13 @@ describe('yetenekler', () => {
     expect(mirrored).toBe(true);
   });
 
-  it('roster birimleri 2x2 karisik savasta NaN/negatif can uretmez', () => {
+  it('roster units do not produce NaN/negative hp in a mixed 2x2 battle', () => {
     const ids = ['pyre-sling', 'bolt-thrower', 'war-barge', 'sand-king', 'sun-priest', 'horned-seer', 'ash-fiend', 'dawn-blade', 'rime-archers', 'cinder-golem'];
     const b = arena(ids, ids.slice().reverse(), 10, 7);
     run(b, 90);
     const u = b.units;
     for (let i = 0; i < u.count; i++) {
-      expect(Number.isFinite(u.x[i]) && Number.isFinite(u.y[i]) && Number.isFinite(u.hp[i]), `birim ${i} ${STATS[u.kind[i]].name}`).toBe(true);
+      expect(Number.isFinite(u.x[i]) && Number.isFinite(u.y[i]) && Number.isFinite(u.hp[i]), `unit ${i} ${STATS[u.kind[i]].name}`).toBe(true);
       expect(u.hp[i]).toBeGreaterThanOrEqual(0);
     }
   });

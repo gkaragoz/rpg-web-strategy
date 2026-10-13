@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_MAP } from '../mapSpec';
 import { TROOPS } from '../data/troops';
@@ -5,7 +6,7 @@ import { runScenario } from '../testing/stall';
 import { KIND_OF_TROOP, LEGACY_COUNT, STATS, applyStats } from '../units';
 import type { Scenario } from '../testing/scenarios';
 
-/** Tek tur dizilimi: A takimi 6 birim, B takimi 6 Militia; verilen seviye. */
+/** Single-kind setup: team A has 6 of the given unit, team B has 6 Militia; at the given level. */
 function duel(kind: number, foe: number, level: number, n = 6): Scenario {
   const layout: number[] = [];
   for (let i = 0; i < n; i++) {
@@ -21,7 +22,7 @@ function duel(kind: number, foe: number, level: number, n = 6): Scenario {
 }
 
 describe('roster birimleri', () => {
-  it('45 birim tanimli ve istatistikleri gecerli', () => {
+  it('45 units are defined and their stats are valid', () => {
     expect(TROOPS.length).toBe(45);
     for (let i = 0; i < TROOPS.length; i++) {
       const s = STATS[LEGACY_COUNT + i];
@@ -35,7 +36,7 @@ describe('roster birimleri', () => {
   const foe = KIND_OF_TROOP.militia;
   for (const t of TROOPS) {
     for (const level of [1, 10]) {
-      it(`${t.name} seviye ${level}: takilma/dongu yok, sonuca ulasir`, () => {
+      it(`${t.name} level ${level}: no stall/loop, reaches a result`, () => {
         applyStats(undefined, level);
         const kind = KIND_OF_TROOP[t.id];
         const r = runScenario(duel(kind, foe, level), 240);
@@ -43,4 +44,23 @@ describe('roster birimleri', () => {
       });
     }
   }
+});
+
+describe('roster data is wired everywhere', () => {
+  it('every roster unit id has a drawing recipe, and every recipe belongs to a roster unit', () => {
+    const looks = readFileSync('src/render/looks.ts', 'utf8');
+    const body = looks.slice(looks.indexOf('export const LOOKS'));
+    const keys = new Set([...body.matchAll(/^ {2}'?([a-z-]+)'?: \(/gm)].map((m) => m[1]));
+    const ids = TROOPS.map((t) => t.id);
+    expect(ids.filter((id) => !keys.has(id))).toEqual([]);
+    expect([...keys].filter((k) => !ids.includes(k))).toEqual([]);
+  });
+
+  it('every key of the projectile-tag table is a roster unit id', () => {
+    const units = readFileSync('src/sim/units.ts', 'utf8');
+    const m = /const TAG_OF[^{]*\{([^}]*)\}/.exec(units)!;
+    const keys = [...m[1].matchAll(/^\s*'?([a-z-]+)'?:/gm)].map((x) => x[1]);
+    const ids = new Set(TROOPS.map((t) => t.id));
+    expect(keys.filter((k) => !ids.has(k))).toEqual([]);
+  });
 });

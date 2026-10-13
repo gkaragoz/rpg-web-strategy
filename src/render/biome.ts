@@ -1,6 +1,6 @@
 import type { Biome } from '../sim/mapSpec';
 
-/** Biyom renk paleti: zemin, yan yuzler, yol, nehir/su ve kopru renkleri. */
+/** Biome color palette: ground, side faces, road, river/water and bridge colors. */
 export interface BiomePalette {
   grassA: number;
   grassB: number;
@@ -11,21 +11,21 @@ export interface BiomePalette {
   water: number;
   waterMid: number;
   waterShine: number;
-  /** Dalga cizgisi rengi ve opakligi. */
+  /** Wave line color and opacity. */
   wave: number;
   waveAlpha: number;
-  /** Ahsap kopru renkleri: tabla, iki yan yuz, direk, korkuluk. */
+  /** Wooden bridge colors: deck, two side faces, post, railing. */
   deck: number;
   deckSideA: number;
   deckSideB: number;
   post: number;
   rail: number;
-  /** Tas kopru renkleri. */
+  /** Stone bridge colors. */
   stoneDeck: number;
   stoneSideA: number;
   stoneSideB: number;
   stoneRail: number;
-  /** Dik yamac/ucurum kaya rengi. */
+  /** Steep slope / cliff rock color. */
   cliff: number;
 }
 

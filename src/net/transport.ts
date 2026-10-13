@@ -1,38 +1,38 @@
 import type { Msg } from './protocol';
 
 /**
- * Yildiz topoloji tasima: misafirler yalniz host ile konusur. Host `send(peer)` / `broadcast` kullanir,
- * misafir `send('host')`. Gercekleme: Loopback (test), WebSocket (LAN), PeerJS (internet).
+ * Star-topology transport: guests only talk to the host. The host uses `send(peer)` / `broadcast`,
+ * a guest uses `send('host')`. Implementations: Loopback (tests), WebSocket (LAN), PeerJS (internet).
  */
 export interface Transport {
-  /** Bu uc noktanin kimligi (host icin 'host' disinda herhangi bir sabit olabilir). */
+  /** Id of this endpoint (for the host it may be any constant other than 'host'). */
   readonly id: string;
   readonly isHost: boolean;
   send(to: string, msg: Msg): void;
-  /** Yalniz host: tum bagli misafirlere (except haric). */
+  /** Host only: to all connected guests (except `except`). */
   broadcast(msg: Msg, except?: string): void;
-  /** Yalniz host: misafirin baglantisini keser. */
+  /** Host only: drops the guest's connection. */
   disconnect(peer: string): void;
   close(): void;
-  /** Alinan mesaj: from = gonderen uc nokta kimligi (misafirde 'host'). */
+  /** Received message: from = sender endpoint id ('host' on a guest). */
   onMessage: (from: string, msg: Msg) => void;
-  /** Yalniz host: yeni baglanti / kopan baglanti. */
+  /** Host only: new connection / dropped connection. */
   onPeerJoin: (peer: string) => void;
   onPeerLeave: (peer: string) => void;
-  /** Misafir: host baglantisi koptu. */
+  /** Guest: the connection to the host dropped. The reason is a code: 'closed' | 'kicked' | anything else means lost. */
   onClose: (reason: string) => void;
 }
 
 export function noop(): void {
-  /* bos */
+  /* empty */
 }
 
-/** Bellek ici baglanti merkezi (testler ve tek-pencere denemeleri). Mesajlar structured-clone ile kopyalanir. */
+/** In-memory hub (tests and single-window trials). Messages are copied with structured clone. */
 export class LoopbackHub {
   readonly host: LoopbackEndpoint;
   private readonly guests = new Map<string, LoopbackEndpoint>();
   private nextId = 1;
-  /** Test icin: mesajlar bu kadar adim sonra teslim edilir (0: aninda). */
+  /** For tests: messages are delivered after this many steps (0: immediately). */
   latency = 0;
   private readonly queue: Array<{ due: number; fn: () => void }> = [];
   private clock = 0;
@@ -41,7 +41,7 @@ export class LoopbackHub {
     this.host = new LoopbackEndpoint(this, 'host', true);
   }
 
-  /** Yeni misafir ucu olusturur ve host'a baglar. */
+  /** Creates a new guest endpoint and connects it to the host. */
   connect(): LoopbackEndpoint {
     const id = `g${this.nextId++}`;
     const g = new LoopbackEndpoint(this, id, false);
@@ -81,7 +81,7 @@ export class LoopbackHub {
     else this.queue.push({ due: this.clock + this.latency, fn });
   }
 
-  /** Gecikmeli teslimleri bir birim ilerletir (latency > 0 iken). */
+  /** Advances delayed deliveries by one unit (while latency > 0). */
   pump(steps = 1): void {
     for (let s = 0; s < steps; s++) {
       this.clock++;

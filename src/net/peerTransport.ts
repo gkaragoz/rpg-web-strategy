@@ -3,14 +3,14 @@ import type { Msg } from './protocol';
 import { noop, type Transport } from './transport';
 import { NetError } from './wsTransport';
 
-/** Genel PeerJS bulutunda lobi kodunun on eki (baska uygulamalarla kimlik carpismasini onler). */
+/** Prefix of the lobby code on the public PeerJS cloud (prevents id collisions with other apps). */
 const PREFIX = 'rpgweb-strategy-';
-/** Sinyal sunucusuna baglanma suresi. */
+/** Time allowed to reach the signaling server. */
 const OPEN_TIMEOUT_MS = 15000;
-/** Host ile dogrudan (STUN/TURN uzerinden) baglanti kurma suresi: mobil ag + role icin uzun tutulur. */
+/** Time allowed to establish a direct connection with the host (via STUN/TURN): kept long for mobile networks + relays. */
 const CONNECT_TIMEOUT_MS = 35000;
 
-/** Yalniz STUN: internet icin birincil yol WebSocket roleisidir (relay/); WebRTC yedek yoldur. */
+/** STUN only: the primary internet path is the WebSocket relay (relay/); WebRTC is the fallback. */
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -26,7 +26,7 @@ function openPeer(id?: string): Promise<Peer> {
     const p = id ? new Peer(id, peerOpts()) : new Peer(peerOpts());
     const timer = setTimeout(() => {
       p.destroy();
-      reject(new NetError('failed', 'Sinyal sunucusuna ulasilamadi'));
+      reject(new NetError('failed', 'signal-unreachable'));
     }, OPEN_TIMEOUT_MS);
     p.on('open', () => {
       clearTimeout(timer);
@@ -40,7 +40,7 @@ function openPeer(id?: string): Promise<Peer> {
   });
 }
 
-/** Internet host ucu (WebRTC): lobi kodu = PeerJS kimligi; misafirler dogrudan host'a baglanir. */
+/** Internet host endpoint (WebRTC): lobby code = PeerJS id; guests connect to the host directly. */
 export class PeerHostTransport implements Transport {
   readonly id = 'host';
   readonly isHost = true;
@@ -71,10 +71,10 @@ export class PeerHostTransport implements Transport {
       conn.on('error', gone);
     });
     peer.on('disconnected', () => {
-      // Sinyal baglantisi koptu: mevcut oyuncular etkilenmez, yeni girisler icin yeniden baglan.
+      // Signaling connection dropped: current players are unaffected; reconnect for new arrivals.
       if (!peer.destroyed) peer.reconnect();
     });
-    peer.on('close', () => this.onClose('Baglanti kapandi'));
+    peer.on('close', () => this.onClose('serverLost'));
   }
 
   static async create(code: string): Promise<PeerHostTransport> {
@@ -91,7 +91,7 @@ export class PeerHostTransport implements Transport {
   disconnect(peer: string): void {
     const c = this.conns.get(peer);
     this.conns.delete(peer);
-    // Mesajin gitmesine firsat ver, sonra kapat.
+    // Give the message a chance to go out, then close.
     if (c) setTimeout(() => c.close(), 150);
   }
   close(): void {
@@ -100,7 +100,7 @@ export class PeerHostTransport implements Transport {
   }
 }
 
-/** Internet misafir ucu: kodla host'a baglanir. */
+/** Internet guest endpoint: connects to the host by code. */
 export class PeerGuestTransport implements Transport {
   readonly isHost = false;
   onMessage: (from: string, msg: Msg) => void = noop;
@@ -114,8 +114,8 @@ export class PeerGuestTransport implements Transport {
     readonly id: string,
   ) {
     conn.on('data', (d) => this.onMessage('host', d as Msg));
-    conn.on('close', () => this.onClose('Baglanti koptu'));
-    conn.on('error', () => this.onClose('Baglanti koptu'));
+    conn.on('close', () => this.onClose('lost'));
+    conn.on('error', () => this.onClose('lost'));
   }
 
   static async create(code: string): Promise<PeerGuestTransport> {
@@ -150,10 +150,10 @@ export class PeerGuestTransport implements Transport {
     if (this.conn.open) this.conn.send(msg);
   }
   broadcast(): void {
-    /* yalniz host */
+    /* host only */
   }
   disconnect(): void {
-    /* yalniz host */
+    /* host only */
   }
   close(): void {
     setTimeout(() => {

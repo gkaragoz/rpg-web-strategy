@@ -3,15 +3,15 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { makeScenario } from '../testing/scenarios';
 import { runScenario, type RunResult } from '../testing/stall';
 
-// FUZZ_N: kac senaryo, FUZZ_START: baslangic id, HUNT=1: hatalari toplayip raporla (testi dusurme).
+// FUZZ_N: number of scenarios, FUZZ_START: first id, HUNT=1: collect failures and report them (do not fail the test).
 const N = Number(process.env.FUZZ_N ?? 120);
 const START = Number(process.env.FUZZ_START ?? 1);
 const HUNT = process.env.HUNT === '1';
 const results: RunResult[] = [];
 
-describe('rastgele senaryolar (takilma / dongu / sonuc)', () => {
+describe('random scenarios (stall / loop / result)', () => {
   for (let id = START; id < START + N; id++) {
-    it(`senaryo ${id}`, () => {
+    it(`scenario ${id}`, () => {
       const sc = makeScenario(id);
       const r = runScenario(sc);
       results.push(r);
@@ -19,11 +19,11 @@ describe('rastgele senaryolar (takilma / dongu / sonuc)', () => {
     });
   }
 
-  it('determinizm: ayni tohum ayni sonuc', () => {
+  it('determinism: same seed, same result', () => {
     for (const id of [3, 17, 42]) {
       const a = runScenario(makeScenario(id), 60, false);
       const b = runScenario(makeScenario(id), 60, false);
-      expect(b.signature, `senaryo ${id}`).toBe(a.signature);
+      expect(b.signature, `scenario ${id}`).toBe(a.signature);
     }
   });
 
@@ -38,14 +38,14 @@ describe('rastgele senaryolar (takilma / dongu / sonuc)', () => {
     }
     const secs = results.map((r) => r.secs).sort((a, b) => a - b);
     const lines: string[] = [
-      `=== FUZZ OZETI: ${results.length} senaryo, ${results.filter((r) => r.flags.length > 0).length} tanesinde bayrak ===`,
-      `sure (sn): medyan ${secs[Math.floor(secs.length / 2)]}, p90 ${secs[Math.floor(secs.length * 0.9)]}, max ${secs[secs.length - 1]}`,
-      `kazanan yok (-1): ${results.filter((r) => r.winner === -1).length}, berabere (-2): ${results.filter((r) => r.winner === -2).length}`,
-      `ortalama birim: ${(results.reduce((a, r) => a + r.initialUnits, 0) / Math.max(1, results.length)).toFixed(0)}`,
+      `=== FUZZ SUMMARY: ${results.length} scenarios, ${results.filter((r) => r.flags.length > 0).length} with flags ===`,
+      `duration (s): median ${secs[Math.floor(secs.length / 2)]}, p90 ${secs[Math.floor(secs.length * 0.9)]}, max ${secs[secs.length - 1]}`,
+      `no winner (-1): ${results.filter((r) => r.winner === -1).length}, draw (-2): ${results.filter((r) => r.winner === -2).length}`,
+      `average units: ${(results.reduce((a, r) => a + r.initialUnits, 0) / Math.max(1, results.length)).toFixed(0)}`,
     ];
     for (const [type, arr] of [...byType.entries()].sort((a, b) => b[1].length - a[1].length)) {
       const scen = new Set(arr.map((x) => x.id));
-      lines.push(`- ${type}: ${arr.length} bayrak, ${scen.size} senaryo`);
+      lines.push(`- ${type}: ${arr.length} flags, ${scen.size} scenarios`);
       const seen = new Set<number>();
       for (const x of arr) {
         if (seen.size >= 4 || seen.has(x.id)) continue;

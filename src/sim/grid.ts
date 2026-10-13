@@ -1,6 +1,6 @@
 import type { Units } from './units';
 
-/** Sayma siralamasi (counting sort) ile kurulan tek takimlik uniform grid. */
+/** Single-team uniform grid built with a counting sort. */
 export class Grid {
   readonly cols: number;
   readonly cell: number;
@@ -22,7 +22,7 @@ export class Grid {
     return cy * this.cols + cx;
   }
 
-  /** team < 0: tum takimlar. */
+  /** team < 0: all teams. */
   build(u: Units, team: number): void {
     const { start, cursor, items } = this;
     start.fill(0);

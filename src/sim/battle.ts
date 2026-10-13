@@ -14,107 +14,107 @@ const MELEE_SLOTS = 3;
 const SEPARATION_RADIUS = 0.9;
 const LANDING_RADIUS = 0.75;
 const GRID_CELL = 4;
-/** Ayrisma icin ince grid: hucre ~ ayrisma yaricapi, 3x3 komsuluk yeterli. */
+/** Fine grid for separation: cell size ~ separation radius, a 3x3 neighborhood is enough. */
 const SEP_CELL = 1;
-/** Ayrisma her adimda birimlerin 1/SEP_STRIDE'ini isler; itme gucu ayni oranda artar. */
+/** Separation processes 1/SEP_STRIDE of the units each step; the push strength grows by the same factor. */
 const SEP_STRIDE = 3;
-/** Itme hizi: kazanc, adim basina en buyuk yer degistirme (tile), adim basina sonumleme. */
+/** Push velocity: gain, maximum displacement per step (tiles), decay per step. */
 const SEP_GAIN = 1.5;
 const SEP_MAX_STEP = 0.08;
 const SEP_DECAY = 0.82;
-/** Dusman bu kadar hucre halkasi icinde yoksa orduya dogru yuru. */
+/** If there is no enemy within this many cell rings, walk toward the army. */
 const MAX_RING = 6;
 const PRIEST_RING = 2;
-/** Karsi yakadaki dusmana hedef puani cezasi (once ayni yakadakilerle dovusulur). */
+/** Target score penalty for an enemy on the opposite bank (enemies on the same bank are fought first). */
 const OTHER_BANK_PENALTY = 15;
-/** Bu kadar sn olum olmazsa hasar saniyede %STALE_RAMP artar. */
+/** If no one dies for this many seconds, damage grows by STALE_RAMP percent per second. */
 const STALE_AFTER = 20;
 const STALE_RAMP = 0.08;
-/** Hedef degistirmeye direnc (puan bonusu) ve yeniden hedef arama araligi (sn). */
+/** Resistance to switching targets (score bonus) and the retarget search interval (s). */
 const SWITCH_BONUS = 6;
-/** Menzildeki hedef kilitlenir: bu carpanla menzil icindeyken yeniden hedef aranmaz. */
+/** A target in range is locked: while within range (scaled by this multiplier) no new target is searched. */
 const ENGAGE_LOCK = 1.25;
-/** Melee saldirisi menzil toleransi (kalabalikta itilen birim de vurabilsin). */
+/** Melee attack range tolerance (so a unit pushed around in a crowd can still hit). */
 const MELEE_SLACK = 0.4;
-/** Tank hedefe yakin dovus menzili ek payi (tank itmesi yaricapi 1.8 > 1.4). */
+/** Extra close-combat range margin against tank targets (tank push radius 1.8 > 1.4). */
 const TANK_REACH = 0.6;
-/** Komedi fizigi: en uzun firlatma mesafesi (tile). */
+/** Comedy physics: longest launch distance (tiles). */
 const MAX_LAUNCH = 14;
-/** Ilerleme bekcisi: hedefe yaklasamayan birim bu sure sonra hedefi yasaklar. */
+/** Progress watchdog: a unit that cannot get closer to its target bans it after this time. */
 const CHASE_TIMEOUT = 6;
 const BAN_TIME = 8;
-/** Leash yuzunden bu kadar sn beklerse leash gecici devre disi. */
+/** If a unit waits this many seconds because of the leash, the leash is temporarily disabled. */
 const LEASH_HOLD_MAX = 3;
 const LEASH_OFF = 8;
-/** Hic hasar yoksa (sn) berabere: once hasar varsa / hic olmamissa. */
+/** Draw if there is no damage for this long (s): once damage has occurred / if none ever has. */
 const NO_DAMAGE_DRAW = 90;
 const NO_DAMAGE_DRAW_FIRST = 150;
-/** Hasar verebilen birim kalmadiysa bu sure sonra berabere. */
+/** Draw after this time if no unit that can deal damage remains. */
 const NO_DAMAGER_DRAW = 4;
 const DEMO_GAP_HALF = 9;
 const BENCH_GAP = 24;
 
 export interface SimEvent {
-  /** hit: hasar aldi (value = hasar), shot: ok atildi, land: ok bos indi, heal: iyilesti (value = miktar). */
+  /** hit: took damage (value = damage), shot: arrow fired, land: arrow landed on nothing, heal: healed (value = amount). */
   type: 'heal' | 'death' | 'bash' | 'slam' | 'hit' | 'shot' | 'land' | 'burst';
   x: number;
   y: number;
   unit: number;
-  /** bash: itme yonu (radyan, dunya x/y duzleminde). */
+  /** bash: push direction (radians, in the world x/y plane). */
   angle?: number;
   value?: number;
-  /** Olay sahibi birimin turu (olum/vurus icin). */
+  /** Kind of the unit the event belongs to (for death/hit). */
   kind?: number;
-  /** burst: etki unsuru (0 fiziksel, 1 ates, 2 buz, 3 kutsal, 4 karanlik, 5 doga, 6 enerji); value = yaricap. */
+  /** burst: effect element (0 physical, 1 fire, 2 ice, 3 holy, 4 dark, 5 nature, 6 energy); value = radius. */
   element?: number;
 }
 
-/** Adim basina uretilen olay ust siniri (cok kalabalikta mesaj/tahsis patlamasin). */
+/** Upper limit of events produced per step (so messages/allocations do not blow up in big crowds). */
 const EVENT_CAP = 300;
-/** Her Bone Caller icin on-ayrilmis (uyuyan) iskelet sayisi. */
+/** Number of pre-allocated (dormant) skeletons per Bone Caller. */
 const SUMMON_POOL = 8;
 
-/** Kalici etki bolgesi: yanma, lanet (dusman takimlarina etkir). */
+/** Persistent effect zone: burning, curse (affects enemy teams). */
 interface Zone {
   x: number;
   y: number;
   r: number;
   t: number;
   dps: number;
-  /** Bolgeyi koyan takim (diger takimlar etkilenir). */
+  /** Team that placed the zone (the other teams are affected). */
   team: number;
   slowK: number;
 }
 
 export interface BattleConfig {
-  /** 'demo': 10v10 el yapimi dizilim, 'bench': takim basina perTeam birim blok dizilimi,
-   *  'custom': kullanicinin yerlestirdigi `layout`. */
+  /** 'demo': hand-made 10v10 layout, 'bench': block layout of perTeam units per team,
+   *  'custom': the user-placed `layout`. */
   mode: 'demo' | 'bench' | 'custom';
   perTeam: number;
-  /** Takim sayisi (2..6); varsayilan 2. */
+  /** Number of teams (2..6); default 2. */
   teamCount?: number;
-  /** custom: harita boyutu (tile). */
+  /** custom: map size (tiles). */
   mapSize?: number;
-  /** custom: birimler, 4'lu gruplar halinde (takim, tur, x, y). */
+  /** custom: units, in groups of 4 (team, kind, x, y). */
   layout?: Float32Array;
-  /** Birim istatistik ayarlari (tur indeksine gore); yoksa varsayilanlar. */
+  /** Unit stat overrides (by kind index); defaults if absent. */
   stats?: StatOverrides;
-  /** false: cevre (nehir, engeller) yok, eski cıplak harita. Varsayilan true. */
+  /** false: no environment (river, obstacles), the old bare map. Default true. */
   env?: boolean;
-  /** Roster birimlerinin seviyesi (1-10). */
+  /** Level of roster units (1-10). */
   level?: number;
-  /** Harita tarifi (biyom, nehir, orman, koy, gecit); yoksa varsayilan orman haritasi. */
+  /** Map recipe (biome, river, forest, village, pass); the default forest map if absent. */
   map?: MapSpec;
-  /** Komedi fizigi: vuruslar birimleri firlatir, suya dusen olur (yalniz sim; gorunum ayri). */
+  /** Comedy physics: hits launch units, some fall into water and die (sim only; visuals are separate). */
   comedy?: boolean;
-  /** Harita tohumu. */
+  /** Map seed. */
   terrainSeed?: number;
-  /** false: okcu/priest vur-kac ve cizgi siniri kapali (eski davranis, karsilastirma icin). */
+  /** false: archer/priest kiting and the line limit are off (old behavior, for comparison). */
   kite?: boolean;
 }
 
 export const DBG_KEYS = ['kites', 'kiteSteps', 'snapShots', 'archerDeaths', 'archerDeathsKiting', 'stuck', 'cornered'] as const;
-/** Yalniz sim-ici sayaclar (dogrulama): shared'a yazilmaz. */
+/** Sim-internal counters only (for verification): not written to shared. */
 export const EXTRA_DBG = ['bans', 'leashBreaks', 'paths', 'pathFails'] as const;
 
 export class Battle {
@@ -126,9 +126,9 @@ export class Battle {
   readonly terrain: Terrain | null;
   winner = -1;
   time = 0;
-  /** Faz bazli sim suresi (ms, birikimli): hazirlik, grid, birim guncelleme, ayrisma, ok. */
+  /** Sim time per phase (ms, accumulated): preparation, grid, unit update, separation, arrows. */
   readonly prof = { prep: 0, grid: 0, units: 0, pick: 0, separate: 0, arrows: 0, steps: 0 };
-  /** Davranis sayaclari (dogrulama icin). */
+  /** Behavior counters (for verification). */
   readonly dbg: Record<(typeof DBG_KEYS)[number] | (typeof EXTRA_DBG)[number], number> = {
     kites: 0,
     kiteSteps: 0,
@@ -142,7 +142,7 @@ export class Battle {
     paths: 0,
     pathFails: 0,
   };
-  /** Toplam hasar/sifa/olum sayaclari (ilerleme olcumu ve testler icin). */
+  /** Total damage/heal/death counters (for progress measurement and tests). */
   readonly counters = { damage: 0, heal: 0, kills: 0 };
   private lastDamageSeen = 0;
   private lastDamageT = 0;
@@ -154,24 +154,24 @@ export class Battle {
     return this.config.kite !== false;
   }
   private stepNo = 0;
-  /** Sikisan birimler icin A* yollari (birim -> ara noktalar) ve kare basina yol hesabi butcesi. */
+  /** A* paths for stuck units (unit -> waypoints) and the per-frame path computation budget. */
   private readonly paths = new Map<number, { pts: number[]; k: number; gx: number; gy: number; t: number }>();
   private pathBudget = 0;
   private lastDeathTime = 0;
   private readonly centroidX: number[] = new Array(MAX_TEAMS).fill(0);
   private readonly centroidY: number[] = new Array(MAX_TEAMS).fill(0);
-  /** Yakin-dovus merkezi (cizgi siniri); melee yoksa takim merkezi. */
+  /** Melee center (line limit); the team center if there is no melee. */
   private readonly frontX: number[] = new Array(MAX_TEAMS).fill(0);
   private readonly frontY: number[] = new Array(MAX_TEAMS).fill(0);
   private readonly hasFront: boolean[] = new Array(MAX_TEAMS).fill(false);
-  /** Takim basina en yakin canli dusman takim (-1: yok) ve canli dusman takim listesi. */
+  /** Nearest living enemy team per team (-1: none) and the list of living enemy teams. */
   private readonly nearestEnemy = new Int8Array(MAX_TEAMS).fill(-1);
   private readonly enemyList: number[][] = Array.from({ length: MAX_TEAMS }, () => []);
   private readonly teamCount: number;
-  /** Komedi fizigi acik mi (config.comedy). */
+  /** Whether comedy physics is on (config.comedy). */
   private readonly comedy: boolean;
   private readonly allTeams: number[];
-  /** Takim basina canli ve rahip olmayan birim sayisi (yalniz rahiplerden olusan takim kacmasin). */
+  /** Number of living non-priest units per team (so a team made only of priests does not flee). */
   private readonly damagerCount: number[] = new Array(MAX_TEAMS).fill(0);
   private readonly selfList: number[][] = Array.from({ length: MAX_TEAMS }, (_, t) => [t]);
   private readonly grids: Grid[];
@@ -198,7 +198,7 @@ export class Battle {
     this.reset(seed);
   }
 
-  /** Bench modunda olum/iyilestirme olaylari uretilmez (render bunlari kullanmaz). */
+  /** In bench mode, death/heal events are not produced (the renderer does not use them). */
   private get emitEvents(): boolean {
     return this.config.mode !== 'bench';
   }
@@ -235,14 +235,14 @@ export class Battle {
     this.countAlive();
   }
 
-  /** Kullanicinin yerlestirdigi birimler. */
+  /** Units placed by the user. */
   private spawnLayout(): void {
     const L = this.config.layout;
     if (!L) return;
     for (let k = 0; k + 3 < L.length; k += 4) {
       let x = L[k + 2];
       let y = L[k + 3];
-      // Tohum degisince su/engel altinda kalan birim en yakin yurunebilir noktaya tasinir.
+      // When the seed changes, a unit left under water/an obstacle is moved to the nearest walkable point.
       if (this.terrain && !(this.terrain.walkable(x, y) && this.terrain.reachable(x, y))) {
         const p = this.terrain.nearestWalkable(x, y, 20, true);
         if (!p) continue;
@@ -254,7 +254,7 @@ export class Battle {
     }
   }
 
-  /** Ordular ekranda yatay (x-y ekseni) boyunca karsilikli dizilir; nehir aralarindadir. */
+  /** Armies line up facing each other along the horizontal screen axis (the x-y axis); the river lies between them. */
   private spawnArmy(team: number, side: number): void {
     const c = this.mapSize / 2;
     const ux = Math.SQRT1_2 * side;
@@ -275,7 +275,7 @@ export class Battle {
     }
   }
 
-  /** Blok dizilim: onde warriorlar, arkada archerlar, en arkada priestler. */
+  /** Block layout: warriors in front, archers behind them, priests at the very back. */
   private spawnBenchArmy(team: number, side: number): void {
     const n = this.config.perTeam;
     const { cols, spacing } = benchLayout(n);
@@ -328,7 +328,7 @@ export class Battle {
       u.px[i] = u.x[i];
       u.py[i] = u.y[i];
       u.vx[i] = u.vy[i] = 0;
-      // Onceki adimda hareket etmediyse hiz hizla sonumlenir (aniden durma yerine kisa fren).
+      // If the unit did not move in the previous step, its speed decays quickly (a short brake instead of stopping abruptly).
       if (u.moving[i] === 0) u.spd[i] *= MOTION.brake;
       u.moving[i] = 0;
       u.flash[i] = Math.max(0, u.flash[i] - dt);
@@ -337,7 +337,7 @@ export class Battle {
         if (isHealer(u.kind[i])) u.healers[t]++;
         else u.attackers[t]++;
       } else if (t >= 0) {
-        // Hedef oldu: kisa, birime ozel bir gecikmeyle yeni hedef ara (hepsi ayni karede degil).
+        // Target died: look for a new target after a short per-unit delay (not all in the same frame).
         u.target[i] = -1;
         u.retarget[i] = Math.min(u.retarget[i], this.rng() * 0.3);
       }
@@ -361,7 +361,7 @@ export class Battle {
       this.frontX[tm] = wn[tm] > 0 ? wx[tm] / wn[tm] : this.centroidX[tm];
       this.frontY[tm] = wn[tm] > 0 ? wy[tm] / wn[tm] : this.centroidY[tm];
     }
-    // Canli dusman takim listesi ve en yakin dusman takim (merkez uzakligina gore).
+    // List of living enemy teams and the nearest enemy team (by center distance).
     for (let tm = 0; tm < this.teamCount; tm++) {
       const list = this.enemyList[tm];
       list.length = 0;
@@ -392,7 +392,7 @@ export class Battle {
 
     if (this.winner < 0) {
       if (this.zones.length > 0) this.updateZones(dt);
-      // Sira her adimda terslenir: dusuk indeksli (ilk dogan) takim kalici avantaj kazanmasin.
+      // The order is reversed every step: so the low-index (first-spawned) team gains no permanent advantage.
       const cnt = u.count;
       const rev = (this.stepNo & 1) === 1;
       for (let k = 0; k < cnt; k++) {
@@ -414,7 +414,7 @@ export class Battle {
     pf.steps++;
     this.countAlive();
     if (this.winner < 0) {
-      // Kazanan: canli birimi olan son takim (hepsi olurse -2: berabere).
+      // Winner: the last team with a living unit (-2: draw if all die).
       let alive = 0;
       let last = -1;
       for (let tm = 0; tm < this.teamCount; tm++) {
@@ -430,8 +430,8 @@ export class Battle {
   }
 
   /**
-   * Savas kilitlenmesin diye beraberlik kurallari: (1) hicbir canli birim hasar veremiyor
-   * (yalniz rahipler), (2) uzun suredir hic hasar yok (ulasilamaz hedef, sifa dengesi...).
+   * Draw rules so a battle cannot lock up: (1) no living unit can deal damage
+   * (only priests), (2) no damage for a long time (unreachable target, heal balance...).
    */
   private checkDraw(aliveTeams: number): void {
     const u = this.units;
@@ -502,7 +502,7 @@ export class Battle {
     if (u.banT[i] > 0) u.banT[i] -= dt;
     if (u.leashOffT[i] > 0) u.leashOffT[i] -= dt;
 
-    // Geri itilen/sersemleyen birim bu adimda eylem yapamaz.
+    // A unit that is being knocked back or stunned cannot act this step.
     if (u.kbVx[i] !== 0 || u.kbVy[i] !== 0) this.applyKnockback(i, dt);
     if (u.stunT[i] > 0) {
       u.stunT[i] -= dt;
@@ -512,7 +512,7 @@ export class Battle {
     }
 
     if (u.fearT[i] > 0) {
-      // Korku: kaynaktan uzaklas, saldirma.
+      // Fear: run away from the source, do not attack.
       u.fearT[i] -= dt;
       u.swing[i] = 0;
       u.hitPending[i] = 0;
@@ -559,11 +559,11 @@ export class Battle {
     const dx = u.x[t] - u.x[i];
     const dy = u.y[t] - u.y[i];
     const dist = Math.sqrt(dx * dx + dy * dy);
-    // Buyuk (tank) hedefin govdesi daha genis: yakin dovusculer onu bu kadar fazla uzaktan vurabilir.
+    // A big (tank) target has a wider body: melee fighters can hit it from this much farther away.
     const tr = isTank(u.kind[t]) && !isTank(kind) ? TANK_REACH : 0;
 
     if (dist <= (isMelee(kind) ? s.range + MELEE_SLACK + tr : s.range * 0.95)) {
-      // Menzile giris anlik sayilmaz: kalabalikta menzil kenarinda gidip gelen birim sayaci sifirlayamaz.
+      // Entering range does not count instantly: a unit jittering at the range edge in a crowd cannot reset the counter.
       u.rangeT[i] += dt;
       if (u.rangeT[i] > 0.5) {
         u.chaseT[i] = 0;
@@ -576,12 +576,12 @@ export class Battle {
 
     if (isMelee(kind)) {
       if (dist > s.range + MELEE_SLACK + tr) {
-        // Hedefin etrafinda kisiye ozel bir aciya kosar: herkes ayni noktaya yigilmaz.
+        // Runs to a per-unit angle around the target: not everyone piles onto the same point.
         const base = Math.atan2(-dy, -dx) + u.slotAngle[i];
         const reach = s.range * 0.7;
         let gx = u.x[t] + Math.cos(base) * reach;
         let gy = u.y[t] + Math.sin(base) * reach;
-        // Yaklasma noktasi suya/engele ya da harita kenarinin disina dustuyse dogrudan hedefe yonel.
+        // If the approach point lands in water/an obstacle or outside the map edge, head straight for the target.
         const edge = this.mapSize - 0.5;
         const outside = gx < 0.5 || gy < 0.5 || gx > edge || gy > edge;
         if (outside || (this.terrain && !this.terrain.walkable(gx, gy))) {
@@ -593,7 +593,7 @@ export class Battle {
       }
     } else if (dist > s.range * 0.95) {
       if (isHealer(kind) && this.kiteOn) {
-        // Hastaya arkasindan yaklas: dusmandan uzakta dur.
+        // Approach the patient from behind: stay away from the enemy.
         const en = this.nearestEnemy[u.team[i]];
         if (en >= 0) {
           let ax = u.x[t] - this.centroidX[en];
@@ -617,7 +617,7 @@ export class Battle {
     if (u.cooldown[i] <= 0) this.startAttack(i);
   }
 
-  /** Yakin-dovus tehdidi taramasi: kaba gridde 3x3 hucre, birim basina kaydirmali. */
+  /** Melee threat scan: 3x3 cells on the coarse grid, staggered per unit. */
   private updateThreat(i: number): void {
     if ((i + this.stepNo) % KITE.scanEvery !== 0) return;
     const u = this.units;
@@ -664,9 +664,9 @@ export class Battle {
   }
 
   /**
-   * Okcu/priest vur-kac: tehdit varsa geri cekilir. Okcu once cabuk atis yapabilir, stamina
-   * bitince veya koseye sikisinca savasir. Geri kosarken yuzu dusmana donuktur.
-   * true: bu adimda hareket/saldiri yapildi.
+   * Archer/priest kiting: retreats if there is a threat. The archer may first take a quick shot, and fights
+   * when stamina runs out or when cornered. While running back it faces the enemy.
+   * true: moved/attacked this step.
    */
   private tryKite(i: number, dt: number): boolean {
     const u = this.units;
@@ -678,11 +678,11 @@ export class Battle {
     if (u.kiteState[i] === 1) {
       if (td >= safe || u.stamina[i] <= 0.05) u.kiteState[i] = 0;
     } else if (td < danger) {
-      if (u.stamina[i] <= KITE.staminaMin) return false; // yorgun: kacamaz
+      if (u.stamina[i] <= KITE.staminaMin) return false; // tired: cannot flee
       if (archer) {
         if (td <= KITE.archerCornered) {
           this.dbg.cornered++;
-          return false; // savas: son savunma atisi
+          return false; // fight: last defensive shot
         }
         const t = u.target[i];
         if (u.cooldown[i] <= 0 && td >= KITE.archerSnapMin && t >= 0 && u.alive[t]) {
@@ -720,7 +720,7 @@ export class Battle {
     this.dbg.kiteSteps++;
     u.stamina[i] = Math.max(0, u.stamina[i] - (archer ? KITE.staminaDrain : KITE.priestStaminaDrain) * dt);
     if (mv < step * 0.2) {
-      // Nehir/engel onunde sikisti: kacmayi birak.
+      // Stuck at a river/obstacle: give up fleeing.
       u.kiteState[i] = 0;
       u.stamina[i] = 0;
       this.dbg.cornered++;
@@ -729,8 +729,8 @@ export class Battle {
   }
 
   /**
-   * Ilerleme bekcisi: hedefe yaklasamayan (kalabalik, engel, ulasilamaz) birim bir sure sonra
-   * o hedefi yasaklayip baska hedef secer. true: hedef birakildi.
+   * Progress watchdog: a unit that cannot get closer to its target (crowd, obstacle, unreachable) bans
+   * that target after a while and picks another one. true: the target was dropped.
    */
   private chaseWatchdog(i: number, t: number, dist: number, dt: number): boolean {
     const u = this.units;
@@ -753,7 +753,7 @@ export class Battle {
     return true;
   }
 
-  /** Leash: bekletiyorsa true; cok uzun beklediyse gecici olarak devre disi birakir. */
+  /** Leash: true if it is holding the unit back; if the wait was too long, temporarily disables it. */
   private leashHold(i: number, dt: number): boolean {
     const u = this.units;
     if (!this.beyondLeash(i)) {
@@ -770,7 +770,7 @@ export class Battle {
     return true;
   }
 
-  /** Okcu/priest kendi warrior merkezinin onune (dusmana dogru) gecmesin. */
+  /** Archers/priests must not get in front of their own warrior center (toward the enemy). */
   private beyondLeash(i: number): boolean {
     const u = this.units;
     const tm = u.team[i];
@@ -800,7 +800,7 @@ export class Battle {
     const cur = u.target[i];
     const isPriest = isHealer(kind);
     const melee = isMelee(kind);
-    // Priest muttefik, digerleri tum dusman takimlari tarar.
+    // Priests scan allies, the others scan all enemy teams.
     const searchTeams = isPriest ? this.selfList[team] : this.enemyList[team];
     const maxRing = isPriest ? PRIEST_RING : MAX_RING;
     const g0 = this.grids[0];
@@ -813,7 +813,7 @@ export class Battle {
     const myRegion = terrain ? terrain.regionAt(u.x[i], u.y[i]) : -1;
     const banned = u.banT[i] > 0 ? u.banTarget[i] : -1;
 
-    // Menzildeki (veya vurulabilir mesafedeki) mevcut hedef kilitlidir: titresim/dongu olmasin.
+    // A current target in range (or within hitting distance) is locked: to avoid jitter/loops.
     if (cur >= 0 && u.alive[cur] && !isPriest) {
       const cdx = u.x[cur] - u.x[i];
       const cdy = u.y[cur] - u.y[i];
@@ -847,7 +847,7 @@ export class Battle {
               if (melee) {
                 const att = u.attackers[j] - (j === cur ? 1 : 0);
                 score = dist + att * 3.5 + jitter * 2 + (att >= (tank ? TANK.meleeSlots : MELEE_SLOTS) ? 100 : 0);
-                if (tank) score -= TANK.tauntBonus; // tank dusmani uzerine ceker
+                if (tank) score -= TANK.tauntBonus; // a tank draws enemies onto itself
               } else if (isRanged(kind)) {
                 const att = u.attackers[j] - (j === cur ? 1 : 0);
                 score = dist + att * 2 + (u.hp[j] / u.maxHp[j]) * 3 + jitter * 2;
@@ -855,9 +855,9 @@ export class Battle {
                 const heal = u.healers[j] - (j === cur ? 1 : 0);
                 score = (u.hp[j] / u.maxHp[j]) * 10 + dist * 0.3 + heal * 4 + jitter;
               }
-              // Kapali cep/ada: menzil disindaysa ulasilamaz, hedef alma.
+              // Closed pocket/island: unreachable if out of range, do not target.
               if (terrain && myRegion !== -1 && dist > reach && terrain.regionAt(u.x[j], u.y[j]) !== myRegion) continue;
-              // Nehrin karsisindaki hedefe sadece gerekirse: okcu menzildeyse nehir uzerinden vurur.
+              // A target across the river only if needed: an archer in range shoots over the river.
               if (terrain && (melee || isPriest || dist > reach) && terrain.sideAt(u.x[j], u.y[j]) !== sideI) {
                 score += OTHER_BANK_PENALTY;
               }
@@ -901,7 +901,7 @@ export class Battle {
     const u = this.units;
     const tm = u.team[i];
     const en = this.nearestEnemy[tm];
-    // Savasci yoksa (yalniz rahipler) orduya eslik edecek kimse yok: kacip koseye gitme.
+    // With no warriors (only priests) there is no one to escort: do not flee into a corner.
     if (en < 0 || this.damagerCount[tm] === 0) return;
     let ax = this.centroidX[tm] - this.centroidX[en];
     let ay = this.centroidY[tm] - this.centroidY[en];
@@ -944,7 +944,7 @@ export class Battle {
         this.counters.heal += u.hp[t] - before;
         if (this.emitEvents) this.pushEvent({ type: 'heal', x: u.x[t], y: u.y[t], unit: t, value: heal, kind: u.kind[t] });
         if (skill === 'cleanse') {
-          // Nun: hedefi ve cevresindeki dostlari da iyilestirir, kontrol etkilerini kaldirir.
+          // Nun: also heals the target and the allies around it, removes control effects.
           const p = this.sp('cleanse');
           this.cleanse(t);
           const out = this.scratch;
@@ -964,7 +964,7 @@ export class Battle {
     }
   }
 
-  /** Kalkan Tanki: onundeki konide hasar + guclu geri itme. */
+  /** Shield Tank: damage in the cone in front of it + strong knockback. */
   private shieldBash(i: number, dx: number, dy: number, dist: number): void {
     const u = this.units;
     const s = STATS[Kind.Shield];
@@ -981,7 +981,7 @@ export class Battle {
     if (this.emitEvents) this.pushEvent({ type: 'bash', x: u.x[i], y: u.y[i], unit: i, angle: Math.atan2(fy, fx) });
   }
 
-  /** Cekic Tanki: cevresinde daire darbe; hayatta kalanlar yariya kadar geri itilir. */
+  /** Hammer Tank: circular strike around it; survivors are pushed back by half. */
   private bruteSlam(i: number): void {
     const u = this.units;
     const s = STATS[Kind.Brute];
@@ -989,7 +989,7 @@ export class Battle {
     if (this.emitEvents) this.pushEvent({ type: 'slam', x: u.x[i], y: u.y[i], unit: i });
   }
 
-  /** Dusman gridlerinde tank cevresindeki hucreleri tarar: hasar + knockback (koni veya daire). */
+  /** Scans the cells around the tank in the enemy grids: damage + knockback (cone or circle). */
   private areaStrike(i: number, radius: number, power: number, push: number, fx: number, fy: number, cone: boolean): void {
     const u = this.units;
     const ax = u.x[i];
@@ -1028,7 +1028,7 @@ export class Battle {
         ux = fx;
         uy = fy;
       }
-      // Tank olan kurban iki kat daha az itilir.
+      // A victim that is itself a tank is pushed half as far.
       const amount = isTank(u.kind[j]) ? push * 0.5 : push;
       u.kbVx[j] = ux * amount * 9;
       u.kbVy[j] = uy * amount * 9;
@@ -1036,7 +1036,7 @@ export class Battle {
     }
   }
 
-  /** Geri itme hizini uygular: yurunemez karoya itilmez, hiz adim basina soner. */
+  /** Applies the knockback velocity: never pushed onto a non-walkable tile, the velocity decays per step. */
   private applyKnockback(i: number, dt: number): void {
     const u = this.units;
     const t = this.terrain;
@@ -1061,22 +1061,22 @@ export class Battle {
   }
 
   // ===================================================================
-  // Yetenekler ve durum etkileri
+  // Skills and status effects
   // ===================================================================
 
   private readonly skillCache: Partial<Record<SkillId, SkillParams>> = {};
   private readonly zones: Zone[] = [];
-  /** Hex bebegi -> bagli dusmanlar; Bone Caller -> iskelet havuzu. */
+  /** hex poppet -> linked enemies; Bone Caller -> skeleton pool. */
   private readonly links = new Map<number, number[]>();
   private readonly pools = new Map<number, number[]>();
   private readonly scratch: number[] = [];
   private readonly scratch2: number[] = [];
 
   // ===================================================================
-  // Komedi fizigi: firlatma, ucus, inis
+  // Comedy physics: launch, flight, landing
   // ===================================================================
 
-  /** j'yi (ux,uy) yonunde `dist` tile uzaga havadan firlatir (tepe yuksekligi mesafeyle artar). */
+  /** Launches j through the air `dist` tiles in the direction (ux,uy) (peak height grows with distance). */
   private launch(j: number, ux: number, uy: number, dist: number): void {
     const u = this.units;
     if (!this.comedy || !u.alive[j] || u.airT[j] > 0) return;
@@ -1085,7 +1085,7 @@ export class Battle {
     if (d < 1) return;
     const lim = this.mapSize - 0.5;
     const len = Math.hypot(ux, uy) || 1;
-    // Hafif sapma: her firlayis farkli gorunur (deterministik rng).
+    // Slight deviation: every launch looks different (deterministic rng).
     const a = Math.atan2(uy, ux) + (this.rng() - 0.5) * 0.7;
     u.airX0[j] = u.x[j];
     u.airY0[j] = u.y[j];
@@ -1103,7 +1103,7 @@ export class Battle {
     if (this.emitEvents) this.pushEvent({ type: 'burst', x: u.x[j], y: u.y[j], unit: -1, value: 0.8, element: 8 });
   }
 
-  /** Ucus adimi: dogrusal ilerleme + parabolik yukseklik; inince land(). */
+  /** Flight step: linear progress + parabolic height; calls land() on touchdown. */
   private flyStep(i: number, dt: number): void {
     const u = this.units;
     u.airT[i] -= dt;
@@ -1117,7 +1117,7 @@ export class Battle {
     if (u.airT[i] <= 0) this.land(i);
   }
 
-  /** Inis: su -> bogulur; engel/ucurum -> en yakin yurunebilir noktaya; sonra yerde yatma + ezilme. */
+  /** Landing: water -> drowns; obstacle/cliff -> nearest walkable point; then lying on the ground + crushing. */
   private land(i: number): void {
     const u = this.units;
     u.airT[i] = 0;
@@ -1151,7 +1151,7 @@ export class Battle {
     u.airImm[i] = 2.4;
     u.target[i] = -1;
     u.retarget[i] = 0.6;
-    // Ezilme: inen birimin altinda kalan komsulara kucuk hasar.
+    // Crush: small damage to neighbors caught under the landing unit.
     const out = this.scratch2;
     this.gather(this.allTeams, u.x[i], u.y[i], 0.8, out, 12);
     const crush = Math.max(2, u.maxHp[i] * 0.03);
@@ -1162,7 +1162,7 @@ export class Battle {
     if (this.emitEvents) this.pushEvent({ type: 'burst', x: u.x[i], y: u.y[i], unit: -1, value: 1.2, element: 0 });
   }
 
-  /** Vurustan sonra: hasar canin buyuk bir kismiysa birimi havaya atar (komedi fizigi). */
+  /** After a hit: if the damage is a big share of health, throws the unit into the air (comedy physics). */
   private comedyHit(j: number, src: number, amount: number, melee: boolean): void {
     const u = this.units;
     if (u.airImm[j] > 0 || u.airT[j] > 0 || !u.alive[j]) return;
@@ -1177,15 +1177,15 @@ export class Battle {
   }
 
   // ===================================================================
-  // Cevrimici: durum goruntusu (yeniden senkron / seyirci / geri baglanma) ve kontrol toplami
+  // Online: state snapshot (resync / spectator / reconnect) and checksum
   // ===================================================================
 
-  /** Atilan sim adimi sayisi (lockstep zaman ekseni). */
+  /** Number of sim steps taken (lockstep time axis). */
   get stepCount(): number {
     return this.stepNo;
   }
 
-  /** Sim'in tum kalici durumunu kopyalar (config ayni olan baska bir Battle'a restore edilebilir). */
+  /** Copies the whole persistent state of the sim (can be restored into another Battle with the same config). */
   serialize(): BattleSnapshot {
     const u = this.units;
     return {
@@ -1219,7 +1219,7 @@ export class Battle {
     };
   }
 
-  /** serialize() ciktisini bu Battle'a yukler (ayni config ve kapasite varsayilir). */
+  /** Loads the serialize() output into this Battle (same config and capacity are assumed). */
   restore(s: BattleSnapshot): void {
     const u = this.units;
     const sc = s.scalars;
@@ -1253,7 +1253,7 @@ export class Battle {
     this.countAlive();
   }
 
-  /** Durum kontrol toplami (FNV-1a): konum, can, yasam, hedef, rng ve adim sayaci. */
+  /** State checksum (FNV-1a): position, HP, alive flag, target, rng and the step counter. */
   hash(): number {
     const u = this.units;
     const n = u.count;
@@ -1268,7 +1268,7 @@ export class Battle {
     return h;
   }
 
-  /** Gorsel durum maskesini yazar (renderer renklendirir). */
+  /** Writes the visual status mask (the renderer tints with it). */
   private updateStatus(): void {
     const u = this.units;
     for (let i = 0; i < u.count; i++) {
@@ -1291,7 +1291,7 @@ export class Battle {
     return (this.skillCache[id] ??= skillParams(id, this.config.level ?? DEFAULT_LEVEL));
   }
 
-  /** Hasar carpani: zayiflatma, ofke, mizrak yigini. */
+  /** Damage multiplier: weaken, rage, spear stacks. */
   private dealMul(i: number): number {
     const u = this.units;
     let m = 1;
@@ -1328,7 +1328,7 @@ export class Battle {
     if (this.emitEvents) this.pushEvent({ type: 'burst', x, y, unit: -1, value: radius, element: skill ? (SKILL_ELEMENT[skill] ?? 0) : 0 });
   }
 
-  /** Verilen takimlarin canli birimlerinden (x,y) merkezli r yaricap icindekileri out'a toplar. */
+  /** Collects the living units of the given teams within radius r of (x,y) into out. */
   private gather(teams: number[], x: number, y: number, r: number, out: number[], max = 96): number {
     const u = this.units;
     out.length = 0;
@@ -1361,7 +1361,7 @@ export class Battle {
     return out.length;
   }
 
-  /** (ox,oy) noktasindan (dx,dy) yonunde uzunluk x yari-genislik seridindeki dusmanlar. */
+  /** Enemies in the strip of length x half-width from point (ox,oy) in direction (dx,dy). */
   private gatherLine(teams: number[], ox: number, oy: number, dx: number, dy: number, length: number, half: number, out: number[]): number {
     const u = this.units;
     const tmp = this.scratch2;
@@ -1420,7 +1420,7 @@ export class Battle {
   private applyTaunt(j: number, by: number, dur: number): void {
     const u = this.units;
     if (u.invulnT[j] > 0) return;
-    // Zaten baska bir tank kiskirtiyorsa hedef degistirme (salinim olmasin).
+    // If another tank is already taunting, do not switch targets (to avoid oscillation).
     if (u.tauntT[j] > 0 && u.tauntBy[j] !== by && u.tauntBy[j] >= 0 && u.alive[u.tauntBy[j]]) return;
     u.tauntBy[j] = by;
     u.tauntT[j] = Math.max(u.tauntT[j], dur);
@@ -1456,7 +1456,7 @@ export class Battle {
     return gained;
   }
 
-  /** Cevredeki dost birimleri iyilestirir (merkezdekiler dahil). */
+  /** Heals the friendly units around (including those at the center). */
   private healArea(team: number, x: number, y: number, r: number, amount: number): void {
     const out = this.scratch;
     this.gather(this.selfList[team], x, y, r, out, 64);
@@ -1487,7 +1487,7 @@ export class Battle {
     }
   }
 
-  /** Yetenekli birimlerin yasam dongusu kurulumu: iskelet havuzu, hex baglari. */
+  /** Lifecycle setup for skilled units: skeleton pool, hex links. */
   private setupSkills(): void {
     const u = this.units;
     const skelKind = KIND_OF_TROOP['bone-soldier'];
@@ -1519,7 +1519,7 @@ export class Battle {
     }
   }
 
-  /** Bone Caller: havuzdan iskelet uyandirir. */
+  /** Bone Caller: wakes a skeleton from the pool. */
   private summon(i: number): void {
     const u = this.units;
     const pool = this.pools.get(i);
@@ -1559,7 +1559,7 @@ export class Battle {
     if ((u.flags[i] & F_EXPLODED) !== 0) return;
     u.flags[i] |= F_EXPLODED;
     const p = this.sp('explode');
-    // Olum sirasinda cagrilabilir: ic ice gecen dongulerin ortak dizisini bozmamak icin yerel dizi.
+    // May be called during death: a local array so as not to corrupt the shared array of nested loops.
     const out: number[] = [];
     this.gather(this.enemyList[u.team[i]], u.x[i], u.y[i], p.radius, out, 64);
     for (let k = 0; k < out.length; k++) this.damage(out[k], p.dmg, i, false);
@@ -1567,7 +1567,7 @@ export class Battle {
     if (u.alive[i]) this.killUnit(i);
   }
 
-  /** Periyodik yetenekler: kiskirtma, alay, tas irade. */
+  /** Periodic skills: taunt, mockery, stone will. */
   private periodic(i: number, dt: number, skill: SkillId): void {
     const u = this.units;
     u.skillT[i] -= dt;
@@ -1583,7 +1583,7 @@ export class Battle {
         return;
       }
       for (let k = 0; k < out.length; k++) {
-        // Kiskirtma bir sonraki doneme kadar surer: hedef surekli degismesin.
+        // The taunt lasts until the next period: so the target does not keep changing.
         this.applyTaunt(out[k], i, p.b + 0.5);
         if (skill === 'mock') this.applyWeak(out[k], p.dur, p.a);
       }
@@ -1604,7 +1604,7 @@ export class Battle {
     }
   }
 
-  /** Yakin-dovus vurusu: temel hasar + yetenek. */
+  /** Melee hit: base damage + skill. */
   private meleeHit(i: number, t: number, dist: number, dx: number, dy: number, power: number, skill: SkillId | null): void {
     const u = this.units;
     const s = STATS[u.kind[i]];
@@ -1618,7 +1618,7 @@ export class Battle {
     const out = this.scratch;
     let dealt = 0;
     if (skill === 'stun') {
-      // Night Lancer: her vurus onundeki seride guclu saplama + sersemletme.
+      // Night Lancer: every hit is a strong thrust into the strip in front of it + a stun.
       const p = this.sp('stun');
       this.gatherLine(this.enemyList[u.team[i]], u.x[i], u.y[i], nx, ny, p.length, p.half, out);
       for (let k = 0; k < out.length; k++) {
@@ -1729,7 +1729,7 @@ export class Battle {
     }
   }
 
-  /** Uzaktan saldiri: mermi uretir, yetenek icin yuk/bayrak koyar. */
+  /** Ranged attack: spawns a projectile, sets the payload/flags for the skill. */
   private fireShot(i: number, t: number, dist: number, power: number, skill: SkillId | null): void {
     const u = this.units;
     const s = STATS[u.kind[i]];
@@ -1781,7 +1781,7 @@ export class Battle {
     if (this.emitEvents) this.pushEvent({ type: 'shot', x: u.x[i], y: u.y[i], unit: i, angle: Math.atan2(ty - u.y[i], tx - u.x[i]) });
   }
 
-  /** Horned Seer: ayni anda birden cok dusmana ates kuresi. */
+  /** Horned Seer: fireballs at several enemies at once. */
   private fireOrbs(i: number, p: SkillParams): void {
     const u = this.units;
     const out = this.scratch;
@@ -1794,7 +1794,7 @@ export class Battle {
     }
   }
 
-  /** Mermi indi: alan, delici ya da tek hedef; yetenek yan etkileri. */
+  /** Projectile landed: area, piercing or single target; skill side effects. */
   private arrowLanded(x: number, y: number, team: number, dmg: number, idx: number): void {
     const u = this.units;
     const pr = this.projectiles;
@@ -1836,7 +1836,7 @@ export class Battle {
       }
       if (best >= 0) out.push(best);
       if (best >= 0 && (fl & PF_PIERCE) !== 0) {
-        // Delici: ayni noktanin hemen arkasindaki iki dusmana daha, azalan hasarla.
+        // Piercing: two more enemies right behind the same point, with reduced damage.
         const extra = this.scratch2;
         this.gather(enemies, x, y, 1.6, extra, 12);
         let n = 2;
@@ -1881,7 +1881,7 @@ export class Battle {
     this.landSkill(src, x, y, team, skill, fl, first);
   }
 
-  /** Inis sonrasi yetenek etkileri: bolge, bolunen toplar. */
+  /** Skill effects after landing: zone, split balls. */
   private landSkill(src: number, x: number, y: number, team: number, skill: SkillId | null, fl: number, first = -1): void {
     if (!skill || src < 0) return;
     const p = this.sp(skill);
@@ -1899,11 +1899,11 @@ export class Battle {
     }
   }
 
-  /** Hasar uygular; gercekte dusen can miktarini dondurur. src: saldiran, melee: yakin vurus, quiet: olay/parlama uretme (sureli hasar). */
+  /** Applies damage; returns the health actually lost. src: attacker, melee: close hit, quiet: do not produce events/flashes (damage over time). */
   private damage(j: number, amount: number, src = -1, melee = false, quiet = false): number {
     const u = this.units;
     if (!u.alive[j] || u.invulnT[j] > 0) return 0;
-    // Uzun suredir kimse olmediyse hasar kademeli artar: iyilestirme dengesi savasi kilitleyemez.
+    // If no one has died for a long time, damage ramps up gradually: a heal stalemate cannot lock the battle.
     const stale = this.time - this.lastDeathTime - STALE_AFTER;
     if (stale > 0) amount *= 1 + stale * STALE_RAMP;
     amount *= 1 - STATS[u.kind[j]].armor;
@@ -1958,16 +1958,16 @@ export class Battle {
       if (u.kiteState[j] === 1) this.dbg.archerDeathsKiting++;
     }
     if (this.emitEvents) {
-      // Vurustan uzaga yon ve son vurus siddeti (komedi gorunumu ragdoll firlatmasi icin).
+      // Direction away from the hit and last hit strength (for the comedy-look ragdoll launch).
       const ang = src >= 0 && src !== j ? Math.atan2(u.y[j] - u.y[src], u.x[j] - u.x[src]) : u.facing[j] > 0 ? Math.PI : 0;
       this.pushEvent({ type: 'death', x: u.x[j], y: u.y[j], unit: j, kind: u.kind[j], angle: ang, value: dmg });
     }
   }
 
   /**
-   * Hedefe dogru yuru. Arazi varsa: nehrin karsisindaysa kopruden gecer (useRoute), yurunemez
-   * karoya girerse eksen boyunca kayar, ilerleyemiyorsa yan adimla kurtulmayi dener.
-   * Gercek kat edilen mesafeyi dondurur.
+   * Walk toward the target. With terrain: crosses a bridge if the target is across the river (useRoute), slides
+   * along the axis if it would enter a non-walkable tile, and tries to escape with a sidestep if it cannot advance.
+   * Returns the distance actually covered.
    */
   private moveToward(i: number, gx: number, gy: number, speed: number, dt: number, faceMove = true, useRoute = true): number {
     if (this.units.slowT[i] > 0 || this.units.flags[i] !== 0) speed *= this.moveMul(i);
@@ -1997,7 +1997,7 @@ export class Battle {
       ux /= m;
       uy /= m;
     }
-    // Yumusak yon: kararli ilerleme icin yonu hedefe dogru yumusakca cevir; ters donuste fren yap.
+    // Smooth heading: turn the heading gently toward the target for steady progress; brake on a reversal.
     const hl = Math.abs(u.hx[i]) + Math.abs(u.hy[i]);
     if (hl < 0.01) {
       u.hx[i] = ux;
@@ -2014,26 +2014,26 @@ export class Battle {
       u.hx[i] = hx;
       u.hy[i] = hy;
     }
-    // Ivmelen: duran birim hizli ama aninda degil kalkar; hedef hiz asilmaz.
+    // Accelerate: a standing unit gets going quickly but not instantly; the target speed is never exceeded.
     u.spd[i] = Math.min(speed, u.spd[i] + MOTION.accel * dt);
-    // Guvenlik: hesaplanan hiz cok dusukse yine de ilerle (sikisma tespiti calissin).
+    // Safety: if the computed speed is very low, still advance (so stuck detection can work).
     const eff = Math.max(u.spd[i], speed * 0.25);
     ux = u.hx[i];
     uy = u.hy[i];
     let step = Math.min(eff * dt, d);
     const ox = u.x[i];
     const oy = u.y[i];
-    // Yokus yukari: egime gore yavaslar (en cok %35); yokus asagi etkilemez.
+    // Uphill: slows down with the slope (at most 35%); downhill has no effect.
     if (t && t.hasRelief) {
       const dh = t.heightAt(ox + ux * 0.45, oy + uy * 0.45) - t.heightAt(ox, oy);
       if (dh > 0.04) step *= 1 - Math.min(0.35, dh * 0.6);
     }
-    // Konumlar Float32 saklanir: yurunebilirlik testi yuvarlanmis degerle yapilmali.
+    // Positions are stored as Float32: the walkability test must use the rounded value.
     const lim = this.mapSize - 0.5;
     let nx = Math.fround(Math.min(lim, Math.max(0.5, ox + ux * step)));
     let ny = Math.fround(Math.min(lim, Math.max(0.5, oy + uy * step)));
     if (t && !t.stepOk(ox, oy, nx, ny)) {
-      // Engel onunde kenar boyunca TAM hizla kay (hedef yonu engele dikse bile ilerleyebilsin).
+      // In front of an obstacle, slide along the edge at FULL speed (so the unit can progress even if the target direction is perpendicular to the obstacle).
       const canX = t.walkable(Math.fround(ox + (ux >= 0 ? step : -step)), oy);
       const canY = t.walkable(ox, Math.fround(oy + (uy >= 0 ? step : -step)));
       const dirX = Math.abs(ux) > 1e-3 ? (ux > 0 ? 1 : -1) : u.sideDir[i];
@@ -2041,7 +2041,7 @@ export class Battle {
       let slideX = canX && (!canY || Math.abs(ux) >= Math.abs(uy));
       let slideY = canY && !slideX;
       if (!slideX && !slideY) {
-        // Iki eksen de dogrudan yonde kapali: ters yone (engelin yanina) dene.
+        // Both axes are blocked in the direct direction: try the opposite direction (beside the obstacle).
         if (t.walkable(Math.fround(ox + dirX * -step), oy) && Math.abs(ux) > 1e-3) {
           nx = Math.fround(ox - dirX * step);
           ny = oy;
@@ -2060,7 +2060,7 @@ export class Battle {
         ny = Math.fround(Math.min(lim, Math.max(0.5, oy + dirY * step)));
         if (!t.walkable(nx, ny)) ny = oy;
       }
-      // Ters yone kayma dali da dogrulanmali.
+      // The slide branch in the opposite direction must be validated too.
       if (!t.walkable(nx, ny)) {
         nx = ox;
         ny = oy;
@@ -2075,7 +2075,7 @@ export class Battle {
     u.vy[i] = mdy / dt;
     if (mv > 1e-4) u.moving[i] = 1;
 
-    // Net yer degistirme penceresi: 0.8 sn'de 0.3 tile'dan az ilerlediyse (ileri-geri kipirdama dahil) sikismis say.
+    // Net displacement window: count as stuck if the unit advanced less than 0.3 tiles in 0.8 s (including back-and-forth wiggling).
     u.winT[i] += dt;
     if (u.winT[i] >= 0.8) {
       const wx = u.x[i] - u.winX[i];
@@ -2088,7 +2088,7 @@ export class Battle {
       u.winY[i] = u.y[i];
       u.winT[i] = 0;
     }
-    // Hedefe dogru gercek ilerleme (kenar boyunca surunmek ilerleme sayilmaz).
+    // Real progress toward the target (dragging along an edge does not count as progress).
     const progress = mdx * ux + mdy * uy;
     if (step > 0.02 && progress < step * 0.25) {
       u.stuckT[i] += dt;
@@ -2106,8 +2106,8 @@ export class Battle {
   }
 
   /**
-   * Sikisan birim icin A* yolu: yol varsa (rx, ry) = siradaki ara nokta. Yol yoksa hedef
-   * ulasilamaz sayilir ve yasaklanir.
+   * A* path for a stuck unit: if a path exists, (rx, ry) = the next waypoint. If there is none, the target
+   * is considered unreachable and banned.
    */
   private followPath(i: number, gx: number, gy: number, dt: number): void {
     const u = this.units;
@@ -2123,8 +2123,8 @@ export class Battle {
         p = undefined;
       }
     }
-    // Her ~0.6 sn'de (birime kaydirmali) goruş hatti kontrolu: hedef/ara hedef gorunmuyorsa yol iste,
-    // gorunuyorsa mevcut yolu birak.
+    // Every ~0.6 s (staggered per unit) a line-of-sight check: if the target/waypoint is not visible, request a path,
+    // if it is visible, drop the current path.
     let blocked = false;
     if ((i + this.stepNo) % 20 === 0) {
       const dx0 = gx - u.x[i];
@@ -2137,7 +2137,7 @@ export class Battle {
       }
       blocked = far && !clear;
     }
-    // Aktif yolun siradaki ara noktasi mevcut konumdan gorunmuyorsa (surunme/itilme) yolu yeniden kur.
+    // If the next waypoint of the active path is not visible from the current position (dragged/pushed), rebuild the path.
     let dropped = false;
     if (p) {
       const k = Math.min(p.k, p.pts.length / 2 - 1);
@@ -2178,7 +2178,7 @@ export class Battle {
       if (wx * wx + wy * wy > 0.12) break;
       p.k++;
     }
-    // Birimin guncel konumundan bir sonraki ara nokta dogrudan gorunuyorsa ara noktayi atla.
+    // If the next waypoint is directly visible from the unit's current position, skip the waypoint.
     if (p.k + 1 < m && t.lineWalkable(u.x[i], u.y[i], p.pts[(p.k + 1) * 2], p.pts[(p.k + 1) * 2 + 1])) p.k++;
     if (p.k >= m) {
       this.paths.delete(i);
@@ -2189,7 +2189,7 @@ export class Battle {
     u.sideT[i] = 0;
   }
 
-  /** Nehir gecisi: hedef karsi yakadaysa (rx, ry) = kopru girisi/cikisi, degilse hedefin kendisi. */
+  /** River crossing: if the target is on the opposite bank, (rx, ry) = bridge entrance/exit, otherwise the target itself. */
   private applyRoute(i: number, gx: number, gy: number): void {
     const u = this.units;
     const t = this.terrain!;
@@ -2200,7 +2200,7 @@ export class Battle {
     let b = u.route[i];
     const lat = (((i * 37) % 100) / 100 - 0.5) * 1.8;
 
-    // Kopru koridorunun disina ciktiysa (kiyiya itildi, hedef degisti) evreyi sifirla: girise don.
+    // If it left the bridge corridor (pushed to the shore, target changed), reset the phase: return to the entrance.
     if (b >= 0 && u.routePhase[i] === 1) {
       const br = t.bridges[b];
       const s = t.toS(u.x[i], u.y[i]);
@@ -2210,7 +2210,7 @@ export class Battle {
 
     if (su === sg) {
       if (b >= 0 && u.routePhase[i] === 1) {
-        // Orta noktayi gectik: karsi uca kadar kopruden cik.
+        // Past the midpoint: leave via the bridge up to the far end.
         const e = this.tmpA;
         t.bridgeEnd(t.bridges[b], su, lat, e);
         const ex = e.x - u.x[i];
@@ -2271,11 +2271,11 @@ export class Battle {
   }
 
   private faceTo(i: number, dx: number, dy: number): void {
-    const sx = dx - dy; // ekran x yonu
+    const sx = dx - dy; // screen x direction
     if (Math.abs(sx) > 0.05) this.units.facing[i] = sx >= 0 ? 1 : -1;
   }
 
-  /** Komsu hucrelerdeki birimlerle ittirme: her cift bir kez islenir (j > i). */
+  /** Pushing against units in neighboring cells: each pair is processed once (j > i). */
   private separate(): void {
     const u = this.units;
     const phase = this.sepTick++ % SEP_STRIDE;
@@ -2290,7 +2290,7 @@ export class Battle {
       const f = flags![(Math.fround(y) | 0) * n + (Math.fround(x) | 0)];
       return f === T_WATER || f === T_BLOCKED;
     };
-    // Itme: hedef su/engel olmamali ve kose capraz gecisinde yan komsular acik olmali.
+    // Push: the destination must not be water/an obstacle, and on a corner diagonal move the side neighbors must be open.
     const bad = (ox: number, oy: number, x: number, y: number): boolean => {
       if (!flags) return false;
       if (isBad(x, y)) return true;
@@ -2300,9 +2300,9 @@ export class Battle {
       const gy = Math.fround(oy);
       return (gx | 0) !== (fx | 0) && (gy | 0) !== (fy | 0) && (isBad(fx, gy) || isBad(gx, fy));
     };
-    // Yumusak ayrisma: her adimda 1/SEP_STRIDE'i komsu ciftlerden (j > i) itme hizi biriktirir
-    // (i'ye +, j'ye -); tum birimler itme hizini HER adim uygular ve hiz sonumlenir. Karsilikli
-    // sert itmeyle olusan kare-kare titreme boylece olmaz.
+    // Soft separation: each step accumulates push velocity from 1/SEP_STRIDE of the neighbor pairs (j > i)
+    // (+ to i, - to j); all units apply the push velocity EVERY step and the velocity decays. This avoids
+    // the frame-to-frame jitter caused by hard mutual pushing.
     const maxStep = SEP_MAX_STEP;
     const sx = u.sepX;
     const sy = u.sepY;
@@ -2314,7 +2314,7 @@ export class Battle {
         const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / grid.cell) | 0));
         const xi = u.x[i];
         const yi = u.y[i];
-        // Saldiran birim yerinde durur: komsulari onu az iter (vurus animasyonu oynamayi surdurur).
+        // An attacking unit holds its ground: its neighbors push it less (the hit animation keeps playing).
         const wi = u.swing[i] > 0 ? 0.35 : 1;
         for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
           for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
@@ -2329,7 +2329,7 @@ export class Battle {
               let fx: number;
               let fy: number;
               if (d2 < 1e-6) {
-                // Tam ust uste: indekse gore sabit, deterministik bir yon.
+                // Exactly on top of each other: a fixed, deterministic direction based on the index.
                 const a = (i * 2.399963) % 6.283185;
                 fx = Math.cos(a) * SEPARATION_RADIUS * 0.5;
                 fy = Math.sin(a) * SEPARATION_RADIUS * 0.5;
@@ -2384,7 +2384,7 @@ export class Battle {
     this.pushAroundTanks(bad);
   }
 
-  /** Tanklar (2x boyut) yakinlarindaki birimleri belirgin sekilde iter. */
+  /** Tanks (2x size) clearly push nearby units. */
   private pushAroundTanks(bad: (ox: number, oy: number, x: number, y: number) => boolean): void {
     const u = this.units;
     const R = TANK.pushRadius;
@@ -2395,7 +2395,7 @@ export class Battle {
       const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / g0.cell) | 0));
       const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / g0.cell) | 0));
       for (let t = 0; t < this.teamCount; t++) {
-        // Tank yalniz DUSMAN birimleri iter: dost birimleri iterse ayni takim birbirini kilitler.
+        // A tank pushes only ENEMY units: if it pushed friendly units, the same team would lock itself up.
         if (t === u.team[i]) continue;
         const grid = this.grids[t];
         for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
@@ -2427,7 +2427,7 @@ export class Battle {
   }
 }
 
-/** Blok genisligi (kolon) ve aralik; blok, derinliginden genis olur. */
+/** Block width (columns) and spacing; the block ends up wider than it is deep. */
 export function benchLayout(perTeam: number): { cols: number; rows: number; spacing: number } {
   const cols = Math.max(2, Math.ceil(Math.sqrt(perTeam * 1.6)));
   return { cols, rows: Math.ceil(perTeam / cols), spacing: 1.2 };
@@ -2437,7 +2437,7 @@ function benchMapSize(perTeam: number): number {
   const { cols, rows, spacing } = benchLayout(perTeam);
   const depth = 2 * rows * spacing + BENCH_GAP;
   const width = cols * spacing;
-  // Ordular capraz (x-y) eksende dizildigi icin harita kosegeni (x1.41) yetmeli.
+  // Since the armies line up along the diagonal (x-y) axis, the map diagonal (x1.41) must suffice.
   return Math.ceil(Math.max(depth, width) / 1.38) + 8;
 }
 
@@ -2459,13 +2459,13 @@ export function projectileCapacity(config: BattleConfig): number {
 export function mapSizeFor(config: BattleConfig): number {
   if (config.mode === 'custom') return config.mapSize ?? MAP_SIZE;
   if (config.mode !== 'bench') return MAP_SIZE;
-  // Cevre aciksa ordu blogunun cevresinde orman/koy icin pay birakilir.
+  // If the environment is on, room is left around the army block for forest/village.
   return Math.ceil(benchMapSize(config.perTeam) * (config.env === false ? 1 : 1.3));
 }
 
-/** Doguslarin kapladigi bolge: engel/dekor bu bolgeye konmaz. */
+/** Area covered by the spawns: obstacles/decor are not placed in this area. */
 function spawnZone(config: BattleConfig): { spawnD0: number; spawnD1: number; spawnHalfS: number } {
-  // custom: kullanici serbest yerlestirir, doguş bolgesi rezerve edilmez.
+  // custom: the user places freely, no spawn area is reserved.
   if (config.mode === 'custom') return { spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 };
   if (config.mode === 'bench') {
     const { cols, rows, spacing } = benchLayout(config.perTeam);
@@ -2478,7 +2478,7 @@ function spawnZone(config: BattleConfig): { spawnD0: number; spawnD1: number; sp
   return { spawnD0: DEMO_GAP_HALF - 1, spawnD1: DEMO_GAP_HALF + 4.5 + 1.5, spawnHalfS: 7 };
 }
 
-/** Sim (worker) ve renderer (ana thread) ayni haritayi bununla uretir. */
+/** The sim (worker) and the renderer (main thread) both generate the same map with this. */
 export function terrainFor(config: BattleConfig): Terrain | null {
   if (config.env === false) return null;
   return new Terrain(mapSizeFor(config), { seed: config.terrainSeed ?? 1, spec: config.map, ...spawnZone(config) });

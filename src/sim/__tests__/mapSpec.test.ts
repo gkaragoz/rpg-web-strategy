@@ -12,17 +12,17 @@ function allSpecs(): MapSpec[] {
   return out;
 }
 
-describe('harita tarifi', () => {
-  it('varsayilan tarif eski haritayi uretir (bozulmaz)', () => {
+describe('map recipe', () => {
+  it('the default recipe produces the old map (no regression)', () => {
     const a = new Terrain(56, { seed: 3, ...opts });
     const b = new Terrain(56, { seed: 3, spec: DEFAULT_MAP, ...opts });
     expect(Array.from(a.flags)).toEqual(Array.from(b.flags));
     expect(a.decor.length).toBe(b.decor.length);
   });
 
-  it('her tarif merkeze gore simetrik, nehir ayni bolgede bagli ve tohum determinist', () => {
+  it('every recipe is symmetric about the center, the river is connected within one region and the seed is deterministic', () => {
     const specs = allSpecs();
-    // Tum kombinasyonlari (5*5*5*3=375) kucuk haritada, boyut/tohum karisik tara.
+    // Sweep all combinations (5*5*5*3=375) on small maps, mixing sizes/seeds.
     specs.forEach((spec, i) => {
       const size = [40, 56, 80][i % 3];
       const t = new Terrain(size, { seed: 1 + (i % 9), spec, ...opts });
@@ -30,7 +30,7 @@ describe('harita tarifi', () => {
       for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) if (t.flags[y * size + x] !== t.flags[(size - 1 - y) * size + (size - 1 - x)]) asym++;
       expect(asym, JSON.stringify(spec)).toBe(0);
       const u = new Terrain(size, { seed: 1 + (i % 9), spec, ...opts });
-      expect(Array.from(u.flags), 'determinizm').toEqual(Array.from(t.flags));
+      expect(Array.from(u.flags), 'determinism').toEqual(Array.from(t.flags));
       for (const br of t.bridges) {
         const p = { x: 0, y: 0 };
         const q = { x: 0, y: 0 };
@@ -42,7 +42,7 @@ describe('harita tarifi', () => {
     });
   });
 
-  it('iki ordu bolgesi (bir yaka ve oteki) ana bolgede ve birbirine ulasilabilir', () => {
+  it('both army zones (one bank and the other) are in the main region and reachable from each other', () => {
     for (const p of PRESETS) {
       for (const size of [56, 80]) {
         const t = new Terrain(size, { seed: 5, spec: p.spec, ...demo });
@@ -54,7 +54,7 @@ describe('harita tarifi', () => {
     }
   });
 
-  it('nehirsiz haritada su yok; adali haritada ada karolari var', () => {
+  it('no water on a riverless map; island tiles exist on an islands map', () => {
     const none = new Terrain(56, { seed: 2, spec: { ...DEFAULT_MAP, river: 'none' }, ...opts });
     expect(none.bridges.length).toBe(0);
     expect(none.flags.includes(T_WATER)).toBe(false);
@@ -63,7 +63,7 @@ describe('harita tarifi', () => {
     expect(isl.flags.includes(T_WATER)).toBe(true);
   });
 
-  it('kabartmali haritalar: simetri, determinizm, ucurum yurunemez, rampa baglantisi, duz zeminde yapi', () => {
+  it('relief maps: symmetry, determinism, cliffs are not walkable, ramp connectivity, structures on flat ground', () => {
     for (const relief of RELIEFS.filter((r) => r !== 'flat')) {
       for (const river of ['none', 'winding', 'lake'] as const) {
         for (const size of [56, 80]) {
@@ -72,10 +72,10 @@ describe('harita tarifi', () => {
           const u = new Terrain(size, { seed: 4, spec, ...demo });
           const tag = `${relief} ${river} ${size}`;
           expect(t.hasRelief, tag).toBe(true);
-          expect(Array.from(u.height), `${tag} determinizm`).toEqual(Array.from(t.height));
-          for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) expect(t.height[y * size + x], `${tag} yukselti simetrisi`).toBe(t.height[(size - 1 - y) * size + (size - 1 - x)]);
+          expect(Array.from(u.height), `${tag} determinism`).toEqual(Array.from(t.height));
+          for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) expect(t.height[y * size + x], `${tag} height symmetry`).toBe(t.height[(size - 1 - y) * size + (size - 1 - x)]);
           for (const i of t.cliffTiles) expect(t.flags[i], tag).toBe(3);
-          // Yurunebilir komsu karolar arasinda ucurum esiginin altinda fark.
+          // Walkable neighboring tiles differ by less than the cliff threshold.
           for (let y = 0; y < size - 1; y++) {
             for (let x = 0; x < size - 1; x++) {
               const w = (a: number, b: number): boolean => t.flags[a] !== 1 && t.flags[a] !== 3 && t.flags[b] !== 1 && t.flags[b] !== 3;
@@ -84,17 +84,17 @@ describe('harita tarifi', () => {
               if (w(i, i + size)) expect(Math.abs(t.height[i] - t.height[i + size]), tag).toBeLessThanOrEqual(23);
             }
           }
-          // Iki ordu bolgesi birbirine ulasabilir.
+          // Both army zones can reach each other.
           const a = t.nearestWalkable(size * 0.25, size * 0.75, 14, true);
           const b = t.nearestWalkable(size * 0.75, size * 0.25, 14, true);
           expect(a && b, tag).toBeTruthy();
-          expect(t.findPath(a!.x, a!.y, b!.x, b!.y), `${tag} yol`).not.toBeNull();
+          expect(t.findPath(a!.x, a!.y, b!.x, b!.y), `${tag} path`).not.toBeNull();
         }
       }
     }
   });
 
-  it('kurgular: simetri, determinizm, baglanti; kale, kopruler ve yollar', () => {
+  it('layouts: symmetry, determinism, connectivity; keep, bridges and paths', () => {
     for (const layout of LAYOUTS.filter((l) => l !== 'classic')) {
       for (const biome of BIOMES) {
         for (const size of [56, 80, 120]) {
@@ -102,12 +102,12 @@ describe('harita tarifi', () => {
           const t = new Terrain(size, { seed: 6, spec, ...opts });
           const u = new Terrain(size, { seed: 6, spec, ...opts });
           const tag = `${layout} ${biome} ${size}`;
-          expect(Array.from(u.flags), `${tag} determinizm`).toEqual(Array.from(t.flags));
-          for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) expect(t.flags[y * size + x] === t.flags[(size - 1 - y) * size + (size - 1 - x)], `${tag} simetri ${x},${y}`).toBe(true);
+          expect(Array.from(u.flags), `${tag} determinism`).toEqual(Array.from(t.flags));
+          for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) expect(t.flags[y * size + x] === t.flags[(size - 1 - y) * size + (size - 1 - x)], `${tag} symmetry ${x},${y}`).toBe(true);
           const a = t.nearestWalkable(size * 0.25, size * 0.75, 16, true);
           const b = t.nearestWalkable(size * 0.75, size * 0.25, 16, true);
           expect(a && b, tag).toBeTruthy();
-          expect(t.findPath(a!.x, a!.y, b!.x, b!.y), `${tag} yol`).not.toBeNull();
+          expect(t.findPath(a!.x, a!.y, b!.x, b!.y), `${tag} path`).not.toBeNull();
           if (layout === 'citadel') {
             expect(t.decor.filter((d) => d.kind === 'keep').length, tag).toBe(1);
             expect(t.decor.filter((d) => d.kind === 'tower').length, tag).toBeGreaterThanOrEqual(2);
@@ -119,7 +119,7 @@ describe('harita tarifi', () => {
     }
   });
 
-  it('sanitizeSpec bozuk girdiyi duzeltir; randomSpec gecerli tarif verir', () => {
+  it('sanitizeSpec repairs malformed input; randomSpec returns a valid recipe', () => {
     expect(sanitizeSpec(null)).toEqual(DEFAULT_MAP);
     expect(sanitizeSpec({ biome: 'moon', river: 'lake' })).toEqual({ ...DEFAULT_MAP, river: 'lake' });
     const rnd = mulberry32(9);

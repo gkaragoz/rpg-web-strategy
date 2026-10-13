@@ -1,4 +1,4 @@
-/** Mermi bayraklari: delici, yetenek tetikli. */
+/** Projectile flags: piercing, skill-triggered. */
 export const PF_PIERCE = 1;
 export const PF_SKILL = 2;
 
@@ -15,11 +15,11 @@ export class Projectiles {
   height: Float32Array;
   dmg: Float32Array;
   team: Uint8Array;
-  /** Yuk: atan birim (-1: yok), alan yaricapi ve bayraklar (PF_*). */
+  /** Payload: shooter unit (-1: none), area radius and flags (PF_*). */
   src: Int32Array;
   splash: Float32Array;
   flags: Uint8Array;
-  /** Gorunum etiketi (units.ts PROJ_TAG). */
+  /** Look tag (PROJ_TAG in units.ts). */
   tag: Uint8Array;
   cursor = 0;
 
@@ -48,7 +48,7 @@ export class Projectiles {
   }
 
   spawn(sx: number, sy: number, tx: number, ty: number, dur: number, height: number, dmg: number, team: number, src = -1, splash = 0, flags = 0, tag = 0): void {
-    // Donen imlecle bos yuva ara: tum diziyi her seferinde taramaz.
+    // Look for a free slot with a rotating cursor: avoids scanning the whole array every time.
     let i = this.cursor;
     let tries = 0;
     while (this.active[i] && tries < this.cap) {

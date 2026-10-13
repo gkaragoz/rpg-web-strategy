@@ -2,7 +2,7 @@ import { Reassembler, splitMsg } from './chunk';
 import type { Msg } from './protocol';
 import { noop, type Transport } from './transport';
 
-/** WebSocket odasina baglanma hatasi. */
+/** Error while connecting to a WebSocket room. */
 export class NetError extends Error {
   constructor(
     readonly code: 'noroom' | 'taken' | 'full' | 'failed',
@@ -12,7 +12,7 @@ export class NetError extends Error {
   }
 }
 
-/** LAN sunucusu yanit vermezse (ornegin Pages) hemen internete gecilsin. */
+/** If the LAN server does not answer (e.g. on Pages), fall back to the internet right away. */
 const WS_TIMEOUT_MS = 4000;
 
 interface Ack {
@@ -21,7 +21,7 @@ interface Ack {
   err?: string;
 }
 
-/** Sayfanin geldigi sunucunun /ws adresi (LAN: host'un sunucusu). */
+/** The /ws address of the server the page came from (LAN: the host's server). */
 export function lanUrl(room: string, role: 'host' | 'guest', base?: string): string {
   const loc = typeof location !== 'undefined' ? location : { protocol: 'http:', host: 'localhost:5174' };
   const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -39,7 +39,7 @@ function open(url: string, timeoutMs = WS_TIMEOUT_MS): Promise<{ ws: WebSocket; 
       return;
     }
     let done = false;
-    const timer = setTimeout(() => fail(new NetError('failed', 'Baglanti zaman asimi')), timeoutMs);
+    const timer = setTimeout(() => fail(new NetError('failed', 'timeout')), timeoutMs);
     const fail = (err: NetError): void => {
       if (done) return;
       done = true;
@@ -47,12 +47,12 @@ function open(url: string, timeoutMs = WS_TIMEOUT_MS): Promise<{ ws: WebSocket; 
       try {
         ws.close();
       } catch {
-        /* kapali */
+        /* already closed */
       }
       reject(err);
     };
-    ws.onerror = () => fail(new NetError('failed', 'Baglanti kurulamadi'));
-    ws.onclose = () => fail(new NetError('failed', 'Baglanti kapandi'));
+    ws.onerror = () => fail(new NetError('failed', 'connect-failed'));
+    ws.onclose = () => fail(new NetError('failed', 'closed'));
     ws.onmessage = (ev) => {
       if (done) return;
       let a: Ack;
@@ -71,7 +71,7 @@ function open(url: string, timeoutMs = WS_TIMEOUT_MS): Promise<{ ws: WebSocket; 
   });
 }
 
-/** Host ucu: odayi olusturur; misafir mesajlari sunucu uzerinden gelir. */
+/** Host endpoint: creates the room; guest messages arrive through the server. */
 export class WsHostTransport implements Transport {
   readonly id = 'host';
   readonly isHost = true;
@@ -102,7 +102,7 @@ export class WsHostTransport implements Transport {
         if (full) this.onMessage(m.from, full);
       }
     };
-    ws.onclose = () => this.onClose('Sunucu baglantisi koptu');
+    ws.onclose = () => this.onClose('serverLost');
   }
 
   static async create(url: string, timeoutMs?: number): Promise<WsHostTransport> {
@@ -123,12 +123,12 @@ export class WsHostTransport implements Transport {
     try {
       this.ws.close();
     } catch {
-      /* kapali */
+      /* already closed */
     }
   }
 }
 
-/** Misafir ucu: odaya katilir; yalniz host ile konusur. */
+/** Guest endpoint: joins the room and only talks to the host. */
 export class WsGuestTransport implements Transport {
   readonly isHost = false;
   onMessage: (from: string, msg: Msg) => void = noop;
@@ -156,7 +156,7 @@ export class WsGuestTransport implements Transport {
         if (full) this.onMessage('host', full);
       }
     };
-    ws.onclose = () => this.onClose('Baglanti koptu');
+    ws.onclose = () => this.onClose('lost');
   }
 
   static async create(url: string, timeoutMs?: number): Promise<WsGuestTransport> {
@@ -168,16 +168,16 @@ export class WsGuestTransport implements Transport {
     for (const p of splitMsg(msg, this.chunkId++)) this.ws.send(JSON.stringify({ msg: p }));
   }
   broadcast(): void {
-    /* yalniz host */
+    /* host only */
   }
   disconnect(): void {
-    /* yalniz host */
+    /* host only */
   }
   close(): void {
     try {
       this.ws.close();
     } catch {
-      /* kapali */
+      /* already closed */
     }
   }
 }

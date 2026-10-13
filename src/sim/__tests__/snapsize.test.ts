@@ -4,8 +4,8 @@ import { b64decode, b64encode, type Msg } from '../../net/protocol';
 import { Battle } from '../battle';
 import { packSnapshot, unpackSnapshot } from '../snapshot';
 
-describe('buyuk savas yeniden senkron boyutu', () => {
-  it('9000 birimlik goruntu parcalanir, birlesir ve ayni duruma geri yuklenir', () => {
+describe('large battle resync size', () => {
+  it('a 9000-unit snapshot is split, reassembled and restored to the same state', () => {
     const layout: number[] = [];
     for (let t = 0; t < 6; t++) for (let i = 0; i < 1500; i++) layout.push(t, i % 5, 5 + (i % 40) * 1.2 + t * 0.1, 5 + Math.floor(i / 40) * 1.2 + t * 0.2);
     const cfg = { mode: 'custom' as const, perTeam: 0, teamCount: 6, mapSize: 120, env: true, kite: true, terrainSeed: 9, level: 5, layout: new Float32Array(layout) };
@@ -14,7 +14,7 @@ describe('buyuk savas yeniden senkron boyutu', () => {
     const data = b64encode(packSnapshot(a.serialize()));
     const msg = { t: 'resync', step: a.stepCount, data } as unknown as Msg;
     const parts = splitMsg(msg, 1);
-    console.log(`birim=${a.units.count} b64=${(data.length / 1024).toFixed(0)}KB parca=${parts.length}`);
+    console.log(`units=${a.units.count} b64=${(data.length / 1024).toFixed(0)}KB parts=${parts.length}`);
     const r = new Reassembler();
     let out: Msg | null = null;
     for (const p of parts) out = r.push(JSON.parse(JSON.stringify(p)) as Msg) ?? out;

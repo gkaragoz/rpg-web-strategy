@@ -1,14 +1,16 @@
+import { t } from '../i18n';
+
 /**
- * Alt cekmece (bottom sheet): dock'a bir tutamac ekler. Dar/dokunmatik ekranda CSS dock'u ince bir cubuga indirir
- * (yalniz birincil ogeler gorunur); tutamaga dokununca tum icerik acilir. Yukseklik `--dock-h` olarak yayinlanir.
+ * Bottom sheet: adds a handle to the dock. On narrow/touch screens CSS shrinks the dock to a thin bar
+ * (only primary items are visible); tapping the handle opens all the content. The height is published as `--dock-h`.
  */
 export function initSheet(dock: HTMLElement): { destroy(): void; close(): void } {
   const handle = document.createElement('button');
   handle.type = 'button';
   handle.className = 'sheet-handle';
-  handle.setAttribute('aria-label', 'Araçları aç/kapat');
+  handle.setAttribute('aria-label', t('studio.sheet.toggle'));
   handle.setAttribute('aria-expanded', 'false');
-  // Icerik kaydirilabilir bir sarmalayicida: tutamac yerinde kalir. Masaustunde sarmalayici `display: contents` (etkisiz).
+  // The content lives in a scrollable wrapper so the handle stays in place. On desktop the wrapper is `display: contents` (no effect).
   const scroll = document.createElement('div');
   scroll.className = 'dock-scroll';
   while (dock.firstChild) scroll.appendChild(dock.firstChild);
@@ -18,7 +20,7 @@ export function initSheet(dock: HTMLElement): { destroy(): void; close(): void }
     handle.setAttribute('aria-expanded', String(open));
   };
   handle.addEventListener('click', () => set(!dock.classList.contains('open')));
-  // Yukari/asagi surukleme: kucuk bir hareket yeterli.
+  // Drag up/down: a small movement is enough.
   let y0 = 0;
   let drag = false;
   handle.addEventListener('pointerdown', (e) => {

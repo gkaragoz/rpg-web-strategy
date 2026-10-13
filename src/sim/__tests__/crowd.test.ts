@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 import { Battle } from '../battle';
 
-/** Kalabalik okunurlugu metrikleri: adim basina yon tersine donme orani ve ust uste binme orani. */
+/** Crowd readability metrics: per-step direction reversal rate and overlap rate. */
 export function crowdMetrics(perTeam: number, seconds: number): { reversal: number; overlap: number; deaths: number } {
   const b = new Battle(3, { mode: 'bench', perTeam, env: false, kite: true });
   const u = b.units;
@@ -37,7 +37,7 @@ export function crowdMetrics(perTeam: number, seconds: number): { reversal: numb
       dy0[i] = dy;
     }
     if (s % 15 === 0) {
-      // Ust uste binme: 0.45 tile'dan yakin komsusu olan birimlerin orani (kaba izgara).
+      // Overlap: fraction of units with a neighbor closer than 0.45 tile (coarse grid).
       const cell = new Map<number, number[]>();
       for (let i = 0; i < n; i++) {
         if (!u.alive[i]) continue;
@@ -70,16 +70,16 @@ export function crowdMetrics(perTeam: number, seconds: number): { reversal: numb
   return { reversal: rev / Math.max(1, moved), overlap: overlapSum / Math.max(1, samples), deaths: b.counters.kills };
 }
 
-describe.skipIf(process.env.CROWD !== '1')('kalabalik metrikleri', () => {
-  it('raporlar', () => {
+describe.skipIf(process.env.CROWD !== '1')('crowd metrics', () => {
+  it('reports', () => {
     const r = crowdMetrics(Number(process.env.PER ?? 800), 26);
     require('node:fs').writeFileSync('test-results/crowd.txt', JSON.stringify(r));
     expect(r.reversal).toBeLessThan(1);
   }, 300000);
 });
 
-describe('kalabalikta titreme sinirlari', () => {
-  it('yon tersine donme ve ust uste binme esikleri', () => {
+describe('jitter limits in a crowd', () => {
+  it('direction reversal and overlap thresholds', () => {
     const r = crowdMetrics(500, 22);
     expect(r.reversal).toBeLessThan(0.15);
     expect(r.overlap).toBeLessThan(0.3);

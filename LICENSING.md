@@ -1,35 +1,35 @@
-# Lisans yapısı (özet)
+# License structure (summary)
 
-> Bu belge bilgilendirme amaçlıdır, hukuki danışmanlık değildir. Bağlayıcı metin [`LICENSE`](LICENSE) dosyasıdır.
+> This document is informational and is not legal advice. The binding text is the [`LICENSE`](LICENSE) file.
 
-| Bileşen | Lisans | Ticari kullanım |
+| Component | License | Commercial use |
 |---|---|---|
-| Kaynak kod (`src/`, `relay/`, `scripts/`, testler) | **PolyForm Noncommercial 1.0.0** + ek şartlar ([`LICENSE`](LICENSE)) | **Yasak** (yazılı izin gerekir) |
-| Özgün çizim tarifleri, arayüz, dokümantasyon | Aynı (kod ile) | **Yasak** |
-| Roster kaynaklı birim verisi (`src/sim/data/troops.ts`) | **source terms** ([`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)) | source terms kurallarıyla |
-| Üçüncü taraf kütüphaneler (PixiJS, PeerJS…) | MIT vb. (kendi lisansları) | Kendi koşullarıyla |
-| Katkılar | Sahibinde kalır; proje sahibine [`CLA.md`](CLA.md) ile lisanslanır | — |
+| Source code (`src/`, `relay/`, `scripts/`, tests) | **PolyForm Noncommercial 1.0.0** + additional terms ([`LICENSE`](LICENSE)) | **Not allowed** (written permission required) |
+| Original unit roster, artwork recipes, UI, documentation | Same as the code | **Not allowed** |
+| Third-party libraries (PixiJS, PeerJS, …) | MIT etc. (their own licenses, see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)) | Under their own terms |
+| Contributions | Stay with the contributor; licensed to the project owner through [`CLA.md`](CLA.md) | — |
 
-## Ne yapabilirsin?
+## What you can do
 
-- Oynayabilir, kaynağı okuyabilir, **ticari olmayan** amaçla (kişisel, hobi, eğitim, araştırma, kâr amacı gütmeyen
-  kuruluşlar) değiştirebilir ve paylaşabilirsin; lisansı ve "© gkaragoz and Contributors" bildirimini korumak şartıyla.
-- Hatayı düzeltip, özellik ekleyip **resmi projeye katkı** gönderebilirsin ([`CONTRIBUTING.md`](CONTRIBUTING.md)).
+- Play, read the source, and modify and share it for **noncommercial** purposes (personal, hobby, education, research, non-profit
+  organizations), as long as you keep the license and the "© gkaragoz and Contributors" notice.
+- Fix bugs, add features and **send contributions to the official project** ([`CONTRIBUTING.md`](CONTRIBUTING.md)).
 
-## Ne yapamazsın?
+## What you cannot do
 
-- Projeyi veya türevlerini **satamaz**, reklamla/abonelikle/oyun içi satın almayla **gelir elde edemez**, ücretli bir
-  ürüne/hizmete (ücretli sunucu/lobi barındırma dahil) **dahil edemezsin**.
-- Kendi sürümünü "RPG Web / Savaş Stüdyosu" adıyla resmi proje gibi sunamaz, kaynağı gizleyemezsin.
-- Ticari kullanım için proje sahibinden **yazılı lisans** almalısın.
+- Sell the project or derivatives, make money from them with ads / subscriptions / in-app purchases, or include them in a paid product or
+  service (including paid server or lobby hosting).
+- Present your own version as the official "RPG Web / Battle Studio" project or hide where it came from.
+- Use it commercially without a **written license** from the project owner.
 
-## Neden AGPL değil?
+## Why not the AGPL?
 
-AGPL gibi açık kaynak lisansları ticari kullanımı yasaklayamaz; kodu kopyalayıp satmaya izin verir (tek şart kaynağı
-paylaşmaktır). Bu proje ticari kopyalanmaya karşı korunmak istendiği için *source-available* bir lisans olan PolyForm
-Noncommercial kullanılır. Bu yüzden proje, OSI tanımıyla "açık kaynak" değildir.
+Open-source licenses such as the AGPL cannot prohibit commercial use; they allow copying and selling the code (the only condition is sharing
+the source). This project wants protection against commercial copying, so it uses PolyForm Noncommercial, a *source-available* license.
+That is why the project is not "open source" by the OSI definition.
 
-## Lisans geçmişi
+## License history
 
-- v1.0.0 – v1.3.1: lisans dosyası yoktu (yasanın verdiği haklar dışında lisans verilmemişti).
-- Bu belgenin eklendiği commit'ten itibaren: PolyForm Noncommercial 1.0.0 + ek şartlar.
+- v1.0.0 – v1.3.1: no license file (no license was granted beyond what the law gives).
+- From the commit that added this document: PolyForm Noncommercial 1.0.0 + additional terms.
+- From v1.4.0: the unit roster was rewritten with original names, stats and texts.

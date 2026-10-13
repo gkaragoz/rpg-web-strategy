@@ -1,5 +1,6 @@
 import { Graphics, Sprite, type Application } from 'pixi.js';
 import type { Camera } from '../../camera';
+import { t } from '../../i18n';
 import { isoX, isoY } from '../../iso';
 import { act } from '../../net/act';
 import { spent, teamZones, type Zone } from '../../net/economy';
@@ -7,7 +8,7 @@ import type { Session } from '../../net/client';
 import type { GameInit, PlacedItem, ServerMsg } from '../../net/protocol';
 import type { Atlas } from '../../render/atlas';
 import { POSES, type TeamColors } from '../../render/unitView';
-import { KIND_OF_TROOP, LEGACY_COUNT, MAX_TEAMS, STATS } from '../../sim/units';
+import { KIND_OF_TROOP, LEGACY_COUNT, MAX_TEAMS, STATS, unitDisplayName } from '../../sim/units';
 import { initSheet } from '../sheet';
 import { Editor } from '../editor';
 import { UnitGallery } from '../unitGallery';
@@ -22,15 +23,15 @@ export interface PlacementEnv {
   world: WorldView;
   camera: Camera;
   getAtlas: () => Atlas;
-  /** Verilen turlerin dokusu atlas'ta yoksa yeniden pisirir; pisirdiyse true. */
+  /** Re-bakes the atlas if a texture for the given kinds is missing; returns true if it did. */
   ensureAtlas: (kinds: Set<number>) => boolean;
   icon: (kind: number, team: number) => HTMLCanvasElement;
   toast: (msg: string) => void;
-  /** Ekran yerlesimi (ust serit + dock) kok elemani. */
+  /** Root element for the screen layout (top strip + dock). */
   root: HTMLElement;
 }
 
-/** Yerlestirme asamasi: bolge kisitli, butceli editor, ust serit, dock, canli uzak birimler. */
+/** Placement phase: zone-restricted, budgeted editor, top strip, dock, live remote units. */
 export class Placement {
   readonly state: AppState;
   readonly editor: Editor | null;
@@ -123,7 +124,7 @@ export class Placement {
     window.addEventListener('keydown', this.keys);
     this.timer = setInterval(() => this.paintTop(), 250);
     this.refreshUi();
-    // Mevcut (geri baglanma/seyirci) yerlestirmeleri isle.
+    // Process existing placements (reconnect/spectator).
     this.syncRemote();
   }
 
@@ -138,12 +139,12 @@ export class Placement {
     return set;
   }
 
-  /** Gerekli dokular atlas'ta yoksa pisirir ve sprite'lari tazeler. */
+  /** Bakes the textures that are missing from the atlas and refreshes the sprites. */
   ensureKinds(): void {
     if (this.env.ensureAtlas(this.neededKinds())) this.onAtlas();
   }
 
-  /** Atlas yeniden pisince cagrilir. */
+  /** Called when the atlas is re-baked. */
   onAtlas(): void {
     this.editor?.refreshSprites();
     for (const s of this.remote.values()) s.destroy();
@@ -151,7 +152,7 @@ export class Placement {
     this.syncRemote();
   }
 
-  // ---------------------------------------------------------------- ag esleme
+  // ---------------------------------------------------------------- network mapping
 
   private sendAdded(units: PlacedUnit[]): void {
     const items = units.map((u) => {
@@ -167,12 +168,12 @@ export class Placement {
     const ids: number[] = [];
     for (const u of units) {
       if (u.id !== undefined) ids.push(u.id);
-      else if (u.cid !== undefined) this.cancelled.add(u.cid); // henuz onaylanmadi: onay gelince silinir
+      else if (u.cid !== undefined) this.cancelled.add(u.cid); // not confirmed yet: removed once the confirmation arrives
     }
     if (ids.length) this.session.send({ t: 'unplace', ids });
   }
 
-  /** Sunucu mesajlarindan yerlestirmeyi ilgilendirenleri isler. */
+  /** Handles the server messages that concern placement. */
   onMessage(msg: ServerMsg): void {
     const me = this.session.model.you;
     switch (msg.t) {
@@ -204,7 +205,7 @@ export class Placement {
           }
         }
         if (bad.length && this.editor) this.editor.removeSilently(bad);
-        this.env.toast(msg.reason);
+        this.env.toast(t(`online.reason.${msg.reason}`));
         break;
       }
       case 'state':
@@ -220,13 +221,13 @@ export class Placement {
       if (mine && u) {
         this.pending.delete(it.cid);
         if (this.cancelled.delete(it.cid)) {
-          // Onaydan once silinmisti: host'tan da kaldir.
+          // It was deleted before confirmation: remove it from the host as well.
           this.session.send({ t: 'unplace', ids: [it.id] });
           this.editor.removeSilently([u]);
         } else u.id = it.id;
         return;
       }
-      // Daha once yerlestirilmis kendi birimim (geri baglanma): yerel duruma ekle.
+      // One of my own units placed earlier (reconnect): add it to the local state.
       if (!this.state.units.some((x) => x.id === it.id)) {
         const nu: PlacedUnit = { team: it.team, kind: it.kind, x: it.x, y: it.y, id: it.id };
         this.state.units.push(nu);
@@ -236,9 +237,9 @@ export class Placement {
     }
   }
 
-  // ---------------------------------------------------------------- uzak birimler
+  // ---------------------------------------------------------------- remote units
 
-  /** model.placed icindeki baska takimlarin birimlerini salt-okunur sprite olarak cizer. */
+  /** Draws the other teams' units in model.placed as read-only sprites. */
   syncRemote(): void {
     const atlas = this.env.getAtlas();
     const placed = this.session.model.placed;
@@ -266,7 +267,7 @@ export class Placement {
     }
   }
 
-  // ---------------------------------------------------------------- bolge katmani
+  // ---------------------------------------------------------------- zone layer
 
   private drawZones(): void {
     const g = this.overlay;
@@ -292,7 +293,7 @@ export class Placement {
     }
   }
 
-  // ---------------------------------------------------------------- arayuz
+  // ---------------------------------------------------------------- UI
 
   private onKey(e: KeyboardEvent): void {
     const t = e.target as HTMLElement | null;
@@ -325,12 +326,12 @@ export class Placement {
     const d = this.dock!;
     d.innerHTML = `
 <div class="dock-group primary on-gold"><span id="pg-gold" class="on-gold-t"></span><div class="on-gbar"><i id="pg-bar"></i></div></div>
-<div class="dock-group primary" id="pg-kinds" role="radiogroup" aria-label="Birim"></div>
-<div class="dock-group primary"><button type="button" id="pg-gallery">Birimler…</button></div>
-<div class="dock-group"><div class="seg" id="pg-brush" role="group" aria-label="Fırça"></div></div>
-<div class="dock-group primary"><div class="seg" id="pg-tool" role="group" aria-label="Araç"></div></div>
-<div class="dock-group"><button type="button" id="pg-undo">Geri al</button><button type="button" id="pg-redo">Yinele</button><button type="button" id="pg-clear">Temizle</button></div>
-<div class="dock-group end primary"><button type="button" class="primary" id="pg-ready">HAZIR</button></div>`;
+<div class="dock-group primary" id="pg-kinds" role="radiogroup" aria-label="${esc(t('online.place.unit'))}"></div>
+<div class="dock-group primary"><button type="button" id="pg-gallery">${t('online.place.gallery')}</button></div>
+<div class="dock-group"><div class="seg" id="pg-brush" role="group" aria-label="${esc(t('online.place.brush'))}"></div></div>
+<div class="dock-group primary"><div class="seg" id="pg-tool" role="group" aria-label="${esc(t('online.place.tool'))}"></div></div>
+<div class="dock-group"><button type="button" id="pg-undo">${t('online.place.undo')}</button><button type="button" id="pg-redo">${t('online.place.redo')}</button><button type="button" id="pg-clear">${t('online.place.clear')}</button></div>
+<div class="dock-group end primary"><button type="button" class="primary" id="pg-ready">${t('online.place.ready')}</button></div>`;
     this.sheet = initSheet(d);
     const q = (s: string): HTMLElement => d.querySelector(s) as HTMLElement;
     q('#pg-gallery').addEventListener('click', () => this.gallery!.open());
@@ -349,12 +350,12 @@ export class Placement {
     if (!d) return;
     const q = (s: string): HTMLElement => d.querySelector(s) as HTMLElement;
     const left = this.init.gold - spent(this.state.units, this.init.costs);
-    q('#pg-gold').textContent = `Gold: ${left} / ${this.init.gold}`;
+    q('#pg-gold').textContent = t('online.place.gold', { left, max: this.init.gold });
     (q('#pg-bar').style as CSSStyleDeclaration).width = `${Math.max(0, Math.min(100, (left / this.init.gold) * 100))}%`;
     const kinds = [0, 1, 2, 3, 4];
     if (!kinds.includes(this.state.selKind)) kinds.push(this.state.selKind);
     q('#pg-kinds').innerHTML = kinds
-      .map((k) => `<button type="button" class="kind${k === this.state.selKind ? ' sel' : ''}" data-k="${k}" role="radio" aria-checked="${k === this.state.selKind}" title="${esc(STATS[k].name)}">${esc(STATS[k].name)} <small>${this.init.costs[k]}g</small></button>`)
+      .map((k) => `<button type="button" class="kind${k === this.state.selKind ? ' sel' : ''}" data-k="${k}" role="radio" aria-checked="${k === this.state.selKind}" title="${esc(unitDisplayName(k))}">${esc(unitDisplayName(k))} <small>${this.init.costs[k]}g</small></button>`)
       .join('');
     q('#pg-kinds').querySelectorAll('button').forEach((b) =>
       b.addEventListener('click', () => {
@@ -369,11 +370,11 @@ export class Placement {
       el.innerHTML = items.map(([v, l]) => `<button type="button" data-id="${v}" aria-pressed="${String(v) === String(cur)}">${l}</button>`).join('');
       el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => on((b as HTMLElement).dataset.id!)));
     };
-    seg('#pg-brush', BRUSHES.map((b) => [b.id, b.name]), this.state.brush, (v) => {
+    seg('#pg-brush', BRUSHES.map((b) => [b.id, t(`online.brush.${b.id}`)]), this.state.brush, (v) => {
       this.state.brush = Number(v);
       this.refreshUi();
     });
-    seg('#pg-tool', [['place', 'Yerleştir'], ['erase', 'Sil']], this.state.tool, (v) => {
+    seg('#pg-tool', [['place', t('online.tool.place')], ['erase', t('online.tool.erase')]], this.state.tool, (v) => {
       this.state.tool = v as 'place' | 'erase';
       this.refreshUi();
     });
@@ -382,7 +383,7 @@ export class Placement {
     (q('#pg-clear') as HTMLButtonElement).disabled = this.state.units.length === 0 || this.locked;
     const me = this.session.model.me;
     const rd = q('#pg-ready');
-    rd.textContent = me?.ready ? 'HAZIR ✓ (geri al)' : 'HAZIR';
+    rd.textContent = me?.ready ? t('online.place.readyOn') : t('online.place.ready');
     rd.classList.toggle('on', !!me?.ready);
     this.editor!.drawGhost();
   }
@@ -401,11 +402,11 @@ export class Placement {
       .map((p) => {
         const mine = p.id === this.session.model.you;
         const gold = mine && this.editor ? this.init.gold - spent(this.state.units, this.init.costs) : p.gold;
-        return `<span class="on-chip${p.ready ? ' rdy' : ''}${mine ? ' me' : ''}${p.connected ? '' : ' off'}" style="border-color:${hex(playerColor(p.color))}"><i class="dot" style="background:${hex(playerColor(p.color))}"></i>${esc(p.name)} <b>${gold}g</b> <small>${p.units} birim</small>${p.ready ? ' ✓' : ''}</span>`;
+        return `<span class="on-chip${p.ready ? ' rdy' : ''}${mine ? ' me' : ''}${p.connected ? '' : ' off'}" style="border-color:${hex(playerColor(p.color))}"><i class="dot" style="background:${hex(playerColor(p.color))}"></i>${esc(p.name)} <b>${gold}g</b> <small>${t('online.place.units', { n: p.units })}</small>${p.ready ? ' ✓' : ''}</span>`;
       })
       .join('');
     const spec = st.players.filter((p) => p.role === 'spectator').length;
-    this.top.innerHTML = `<div class="on-chips">${chips}</div><div class="on-time" title="Kalan süre">SÜRE ${time}</div>${spec ? `<small class="on-spec">${spec} seyirci</small>` : ''}`;
+    this.top.innerHTML = `<div class="on-chips">${chips}</div><div class="on-time" title="${esc(t('online.place.timeLeft'))}">${t('online.place.time', { time })}</div>${spec ? `<small class="on-spec">${t('online.place.spectators', { n: spec })}</small>` : ''}`;
   }
 
   destroy(): void {
@@ -415,14 +416,14 @@ export class Placement {
     this.top.remove();
     this.sheet?.destroy();
     this.gallery?.destroy();
-    if (act.text === 'Birim seçiyor') act.text = undefined;
+    if (act.text === 'unitPicker') act.text = undefined;
     this.dock?.remove();
     this.overlay.destroy();
     for (const s of this.remote.values()) s.destroy();
     this.remote.clear();
   }
 
-  /** Savas basliyor: yerlestirilen kendi birimlerini sayma/sonuc icin disari ver. */
+  /** The battle is starting: exposes the player's own placed units (for counting/results). */
   get myUnits(): PlacedUnit[] {
     return this.state.units;
   }

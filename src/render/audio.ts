@@ -9,14 +9,14 @@ type Sfx = 'hit' | 'shot' | 'land' | 'heal' | 'bash' | 'slam' | 'death' | 'fire'
 const SFX_LIST: Sfx[] = ['hit', 'shot', 'land', 'heal', 'bash', 'slam', 'death', 'fire', 'ice', 'holy', 'dark', 'nature', 'zap', 'bonk', 'boing', 'wail', 'splat', 'whoosh'];
 const zeroed = (): Record<Sfx, number> => Object.fromEntries(SFX_LIST.map((k) => [k, 0])) as Record<Sfx, number>;
 
-/** Ses basina en kisa tekrar araligi (ms): kalabalikta ses yagmuru olmasin. */
+/** Shortest repeat interval per sound (ms): avoids a rain of sounds in crowds. */
 const MIN_GAP: Record<Sfx, number> = { hit: 40, shot: 55, land: 110, heal: 120, bash: 130, slam: 160, death: 70, fire: 150, ice: 150, holy: 170, dark: 160, nature: 170, zap: 150, bonk: 45, boing: 90, wail: 110, splat: 90, whoosh: 120 };
 const MAX_VOICES = 14;
 
 /**
- * Dosyasiz, WebAudio ile sentezlenmis ses efektleri. Olaylar ekrandaki konuma gore
- * kisilir/panlanir, ayni anda en fazla MAX_VOICES ses calar. Tarayici politikasi
- * nedeniyle baglam ilk kullanici hareketinde acilir.
+    * Sound effects synthesized with WebAudio, no asset files. Events are attenuated/panned by their
+    * on-screen position, at most MAX_VOICES sounds play at once. Because of browser policy the
+    * context is opened on the first user gesture.
  */
 export class AudioSystem {
   enabled = true;
@@ -26,7 +26,7 @@ export class AudioSystem {
   private noise: AudioBuffer | null = null;
   private readonly lastPlay: Record<Sfx, number> = zeroed();
   private readonly endTimes: number[] = [];
-  /** Test/dogrulama: calinan seslerin sayaci (ses duyulamayan ortamlarda olay->ses eslemesini kanitlar). */
+  /** Test/verification: counter of played sounds (proves the event->sound mapping in environments with no audible output). */
   readonly played: Record<Sfx, number> = zeroed();
 
   setVolume(v: number): void {
@@ -34,7 +34,7 @@ export class AudioSystem {
     if (this.master) this.master.gain.value = this.volume * 0.8;
   }
 
-  /** Ilk kullanici hareketinde cagrilir (autoplay politikasi). */
+  /** Called on the first user gesture (autoplay policy). */
   unlock(): void {
     if (this.ctx) {
       if (this.ctx.state === 'suspended' && !document.hidden) void this.ctx.resume();
@@ -50,21 +50,21 @@ export class AudioSystem {
     this.master = this.ctx.createGain();
     this.master.gain.value = this.volume * 0.8;
     this.master.connect(this.ctx.destination);
-    // 1 sn'lik beyaz gurultu tamponu.
+    // 1-second white noise buffer.
     const len = this.ctx.sampleRate;
     this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
     const d = this.noise.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   }
 
-  /** Sekme gizlenince sessizlestirir, donunce devam eder. */
+  /** Mutes when the tab is hidden, resumes when it returns. */
   setHidden(hidden: boolean): void {
     if (!this.ctx) return;
     if (hidden) void this.ctx.suspend();
     else if (this.enabled) void this.ctx.resume();
   }
 
-  /** Sim olaylarini ses efektlerine cevirir. */
+  /** Turns sim events into sound effects. */
   handle(events: SimEvent[], camera: Camera, screenW: number, screenH: number): void {
     if (!this.enabled || !this.ctx || this.ctx.state !== 'running') return;
     for (const ev of events) {
@@ -74,7 +74,7 @@ export class AudioSystem {
       const sy = (isoY(ev.x, ev.y) - camera.y) * camera.zoom + screenH / 2;
       const margin = 80;
       if (sx < -margin || sx > screenW + margin || sy < -margin || sy > screenH + margin) continue;
-      // Uzaklastikca (zoom cikinca) sessizlesir; yakinlasinca netlesir.
+      // Gets quieter as you zoom out; gets clearer as you zoom in.
       const zoomGain = Math.min(1, Math.max(0.25, camera.zoom * 0.9));
       const pan = Math.max(-1, Math.min(1, (sx - screenW / 2) / (screenW / 2))) * 0.8;
       const heavy = ev.kind !== undefined && isTank(ev.kind);
@@ -84,7 +84,7 @@ export class AudioSystem {
 
   private map(t: SimEvent['type'], element?: number): Sfx | null {
     if (comedy.visual) {
-      // Komedi gorunumu: kartun sesleri.
+      // Comedy view: cartoon sounds.
       if (t === 'hit') return 'bonk';
       if (t === 'shot') return 'boing';
       if (t === 'death') return 'wail';
@@ -108,7 +108,7 @@ export class AudioSystem {
       case 'death':
         return 'death';
       case 'burst':
-        // Unsur: 0 fiziksel, 1 ates, 2 buz, 3 kutsal, 4 karanlik, 5 doga, 6 enerji.
+        // Element: 0 physical, 1 fire, 2 ice, 3 holy, 4 dark, 5 nature, 6 energy.
         return element === 1 ? 'fire' : element === 2 ? 'ice' : element === 3 ? 'holy' : element === 4 ? 'dark' : element === 5 ? 'nature' : element === 6 ? 'zap' : 'bash';
       default:
         return null;
@@ -175,7 +175,7 @@ export class AudioSystem {
         break;
       }
       case 'fire': {
-        // Alev patlamasi: alcak gumbur + sicak gurultu + yukselen cizirti.
+        // Fire burst: low rumble + warm noise + rising hiss.
         dur = 0.36;
         this.tone(out, now, 'sawtooth', 130 * r, 48, 0.3, 0.2);
         this.burst(out, now, 0.3, 780, 0.6, 0.32);
@@ -183,7 +183,7 @@ export class AudioSystem {
         break;
       }
       case 'ice': {
-        // Buz kirilmasi: parlak cam tinlamasi + ince kirilma.
+        // Ice shatter: bright glass chime + fine cracking.
         dur = 0.34;
         this.tone(out, now, 'triangle', 2100 * r, 1500, 0.2, 0.12);
         this.tone(out, now + 0.03, 'sine', 3100 * r, 2300, 0.22, 0.07);
@@ -191,7 +191,7 @@ export class AudioSystem {
         break;
       }
       case 'holy': {
-        // Kutsal isik: yukselen uclu cin.
+        // Holy light: rising three-note chime.
         dur = 0.5;
         this.tone(out, now, 'sine', 660 * r, 700 * r, 0.4, 0.1);
         this.tone(out, now + 0.07, 'sine', 990 * r, 1040 * r, 0.38, 0.09);
@@ -199,7 +199,7 @@ export class AudioSystem {
         break;
       }
       case 'dark': {
-        // Karanlik buyu: alcak titresim + ters gurultu.
+        // Dark magic: low vibration + reversed noise.
         dur = 0.42;
         this.tone(out, now, 'sawtooth', 90 * r, 52, 0.38, 0.17);
         this.tone(out, now, 'square', 61 * r, 40, 0.34, 0.07);
@@ -207,14 +207,14 @@ export class AudioSystem {
         break;
       }
       case 'nature': {
-        // Doga/korku: hisirti ve alcalan nota.
+        // Nature/fear: rustle and a falling note.
         dur = 0.38;
         this.burst(out, now, 0.34, 1500, 0.9, 0.2);
         this.tone(out, now, 'triangle', 420 * r, 240, 0.3, 0.12);
         break;
       }
       case 'zap': {
-        // Enerji: hizli yukselen/alcalan elektrik.
+        // Energy: fast rising/falling electric zap.
         dur = 0.3;
         this.tone(out, now, 'square', 900 * r, 220, 0.22, 0.1);
         this.tone(out, now + 0.02, 'sawtooth', 1500 * r, 300, 0.18, 0.08);
@@ -235,7 +235,7 @@ export class AudioSystem {
         break;
       }
       case 'wail': {
-        // "Aaaah!": perde yukselip duser; ikinci katman uyumlu.
+        // "Aaaah!": pitch rises and falls; the second layer is harmonized.
         dur = 0.7;
         this.tone(out, now, 'triangle', 380 * r, 1050 * r, 0.26, 0.15);
         this.tone(out, now + 0.25, 'triangle', 1050 * r, 240 * r, 0.34, 0.14);
@@ -266,12 +266,12 @@ export class AudioSystem {
       try {
         out.disconnect();
       } catch {
-        /* zaten kopmus */
+        /* already disconnected */
       }
     }, (dur + 0.2) * 1000);
   }
 
-  /** Bant gecirgenli gurultu patlamasi. */
+  /** Band-pass noise burst. */
   private burst(dest: AudioNode, t: number, dur: number, freq: number, q: number, peak: number): void {
     const ctx = this.ctx!;
     const src = ctx.createBufferSource();
@@ -292,7 +292,7 @@ export class AudioSystem {
     src.stop(t + dur + 0.02);
   }
 
-  /** Perde kayan tek tonluk ses. */
+  /** Single-tone sound with a pitch glide. */
   private tone(dest: AudioNode, t: number, type: OscillatorType, f0: number, f1: number, dur: number, peak: number): void {
     const ctx = this.ctx!;
     const o = ctx.createOscillator();

@@ -23,7 +23,7 @@ import {
 } from './shared';
 import type { WorkerCommand, WorkerEvent } from './worker';
 
-/** Sim'i Web Worker'da calistirir; durumu SharedArrayBuffer halka tamponundan okur. */
+/** Runs the sim in a Web Worker; reads the state from a SharedArrayBuffer ring buffer. */
 export class WorkerSim implements SimBackend {
   readonly kind = 'worker' as const;
   readonly mapSize: number;
@@ -140,7 +140,7 @@ export class WorkerSim implements SimBackend {
     this.time = f[F_SIM_TIME];
     for (let tm = 0; tm < this.alivePerTeam.length; tm++) this.alivePerTeam[tm] = f[F_ALIVE_BASE + tm];
 
-    // Son iki yayin arasindaki gercek aralikla interpolasyon: bir adim gecikmeli ama puruzsuz.
+    // Interpolate using the real interval between the last two publishes: one step behind but smooth.
     const interval = Math.max(1, f[F_PUBLISH] - f[F_PREV_PUBLISH]);
     const now = performance.timeOrigin + performance.now();
     const alpha = Math.min(1, Math.max(0, (now - f[F_PUBLISH]) / Math.min(interval, SIM_DT * 1000 * 4)));

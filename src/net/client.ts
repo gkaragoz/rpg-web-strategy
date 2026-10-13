@@ -4,7 +4,9 @@ import {
   passHash,
   type BattleStart,
   type ClientMsg,
+  type CloseReason,
   type LobbyState,
+  type PlaceFailReason,
   type PlacedItem,
   type RejectReason,
   type ServerMsg,
@@ -17,12 +19,12 @@ export interface PresenceInfo {
   y: number;
   ctx: 'world' | 'page';
   act?: string;
-  /** Son guncelleme zamani (performans.now degil, yerel Date.now) */
+  /** Time of the last update (local Date.now, not performance.now) */
   at: number;
 }
 
 export interface ChatLine {
-  /** Artan sira numarasi: liste kayinca (200 sinir) tuketicilerin takibi bozulmasin. */
+  /** Increasing sequence number so consumers keep tracking correctly when the list scrolls (200 cap). */
   n: number;
   id: string;
   name: string;
@@ -30,29 +32,30 @@ export interface ChatLine {
   ts: number;
 }
 
-/** Arayuzun okudugu ortak model: lobi durumu, birimler, imecler, sohbet, savas baslangici, sonuc. */
+/** Shared model read by the UI: lobby state, units, cursors, chat, battle start, result. */
 export class OnlineModel {
   state: LobbyState | null = null;
   you = '';
   token = '';
   start: BattleStart | null = null;
-  /** Yerlestirme asamasi birimleri (id -> birim): acik yerlestirmede herkesin, degilse yalniz benimki. */
+  /** Placement-phase units (id -> unit): everyone's with open placement, otherwise only mine. */
   placed = new Map<number, PlacedItem>();
   presence = new Map<string, PresenceInfo>();
   chat: ChatLine[] = [];
   private chatN = 0;
   result: { winner: number; alive: number[] } | null = null;
-  /** Host'tan gelen son hiz/duraklat bilgisi. */
+  /** Latest speed/pause info from the host. */
   speed = 1;
   paused = false;
   hostStep = -1;
-  /** hostStep'in alindigi yerel zaman (ms): adim tahmini icin. */
+  /** Local time (ms) at which hostStep was received: used for step estimation. */
   hostStepAt = 0;
-  closedReason: string | null = null;
+  /** Stable code of why the session ended (the UI translates it as `online.reason.<code>`). */
+  closedReason: CloseReason | null = null;
   rejected: RejectReason | null = null;
-  lastFail: { cids: number[]; reason: string } | null = null;
+  lastFail: { cids: number[]; reason: PlaceFailReason } | null = null;
   pendingResync: { step: number; data: string } | null = null;
-  /** Arayuz aboneligi: her sunucu mesajindan sonra cagrilir. */
+  /** UI subscription: called after every server message. */
   listeners: Array<(msg: ServerMsg) => void> = [];
 
   get me() {
@@ -125,10 +128,10 @@ export class OnlineModel {
         this.closedReason = msg.reason;
         break;
       case 'closed':
-        this.closedReason = this.closedReason ?? 'Lobi kapandi';
+        this.closedReason = this.closedReason ?? 'closed';
         break;
     }
-    // Ayrilan oyuncularin imleci silinir.
+    // Cursors of departed players are removed.
     if (msg.t === 'state' || msg.t === 'welcome') {
       const ids = new Set(msg.state.players.map((p) => p.id));
       for (const id of [...this.presence.keys()]) if (!ids.has(id)) this.presence.delete(id);
@@ -137,7 +140,7 @@ export class OnlineModel {
   }
 }
 
-/** Arayuzun konustugu ortak oturum: host ya da misafir ayni API. */
+/** Shared session the UI talks to: the same API for host and guest. */
 export interface Session {
   readonly model: OnlineModel;
   readonly isHost: boolean;
@@ -173,7 +176,7 @@ export class HostSession implements Session {
 export interface JoinOptions {
   name: string;
   color: number;
-  /** Parola (duz metin; ozeti gonderilir). */
+  /** Password (plain text; its digest is sent). */
   pass?: string;
   spectator?: boolean;
   token?: string;
@@ -189,8 +192,9 @@ export class GuestSession implements Session {
   ) {
     tp.onMessage = (_from, msg) => this.model.apply(msg as ServerMsg);
     tp.onClose = (reason) => {
-      const text = reason === 'closed' ? 'Lobi kapandi' : reason === 'kicked' ? 'Host tarafindan atildin' : reason;
-      this.model.closedReason = this.model.closedReason ?? text;
+      // Transports report a code; anything other than a deliberate close/kick counts as a lost connection.
+      const code: CloseReason = reason === 'closed' || reason === 'kicked' ? reason : 'lost';
+      this.model.closedReason = this.model.closedReason ?? code;
       this.model.apply({ t: 'closed' });
     };
     this.send({ t: 'join', name: opts.name, color: opts.color, pass: opts.pass ? passHash(opts.pass) : undefined, spectator: opts.spectator, version: PROTOCOL, token: opts.token });

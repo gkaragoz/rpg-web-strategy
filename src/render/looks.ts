@@ -1,14 +1,14 @@
 import { Container, Graphics } from 'pixi.js';
 
-/** Saldiri animasyonu ailesi: unitView her aile icin ayri zaman cizelgesi uygular. */
+/** Attack animation family: unitView applies a separate timeline for each family. */
 export type Anim = 'swing' | 'thrust' | 'bow' | 'cast' | 'slam' | 'throw' | 'siege' | 'punch';
 
-/** Cizim kancalari: UnitView bunlari animasyon sirasinda hareket ettirir. */
+/** Drawing hooks: UnitView moves these during animation. */
 export interface Rig {
   torso: Container;
-  /** Govdenin arkasi (pelerin, kanat, kuyruk). */
+  /** Behind the body (cape, wing, tail). */
   back: Graphics;
-  /** Govde, kafa ve basliklar. */
+  /** Body, head and headgear. */
   g: Graphics;
   legL: Graphics;
   legR: Graphics;
@@ -17,11 +17,11 @@ export interface Rig {
   orb: Graphics | null;
   staff: Graphics | null;
   nock: Graphics | null;
-  /** Yumruk ciftleri (punch animasyonu): eller yoksa null. */
+  /** Fist pairs (punch animation): null if there are no hands. */
   fists: Container | null;
-  /** Varsayilan el cizimi gerekmez (ozel govdeler). */
+  /** Default hand drawing not needed (special bodies). */
   noHands: boolean;
-  /** Takim renk ipuclari. */
+  /** Team color hints. */
   skin: number;
 }
 
@@ -40,7 +40,7 @@ const WHITE = 0xf4f1ea;
 
 type G = Graphics;
 
-// ---------------------------------------------------------------- govdeler
+// ---------------------------------------------------------------- bodies
 
 function tunic(g: G, col: number, edge: number): void {
   g.roundRect(-11, -6, 22, 18, 6).fill(col).stroke({ width: 1.5, color: edge });
@@ -93,7 +93,7 @@ function bare(g: G, skin: number, edge: number): void {
   g.circle(14, -7, 6).fill(skin).stroke({ width: 1.2, color: edge });
 }
 
-// ---------------------------------------------------------------- kafalar
+// ---------------------------------------------------------------- heads
 
 const HY = -14;
 const HR = 12;
@@ -164,7 +164,7 @@ function tuskHead(g: G): void {
   g.circle(-6, HY - 2, 1.8).fill(0x111111);
   g.circle(6, HY - 2, 1.8).fill(0x111111);
 }
-function scarecrowHead(g: G, glow = 0xffd21f): void {
+function gourdHead(g: G, glow = 0xffd21f): void {
   g.circle(0, HY, HR + 2).fill(0xe8741a).stroke({ width: 1.6, color: 0x8a3a0a });
   g.ellipse(-6, HY, 5, 12).stroke({ width: 1, color: 0xb8560f });
   g.ellipse(6, HY, 5, 12).stroke({ width: 1, color: 0xb8560f });
@@ -195,7 +195,7 @@ function hoodFace(g: G, hood: number, edge: number, glow: number): void {
   g.circle(3.4, HY, 1.8).fill(glow);
   g.poly([-12, HY - 4, 0, HY - 17, 12, HY - 4, 0, HY - 9]).fill(hood).stroke({ width: 1, color: edge });
 }
-function cactusHead(g: G): void {
+function thornHead(g: G): void {
   g.roundRect(-9, HY - 13, 18, 26, 9).fill(0x4f9a45).stroke({ width: 1.6, color: 0x2f6a2c });
   g.moveTo(-3, HY - 11).lineTo(-3, HY + 10).stroke({ width: 1, color: 0x6fbe62, alpha: 0.7 });
   g.moveTo(3, HY - 11).lineTo(3, HY + 10).stroke({ width: 1, color: 0x6fbe62, alpha: 0.7 });
@@ -206,7 +206,7 @@ function cactusHead(g: G): void {
   for (const [sx, sy] of [[-9, HY - 4], [9, HY - 4], [-9, HY + 4], [9, HY + 4]]) g.moveTo(sx, sy).lineTo(sx + (sx < 0 ? -3 : 3), sy - 1.5).stroke({ width: 1, color: 0xf2f2e0 });
 }
 
-// ---------------------------------------------------------------- basliklar
+// ---------------------------------------------------------------- headgear
 
 function helm(g: G, col: number, plume: number | null, visor = false): void {
   g.moveTo(-12.5, -15).arc(0, -15, 12.5, Math.PI, Math.PI * 2).closePath().fill(col).stroke({ width: 1.2, color: STEEL_D });
@@ -234,7 +234,7 @@ function witch(g: G, col: number, edge: number): void {
   g.rect(-9, -26, 18, 3.4).fill(0xf08a2a);
   g.roundRect(-3, -26.5, 6, 4.4, 1).fill(GOLD);
 }
-function viking(g: G): void {
+function berserkerHelm(g: G): void {
   g.moveTo(-13, -14).arc(0, -14, 13, Math.PI, Math.PI * 2).closePath().fill(0x9aa3b0).stroke({ width: 1.2, color: STEEL_D });
   g.rect(-13, -15, 26, 2.5).fill(0x6b5a3a);
   g.poly([-12, -17, -23, -22, -22, -31, -17, -26, -11, -22]).fill(BONE).stroke({ width: 0.9, color: BONE_D });
@@ -294,7 +294,7 @@ function halo(g: G, col = GOLD): void {
   g.ellipse(0, -32, 9, 3).stroke({ width: 2, color: col });
 }
 
-// ---------------------------------------------------------------- kalkan / yan el
+// ---------------------------------------------------------------- shield / off-hand
 
 function mkShield(r: Rig, kind: 'round' | 'tower' | 'buckler' | 'cross' | 'bone' | 'pelte', col: number, edge: number): void {
   const sh = new Container();
@@ -330,7 +330,7 @@ function mkShield(r: Rig, kind: 'round' | 'tower' | 'buckler' | 'cross' | 'bone'
   r.torso.addChild(sh);
 }
 
-// ---------------------------------------------------------------- silahlar
+// ---------------------------------------------------------------- weapons
 
 function arm(r: Rig, x: number, y: number, rot: number, paint: (g: G) => void): Container {
   const w = new Container();
@@ -526,7 +526,7 @@ const fistsOf = (r: Rig, skin: number, edge: number, wrap: number | null = null)
   r.torso.addChild(f);
 };
 
-// ---------------------------------------------------------------- ekler
+// ---------------------------------------------------------------- extras
 
 function cape(r: Rig, col: number, edge: number): void {
   r.back.poly([-11, -6, 11, -6, 15, 20, 0, 24, -15, 20]).fill(col).stroke({ width: 1.2, color: edge });
@@ -564,7 +564,7 @@ function legs(r: Rig, col = 0x5a4636, wide = false): void {
   r.legR.roundRect(wide ? 1 : 2, 8, w, 9, 2).fill(col);
 }
 
-// ---------------------------------------------------------------- ozel (kusatma / gemi / totem)
+// ---------------------------------------------------------------- special (siege / ship / totem)
 
 function siegeWheel(g: G, x: number, y: number, r: number): void {
   g.circle(x, y, r).fill(0x6b4a2b).stroke({ width: 1.6, color: 0x2a1a0c });
@@ -572,7 +572,7 @@ function siegeWheel(g: G, x: number, y: number, r: number): void {
   for (let a = 0; a < 4; a++) g.moveTo(x, y).lineTo(x + Math.cos(a * Math.PI / 2 + 0.4) * r, y + Math.sin(a * Math.PI / 2 + 0.4) * r).stroke({ width: 1.2, color: 0x2a1a0c });
 }
 
-function drawCatapult(r: Rig, c: number): void {
+function drawPyreSling(r: Rig, c: number): void {
   r.noHands = true;
   r.g.roundRect(-18, 2, 36, 7, 2).fill(0x8a6238).stroke({ width: 1.3, color: 0x3a2610 });
   r.g.poly([-12, 2, -6, -12, -3, -12, -7, 2]).fill(0x7a5530).stroke({ width: 1, color: 0x3a2610 });
@@ -592,7 +592,7 @@ function drawCatapult(r: Rig, c: number): void {
   r.weapon = w;
   r.torso.addChild(w);
 }
-function drawBallista(r: Rig, c: number): void {
+function drawBoltThrower(r: Rig, c: number): void {
   r.noHands = true;
   r.g.roundRect(-16, 3, 32, 6, 2).fill(0x8a6238).stroke({ width: 1.3, color: 0x3a2610 });
   siegeWheel(r.g, -11, 10, 6);
@@ -653,7 +653,7 @@ function drawTotem(r: Rig, c: number): void {
   r.legR.roundRect(2, 8, 6, 9, 2).fill(0x5a3a1c);
 }
 
-// ---------------------------------------------------------------- birim tarifleri
+// ---------------------------------------------------------------- unit recipes
 
 type Recipe = (r: Rig, c: number, d: number) => Anim;
 
@@ -661,7 +661,7 @@ const WIZ_RED = 0xb02a2a;
 const NAVY = 0x23407a;
 
 export const LOOKS: Record<string, Recipe> = {
-  militia: (r, c, d) => {
+  'militia': (r, c, d) => {
     legs(r);
     plate(r.g, STEEL, STEEL_D, d);
     human(r.g);
@@ -670,7 +670,7 @@ export const LOOKS: Record<string, Recipe> = {
     mkShield(r, 'buckler', c, d);
     return 'swing';
   },
-  archers: (r, c) => {
+  'longbowmen': (r, c) => {
     legs(r);
     tunic(r.g, 0x4a7a3a, 0x2a4a22);
     belt(r.g, 0x5a3a1c);
@@ -689,7 +689,7 @@ export const LOOKS: Record<string, Recipe> = {
     mkShield(r, 'tower', c, d);
     return 'swing';
   },
-  grenadier: (r, c) => {
+  'grenadier': (r, c) => {
     legs(r);
     tunic(r.g, 0xb86a2a, 0x6a3a14);
     belt(r.g, 0x2b2f36);
@@ -702,8 +702,8 @@ export const LOOKS: Record<string, Recipe> = {
     bomb(r);
     return 'throw';
   },
-  pyre-sling: (r, c) => {
-    drawCatapult(r, c);
+  'pyre-sling': (r, c) => {
+    drawPyreSling(r, c);
     return 'siege';
   },
   'dungeon-warden': (r, c, d) => {
@@ -718,7 +718,7 @@ export const LOOKS: Record<string, Recipe> = {
     mkShield(r, 'bone', c, d);
     return 'swing';
   },
-  skeleton: (r, c) => {
+  'bone-soldier': (r, c) => {
     legs(r, BONE);
     bones(r.g);
     skull(r.g, 0x7aff9a);
@@ -736,7 +736,7 @@ export const LOOKS: Record<string, Recipe> = {
     staff(r, 0xff7a1a, 0xa83a0a, 'fire');
     return 'cast';
   },
-  cutpurses: (r, c) => {
+  'cutpurses': (r, c) => {
     legs(r, 0x3a2a20);
     tunic(r.g, 0x7a5a38, 0x3a2a1c);
     belt(r.g, c);
@@ -785,7 +785,7 @@ export const LOOKS: Record<string, Recipe> = {
     r.g.rect(-14, 4, 28, 3).fill(c);
     human(r.g);
     beard(r.g);
-    viking(r.g);
+    berserkerHelm(r.g);
     axe(r, STEEL, true);
     mkShield(r, 'round', c, d);
     return 'swing';
@@ -799,7 +799,7 @@ export const LOOKS: Record<string, Recipe> = {
     staff(r, 0xaef0ff, 0x4a9ad0, 'crystal');
     return 'cast';
   },
-  lorekeeper: (r, c) => {
+  'lorekeeper': (r, c) => {
     legs(r);
     robe(r.g, 0xe8dcb8, 0x8a7a50, 0x7a3a2a);
     human(r.g);
@@ -811,7 +811,7 @@ export const LOOKS: Record<string, Recipe> = {
     book(r, 0x7a3a2a);
     return 'cast';
   },
-  zealot: (r, c) => {
+  'zealot': (r, c) => {
     legs(r, 0x2a2a30);
     plate(r.g, 0x2b2f36, 0x000000, c);
     r.g.rect(-2, -7, 4, 20).fill(WHITE);
@@ -843,7 +843,7 @@ export const LOOKS: Record<string, Recipe> = {
     flameBlade(r);
     return 'swing';
   },
-  oathkeeper: (r, c, d) => {
+  'oathkeeper': (r, c, d) => {
     legs(r, 0x7a7a82, true);
     heavy(r.g, 0xe8e2d0, 0x8a846e, GOLD);
     r.g.rect(-2, -8, 4, 20).fill(c);
@@ -855,11 +855,11 @@ export const LOOKS: Record<string, Recipe> = {
     mkShield(r, 'cross', c, d);
     return 'swing';
   },
-  bolt-thrower: (r, c) => {
-    drawBallista(r, c);
+  'bolt-thrower': (r, c) => {
+    drawBoltThrower(r, c);
     return 'siege';
   },
-  blast-imps: (r, c) => {
+  'blast-imps': (r, c) => {
     legs(r, 0x4a3a1c);
     tunic(r.g, 0x6a5a2a, 0x2a2410);
     for (const x of [-8, 0, 8]) {
@@ -870,18 +870,18 @@ export const LOOKS: Record<string, Recipe> = {
     r.g.rect(-12, -22, 24, 3).fill(c);
     return 'punch';
   },
-  thornlings: (r, c) => {
+  'thornlings': (r, c) => {
     legs(r, 0x3a7a32);
     r.g.roundRect(-12, -7, 24, 20, 8).fill(0x4f9a45).stroke({ width: 1.5, color: 0x2f6a2c });
     for (const x of [-6, 0, 6]) r.g.moveTo(x, -5).lineTo(x, 11).stroke({ width: 1, color: 0x6fbe62, alpha: 0.7 });
     r.g.roundRect(-20, -8, 7, 14, 3.5).fill(0x4f9a45).stroke({ width: 1.2, color: 0x2f6a2c });
     r.g.roundRect(13, -12, 7, 16, 3.5).fill(0x4f9a45).stroke({ width: 1.2, color: 0x2f6a2c });
     for (const [x, y] of [[-20, -4], [-20, 2], [20, -8], [20, -2], [-12, 4], [12, 6], [-12, -3]]) r.g.moveTo(x, y).lineTo(x + (x < 0 ? -4 : 4), y - 1.5).stroke({ width: 1.1, color: 0xf2f2e0 });
-    cactusHead(r.g);
+    thornHead(r.g);
     r.g.rect(-10, HY - 3, 20, 2.5).fill({ color: c, alpha: 0.9 });
     return 'punch';
   },
-  bone-caller: (r) => {
+  'bone-caller': (r) => {
     legs(r, 0x2a2030);
     robe(r.g, 0x2a1d3a, 0x0d0a18, 0x7a3fb0);
     r.g.roundRect(-8, -6, 16, 12, 3).fill({ color: 0x14181f, alpha: 0.3 });
@@ -891,7 +891,7 @@ export const LOOKS: Record<string, Recipe> = {
     staff(r, 0x7aff9a, 0x2a8a50, 'skull', 0x3a2a1c);
     return 'cast';
   },
-  wayfarers: (r, c) => {
+  'wayfarers': (r, c) => {
     legs(r, 0x6a5a3a);
     robe(r.g, 0xd8c8a0, 0x8a7a50, c);
     human(r.g);
@@ -900,7 +900,7 @@ export const LOOKS: Record<string, Recipe> = {
     staff(r, 0xffd86a, 0x8a6a1a, 'lantern', 0x6b4a2b);
     return 'swing';
   },
-  night-lancer: (r) => {
+  'night-lancer': (r) => {
     legs(r, 0x2a1830, true);
     heavy(r.g, 0x4a2a5a, 0x1a0e24, 0xd8333a);
     demonHead(r.g, 0xb04a6a, 0x5a1a34);
@@ -939,7 +939,7 @@ export const LOOKS: Record<string, Recipe> = {
     mkShield(r, 'cross', c, d);
     return 'thrust';
   },
-  javelineers: (r, c, d) => {
+  'javelineers': (r, c, d) => {
     legs(r, 0x6a4a2a);
     tunic(r.g, 0xd8c8a0, 0x8a7a50);
     belt(r.g, c);
@@ -949,7 +949,7 @@ export const LOOKS: Record<string, Recipe> = {
     mkShield(r, 'pelte', c, d);
     return 'throw';
   },
-  pit-fighters: (r, c) => {
+  'pit-fighters': (r, c) => {
     legs(r, 0x3a3a46, true);
     bare(r.g, SKIN, SKIN_D);
     r.g.rect(-13, 5, 26, 4).fill(0x2b2f36);
@@ -984,7 +984,7 @@ export const LOOKS: Record<string, Recipe> = {
   'scarecrow': (r, c, d) => {
     legs(r, 0x4a2a1c, true);
     heavy(r.g, 0xa8501a, 0x4a1e08, c);
-    scarecrowHead(r.g);
+    gourdHead(r.g);
     mace(r, 0x6a4a2a);
     mkShield(r, 'round', c, d);
     return 'swing';
@@ -1000,7 +1000,7 @@ export const LOOKS: Record<string, Recipe> = {
     staff(r, 0xf08a2a, 0x8a3a0a, 'orb', 0x3a2a1c);
     return 'cast';
   },
-  nun: (r) => {
+  'mender': (r) => {
     legs(r, 0x1b1b22);
     robe(r.g, 0x1b1b22, 0x000000, WHITE);
     r.g.rect(-6, -6, 12, 14).fill(WHITE).stroke({ width: 0.8, color: 0xb9b3a3 });
@@ -1012,7 +1012,7 @@ export const LOOKS: Record<string, Recipe> = {
     drawShip(r, c, d);
     return 'siege';
   },
-  demon: (r) => {
+  'ash-fiend': (r) => {
     legs(r, 0x5a1a1a, true);
     wings(r, 0x5a1a2a, 0x2a0a10);
     tail(r, 0xa82a2a);
@@ -1081,7 +1081,7 @@ export const LOOKS: Record<string, Recipe> = {
     spear(r, 24, STEEL_L, c);
     return 'slam';
   },
-  sand-king: (r) => {
+  'sand-king': (r) => {
     legs(r, 0xd8c890);
     robe(r.g, 0xf4ecd0, 0xb0a070, 0x2a6fd0);
     r.g.poly([-9, -6, 9, -6, 6, 4, -6, 4]).fill(GOLD).stroke({ width: 1, color: GOLD_D });

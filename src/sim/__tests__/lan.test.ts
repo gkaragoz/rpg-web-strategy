@@ -24,13 +24,13 @@ afterAll(() => {
 const until = async (cond: () => boolean, ms = 3000): Promise<void> => {
   const t0 = Date.now();
   while (!cond()) {
-    if (Date.now() - t0 > ms) throw new Error('zaman asimi');
+    if (Date.now() - t0 > ms) throw new Error('timed out');
     await new Promise((r) => setTimeout(r, 10));
   }
 };
 
-describe('LAN WebSocket sunucusu', () => {
-  it('oda kur, katil, lobi akisi, presence, kick ve host kapaninca kapanis', async () => {
+describe('LAN WebSocket server', () => {
+  it('create a room, join, lobby flow, presence, kick, and shutdown when the host closes', async () => {
     const code = 'TEST01';
     const htp = await WsHostTransport.create(lanUrl(code, 'host', base));
     const host = new HostLobby(htp, 'Host', 0, { code });
@@ -47,18 +47,18 @@ describe('LAN WebSocket sunucusu', () => {
     const g2 = new GuestSession(gtp2, { name: 'Ece', color: 3 });
     await until(() => g2.model.state !== null && hs.model.state!.players.length === 3);
 
-    // Ayar yayini ve hazir.
+    // Settings broadcast and ready.
     hs.send({ t: 'settings', settings: { gold: 4000, placeSecs: 30 } });
     await until(() => g.model.state!.settings.gold === 4000);
     g.send({ t: 'ready', ready: true });
     await until(() => hs.model.state!.players[1].ready);
 
-    // Presence: g -> g2 ve host.
-    g.send({ t: 'presence', x: 5, y: 6, ctx: 'page', act: 'Lobi ayarlari' });
+    // Presence: g -> g2 and host.
+    g.send({ t: 'presence', x: 5, y: 6, ctx: 'page', act: 'lobbySettings' });
     await until(() => g2.model.presence.has(g.model.you) && hs.model.presence.has(g.model.you));
-    expect(g2.model.presence.get(g.model.you)!.act).toBe('Lobi ayarlari');
+    expect(g2.model.presence.get(g.model.you)!.act).toBe('lobbySettings');
 
-    // Sohbet.
+    // Chat.
     g2.send({ t: 'chat', text: 'selam' });
     await until(() => g.model.chat.length === 1);
     expect(g.model.chat[0]).toMatchObject({ name: 'Ece', text: 'selam' });
@@ -68,17 +68,17 @@ describe('LAN WebSocket sunucusu', () => {
     await until(() => g2.model.closedReason !== null);
     await until(() => hs.model.state!.players.length === 2);
 
-    // Olmayan oda ve ayni kod ikinci kez.
+    // A nonexistent room, and the same code a second time.
     await expect(WsGuestTransport.create(lanUrl('YOKYOK', 'guest', base))).rejects.toBeInstanceOf(NetError);
     await expect(WsHostTransport.create(lanUrl(code, 'host', base))).rejects.toMatchObject({ code: 'taken' });
 
-    // Host kapaninca misafir bilgilendirilir ve oda silinir.
+    // When the host closes, the guest is notified and the room is deleted.
     hs.leave();
     await until(() => g.model.closedReason !== null);
     await until(() => !lan.rooms.has(code));
   }, 20000);
 
-  it('buyuk mesaj (cok parcali cerceve) bozulmadan iletilir', async () => {
+  it('a large message (multi-chunk frame) is delivered intact', async () => {
     const code = 'BIG001';
     const htp = await WsHostTransport.create(lanUrl(code, 'host', base));
     const host = new HostLobby(htp, 'Host', 0, { code });
@@ -86,12 +86,12 @@ describe('LAN WebSocket sunucusu', () => {
     const gtp = await WsGuestTransport.create(lanUrl(code, 'guest', base));
     const g = new GuestSession(gtp, { name: 'G', color: 1 });
     await until(() => g.model.state !== null);
-    // ~300 KB'lik yeniden senkron mesaji (host -> misafir).
+    // A ~300 KB resync message (host -> guest).
     const data = 'A'.repeat(300000);
     htp.send(g.model.you, { t: 'resync', step: 7, data });
     await until(() => g.model.pendingResync !== null);
     expect(g.model.pendingResync!.data.length).toBe(300000);
-    // Misafir -> host buyuk sohbet metni kirpilir (CHAT_MAX), baglanti saglam kalir.
+    // Guest -> host: a long chat text is truncated (CHAT_MAX) and the connection stays healthy.
     g.send({ t: 'chat', text: 'x'.repeat(5000) });
     await until(() => hs.model.chat.length === 1);
     expect(hs.model.chat[0].text.length).toBe(200);

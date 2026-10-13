@@ -1,9 +1,9 @@
-// Internet rolesi: NAT/TURN gerektirmeyen WebSocket oda yonlendiricisi (Cloudflare Worker + Durable Object).
-// Protokol scripts/lan.mjs ile aynidir; oyun mantigi host istemcisindedir, burasi yalniz mesaj iletir.
-//   Yol: /ws?room=KOD&role=host|guest
+// Internet relay: a WebSocket room router that needs no NAT/TURN (Cloudflare Worker + Durable Object).
+// The protocol is the same as scripts/lan.mjs; the game logic lives in the host client, this only relays messages.
+//   Path: /ws?room=CODE&role=host|guest
 //   host -> srv : {to: id | '*', except?: id, msg} | {disconnect: id}
 //   srv -> host : {ok:true} | {from: id, msg} | {join: id} | {leave: id}
-//   misafir -> srv : {msg}      srv -> misafir: {ok:true, id} | {msg} | {close: neden}
+//   guest -> srv : {msg}      srv -> guest: {ok:true, id} | {msg} | {close: reason}
 const MAX_GUESTS = 16;
 
 export default {
@@ -74,7 +74,7 @@ export class Room {
           g.send(JSON.stringify({ close: 'closed' }));
           g.close(1000, 'closed');
         } catch {
-          /* zaten kapali */
+          /* already closed */
         }
       }
       this.guests.clear();

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# RPG Web - Savas Studyosu: macOS / Linux kurulum sihirbazi.
+# RPG Web - Battle Studio: macOS / Linux install wizard.
 #   curl -fsSL https://github.com/gkaragoz/rpg-web-strategy/releases/latest/download/install.sh | bash
-# Secenekler: --dir <klasor>  --version <vX.Y.Z>  --update  --uninstall  --yes
+# Options: --dir <folder>  --version <vX.Y.Z>  --update  --uninstall  --yes
 set -euo pipefail
 
 REPO="gkaragoz/rpg-web-strategy"
@@ -17,8 +17,8 @@ while [ $# -gt 0 ]; do
     --update) MODE="update"; shift ;;
     --uninstall) MODE="uninstall"; shift ;;
     --yes|-y) YES=1; shift ;;
-    -h|--help) echo "Kullanim: install.sh [--dir klasor] [--version vX.Y.Z] [--update] [--uninstall] [--yes]"; exit 0 ;;
-    *) echo "Bilinmeyen secenek: $1"; exit 1 ;;
+    -h|--help) echo "Usage: install.sh [--dir folder] [--version vX.Y.Z] [--update] [--uninstall] [--yes]"; exit 0 ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
 
@@ -28,8 +28,8 @@ ok() { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 die() { printf '  \033[31m✗ %s\033[0m\n' "$*"; exit 1; }
 
-# curl | bash durumunda stdin boru olur: sorulari terminalden oku.
-ask() { # ask "Soru" "varsayilan" -> cevap
+# With curl | bash, stdin is a pipe: read the answers from the terminal.
+ask() { # ask "Question" "default" -> answer
   local q="$1" def="$2" ans=""
   if [ "$YES" = 1 ]; then echo "$def"; return; fi
   if [ -r /dev/tty ]; then
@@ -38,32 +38,32 @@ ask() { # ask "Soru" "varsayilan" -> cevap
   fi
   echo "${ans:-$def}"
 }
-confirm() { # confirm "Soru" -> 0 evet
+confirm() { # confirm "Question" -> 0 for yes
   local a
-  a="$(ask "$1 (e/h)" "e")"
-  case "$a" in e|E|evet|y|Y|yes) return 0 ;; *) return 1 ;; esac
+  a="$(ask "$1 (y/n)" "y")"
+  case "$a" in y|Y|yes|e|E|evet) return 0 ;; *) return 1 ;; esac
 }
 
 bold ""
-bold "  RPG Web — Savaş Stüdyosu kurulum sihirbazı"
+bold "  RPG Web - Battle Studio install wizard"
 bold ""
 
 OS="$(uname -s)"
 case "$OS" in
   Darwin) PLATFORM="macOS" ;;
   Linux) PLATFORM="Linux" ;;
-  *) die "Desteklenmeyen sistem: $OS (Windows icin install.ps1 kullanin)" ;;
+  *) die "Unsupported system: $OS (use install.ps1 on Windows)" ;;
 esac
-info "Sistem: $PLATFORM"
+info "System: $PLATFORM"
 
 if [ "$MODE" = "uninstall" ]; then
-  [ -d "$DIR" ] || die "Kurulum bulunamadi: $DIR"
-  if confirm "$DIR silinsin mi?"; then
+  [ -d "$DIR" ] || die "Installation not found: $DIR"
+  if confirm "Delete $DIR?"; then
     rm -rf "$DIR"
     rm -f "$HOME/Desktop/RPG Web.command" "$HOME/.local/share/applications/rpg-web.desktop" "$HOME/.local/bin/rpg-web"
-    ok "Kaldirildi."
+    ok "Removed."
   else
-    info "Iptal edildi."
+    info "Cancelled."
   fi
   exit 0
 fi
@@ -74,81 +74,82 @@ if command -v node >/dev/null 2>&1; then
   major="$(node -v | sed 's/^v//' | cut -d. -f1)"
   if [ "${major:-0}" -ge 18 ]; then
     need_node=0
-    ok "Node.js $(node -v) bulundu"
+    ok "Node.js $(node -v) found"
   fi
 fi
 if [ "$need_node" = 1 ]; then
-  warn "Node.js 18+ gerekli (yerel sunucu icin)."
+  warn "Node.js 18+ is required (for the local server)."
   if [ "$PLATFORM" = "macOS" ] && command -v brew >/dev/null 2>&1; then
-    if confirm "Homebrew ile Node.js kurulsun mu?"; then brew install node; else die "Node.js olmadan devam edilemez: https://nodejs.org"; fi
+    if confirm "Install Node.js with Homebrew?"; then brew install node; else die "Cannot continue without Node.js: https://nodejs.org"; fi
   elif command -v apt-get >/dev/null 2>&1 && [ "$(id -u)" = 0 ]; then
-    if confirm "apt ile Node.js kurulsun mu?"; then apt-get update -y && apt-get install -y nodejs npm; else die "Node.js gerekli."; fi
+    if confirm "Install Node.js with apt?"; then apt-get update -y && apt-get install -y nodejs npm; else die "Node.js is required."; fi
   else
-    die "Lutfen Node.js 18+ kurun (https://nodejs.org veya nvm) ve sihirbazi tekrar calistirin."
+    die "Please install Node.js 18+ (https://nodejs.org or nvm) and run the wizard again."
   fi
-  command -v node >/dev/null 2>&1 || die "Node.js kurulamadi."
+  command -v node >/dev/null 2>&1 || die "Node.js could not be installed."
 fi
-command -v curl >/dev/null 2>&1 || die "curl gerekli."
-command -v unzip >/dev/null 2>&1 || die "unzip gerekli."
+command -v curl >/dev/null 2>&1 || die "curl is required."
+command -v unzip >/dev/null 2>&1 || die "unzip is required."
 
-# --- Kurulum dizini ---
+# --- Install directory ---
 if [ "$MODE" = "install" ]; then
-  DIR="$(ask "Kurulum klasoru" "$DIR")"
+  DIR="$(ask "Install folder" "$DIR")"
 fi
-info "Klasor: $DIR"
+info "Folder: $DIR"
 
-# --- Surum ---
+# --- Version ---
 if [ -z "$VERSION" ]; then
-  info "Son surum araniyor..."
+  info "Looking up the latest version..."
   VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')" || true
-  [ -n "$VERSION" ] || die "Son surum bulunamadi (internet baglantisini kontrol edin)."
+  [ -n "$VERSION" ] || die "Latest version not found (check your internet connection)."
 fi
-ok "Surum: $VERSION"
+ok "Version: $VERSION"
 if [ -f "$DIR/VERSION" ] && [ "$MODE" = "update" ] && [ "$(cat "$DIR/VERSION")" = "$VERSION" ]; then
-  ok "Zaten guncel."
+  ok "Already up to date."
   exit 0
 fi
 
-# --- Indir ve ac ---
+# --- Download and extract ---
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 ASSET="rpg-web-strategy-${VERSION}.zip"
 URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET"
-info "Indiriliyor: $ASSET"
-curl -fL --progress-bar -o "$TMP/$ASSET" "$URL" || die "Indirme basarisiz: $URL"
+info "Downloading: $ASSET"
+curl -fL --progress-bar -o "$TMP/$ASSET" "$URL" || die "Download failed: $URL"
 rm -rf "$DIR/app"
 mkdir -p "$DIR/app"
 unzip -q -o "$TMP/$ASSET" -d "$DIR/app"
-[ -f "$DIR/app/index.html" ] || die "Paket beklenen icerikte degil."
+[ -f "$DIR/app/index.html" ] || die "Package does not have the expected contents."
 if [ -f "$DIR/app/server.mjs" ]; then mv -f "$DIR/app/server.mjs" "$DIR/server.mjs"; fi
 if [ -f "$DIR/app/lan.mjs" ]; then mv -f "$DIR/app/lan.mjs" "$DIR/lan.mjs"; fi
 echo "$VERSION" > "$DIR/VERSION"
-ok "Dosyalar acildi"
+ok "Files extracted"
 
-# --- Baslatici ---
-printf '#!/usr/bin/env bash\ncd "$(dirname "$0")"\nexec node server.mjs app --open\n' > "$DIR/oyna.sh"
-chmod +x "$DIR/oyna.sh"
-printf '#!/usr/bin/env bash\ncd "$(dirname "$0")"\nexec node server.mjs app --open --lan\n' > "$DIR/oyna-lan.sh"
-chmod +x "$DIR/oyna-lan.sh"
-ok "Baslatici: $DIR/oyna.sh (LAN lobisi icin: $DIR/oyna-lan.sh)"
+# --- Launcher ---
+printf '#!/usr/bin/env bash\ncd "$(dirname "$0")"\nexec node server.mjs app --open\n' > "$DIR/play.sh"
+chmod +x "$DIR/play.sh"
+printf '#!/usr/bin/env bash\ncd "$(dirname "$0")"\nexec node server.mjs app --open --lan\n' > "$DIR/play-lan.sh"
+chmod +x "$DIR/play-lan.sh"
+rm -f "$DIR/oyna.sh" "$DIR/oyna-lan.sh"  # launchers from older versions
+ok "Launcher: $DIR/play.sh (for the LAN lobby: $DIR/play-lan.sh)"
 
 if [ "$PLATFORM" = "macOS" ]; then
   if [ -d "$HOME/Desktop" ]; then
-    printf '#!/usr/bin/env bash\nexec "%s/oyna.sh"\n' "$DIR" > "$HOME/Desktop/RPG Web.command"
+    printf '#!/usr/bin/env bash\nexec "%s/play.sh"\n' "$DIR" > "$HOME/Desktop/RPG Web.command"
     chmod +x "$HOME/Desktop/RPG Web.command"
-    ok "Masaustu kisayolu: RPG Web.command"
+    ok "Desktop shortcut: RPG Web.command"
   fi
 else
   mkdir -p "$HOME/.local/share/applications" "$HOME/.local/bin"
-  printf '[Desktop Entry]\nType=Application\nName=RPG Web\nComment=Savas Studyosu\nExec=%s/oyna.sh\nTerminal=true\nCategories=Game;\n' "$DIR" > "$HOME/.local/share/applications/rpg-web.desktop"
-  ln -sf "$DIR/oyna.sh" "$HOME/.local/bin/rpg-web"
-  ok "Uygulama menusu girdisi ve 'rpg-web' komutu eklendi"
+  printf '[Desktop Entry]\nType=Application\nName=RPG Web\nComment=Battle Studio\nExec=%s/play.sh\nTerminal=true\nCategories=Game;\n' "$DIR" > "$HOME/.local/share/applications/rpg-web.desktop"
+  ln -sf "$DIR/play.sh" "$HOME/.local/bin/rpg-web"
+  ok "Added application menu entry and 'rpg-web' command"
 fi
 
 bold ""
-bold "  Kurulum tamam!"
-info "Baslatmak icin: $DIR/oyna.sh"
-info "Guncellemek icin: bash install.sh --update    Kaldirmak icin: bash install.sh --uninstall"
-if confirm "Oyun simdi baslatilsin mi?"; then
-  exec "$DIR/oyna.sh"
+bold "  Installation complete!"
+info "To start: $DIR/play.sh"
+info "To update: bash install.sh --update    To uninstall: bash install.sh --uninstall"
+if confirm "Start the game now?"; then
+  exec "$DIR/play.sh"
 fi

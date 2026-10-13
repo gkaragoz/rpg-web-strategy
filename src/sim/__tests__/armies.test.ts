@@ -3,13 +3,13 @@ import { composeArmy, composeFromKind, laneOf, placeableKinds, unitCost } from '
 import { mulberry32 } from '../random';
 import { KIND_OF_TROOP, STATS } from '../units';
 
-describe('rol tabanli ordu kompozisyonu', () => {
-  it('Tauntman kaldirildi, iskelet yerlestirilemez', () => {
+describe('role-based army composition', () => {
+  it('Tauntman was removed, skeletons cannot be placed', () => {
     expect(KIND_OF_TROOP.tauntman).toBeUndefined();
     expect(placeableKinds()).not.toContain(KIND_OF_TROOP['bone-soldier']);
   });
 
-  it('her hat dolu, adetler makul ve maliyet butceyi asmaz', () => {
+  it('every lane is filled, counts are reasonable and cost stays within budget', () => {
     const rnd = mulberry32(3);
     for (let i = 0; i < 100; i++) {
       const a = composeArmy(rnd);
@@ -24,7 +24,7 @@ describe('rol tabanli ordu kompozisyonu', () => {
     }
   });
 
-  it('secili tur kendi hattina girer', () => {
+  it('the selected kind goes into its own lane', () => {
     const rnd = mulberry32(9);
     for (const k of placeableKinds()) {
       const a = composeFromKind(k, rnd);

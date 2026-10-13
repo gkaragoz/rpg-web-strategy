@@ -1,196 +1,229 @@
-# RPG Web — Savaş Stüdyosu
+# RPG Web — Battle Studio
 
-[![Lisans: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/lisans-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
-[![Ticari kullanım: yasak](https://img.shields.io/badge/ticari%20kullan%C4%B1m-yasak-red)](LICENSING.md)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
+[![Commercial use: not allowed](https://img.shields.io/badge/commercial%20use-not%20allowed-red)](LICENSING.md)
 [![Release](https://github.com/gkaragoz/rpg-web-strategy/actions/workflows/release.yml/badge.svg)](https://github.com/gkaragoz/rpg-web-strategy/actions/workflows/release.yml)
-[![Katkı: CLA gerekli](https://img.shields.io/badge/kat%C4%B1k-CLA%20gerekli-orange)](CONTRIBUTING.md)
+[![Contributing: CLA required](https://img.shields.io/badge/contributing-CLA%20required-orange)](CONTRIBUTING.md)
 
-Tarayıcıda çalışan izometrik, otomatik savaş oyunu. PixiJS v8 + Vite + TypeScript. Simülasyon bir Web Worker'da
-çalışır; 20.000 askerlik (10k vs 10k) savaş ~160 FPS'te akar. Çevrimiçi mod (LAN / internet, en çok 6 oyuncu), mobil
-dokunmatik desteği, 49 birim ve rastgele haritalar içerir.
+An isometric auto-battle game that runs in the browser (PixiJS v8 + Vite + TypeScript). The simulation runs in a Web Worker;
+a 20,000-soldier battle (10k vs 10k) runs at ~160 FPS. It has online play (LAN / internet, up to 6 players), touch
+support for phones and tablets, 49 units, random maps and a bilingual UI (English / Türkçe).
 
-## Lisans
+**Play now:** https://gkaragoz.github.io/rpg-web-strategy/
 
-Bu proje **kaynağı açık ama ticari kullanıma kapalıdır** (*source-available*). Kaynak kod
-**[PolyForm Noncommercial License 1.0.0](LICENSE)** ve ek şartlar altındadır:
+## License
 
-- ✅ Oynayabilir, kaynağı okuyabilir, **ticari olmayan** amaçla (kişisel, hobi, eğitim, araştırma, kâr amacı gütmeyen
-  kuruluşlar) değiştirip paylaşabilirsin.
-- ❌ Projeyi veya türevlerini **satamaz**, reklam/abonelik/oyun içi satın alma ile **gelir elde edemez**, ücretli ürün ya
-  da hizmete (ücretli sunucu barındırma dahil) **dahil edemezsin**. Ticari kullanım için proje sahibinden yazılı izin gerekir.
-- 📝 Her kopyada ve değiştirilmiş sürümde lisans ve **"© gkaragoz and Contributors"** bildirimi korunmalı, değiştirilmiş
-  sürüm kendi kökenini yanlış göstermemeli ("RPG Web / Savaş Stüdyosu" adını resmi proje gibi kullanamaz).
-- 🤝 İsteyen herkes **resmi projeye katkı** gönderebilir ([CONTRIBUTING.md](CONTRIBUTING.md)); katkılar [CLA](CLA.md) ile
-  proje sahibine lisanslanır.
-- Roster kaynaklı birim verisi (`src/sim/data/troops.ts`) **source terms**'dır, üçüncü taraf kütüphaneler kendi lisanslarındadır:
-  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Ayrıntılı özet: [LICENSING.md](LICENSING.md).
+This project is **source-available, but closed to commercial use**. The source code is licensed under the
+**[PolyForm Noncommercial License 1.0.0](LICENSE)** plus additional terms:
 
-> AGPL gibi açık kaynak lisansları ticari kopyalamayı engelleyemediği için bu lisans seçildi; proje OSI tanımıyla "açık kaynak" değildir.
+- ✅ You may play, read the source, and modify and share it for **noncommercial** purposes (personal use, hobby, education,
+  research, charities and public institutions).
+- ❌ You may **not** sell the project or derivatives of it, make money from it with ads, subscriptions or in-app purchases,
+  or include it in a paid product or service (including paid server hosting). Commercial use requires written permission
+  from the project owner.
+- 📝 Every copy and modified version must keep the license and the **"© gkaragoz and Contributors"** notice, and a modified
+  version must not misrepresent its origin (it may not use the "RPG Web / Battle Studio" name as if it were the official project).
+- 🤝 Anyone is welcome to **contribute to the official project** ([CONTRIBUTING.md](CONTRIBUTING.md)); contributions are
+  licensed to the project owner through the [CLA](CLA.md).
+- Third-party libraries keep their own licenses: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). A short summary of the
+  whole structure is in [LICENSING.md](LICENSING.md).
 
+> Open-source licenses such as the AGPL cannot stop commercial copying, which is why this license was chosen; the project is
+> not "open source" in the OSI sense.
 
-## Oyna / Kur
+## Features
 
-**Tarayıcıda (kurulumsuz):** https://gkaragoz.github.io/rpg-web-strategy/ — her sürümde otomatik yayınlanır. Sayfa ilk açılışta bir
-service worker kaydedip bir kez yenilenir (SharedArrayBuffer / worker sim için); olmazsa sim ana thread'de çalışır.
+- Isometric auto-battles with up to 6 teams, 49 units (5 classics + 44 roster units with 10 levels each), skills such as
+  summoning, resurrection, healing, stuns, fear, shields, area and line damage.
+- Map generator with biomes, rivers, forests, villages, relief and layouts (valley, central fortress, islands and bridges,
+  crossroads), 21 presets and a fully random mode.
+- **Online play:** host a lobby, friends join with a code; budget-based unit placement; deterministic lockstep simulation;
+  spectators, reconnection, chat, player cursors. LAN, internet relay and WebRTC fallback.
+- **Mobile:** touch controls, bottom-sheet toolbar, adaptive resolution.
+- **Comedy mode:** ragdoll deaths, cartoon sounds, physics launches.
+- Bilingual UI: English (default) and Türkçe.
 
-**Kurulum sihirbazı (yerel sunucu, çevrimdışı oynanır; Node.js 18+ gerekir, yoksa sihirbaz kurmayı önerir):**
+## Play / Install
 
-| Sistem | Komut |
+**In the browser (no install):** https://gkaragoz.github.io/rpg-web-strategy/ — published automatically with every release.
+On first load the page registers a service worker and reloads once (needed for SharedArrayBuffer / the worker simulation);
+if that fails the simulation runs on the main thread.
+
+**Install wizard (local server, works offline; needs Node.js 18+, the wizard offers to install it):**
+
+| System | Command |
 |---|---|
 | macOS / Linux | `curl -fsSL https://github.com/gkaragoz/rpg-web-strategy/releases/latest/download/install.sh \| bash` |
 | Windows (PowerShell) | `iwr -useb https://github.com/gkaragoz/rpg-web-strategy/releases/latest/download/install.ps1 \| iex` |
-| Windows (çift tık) | Releases sayfasından `install.bat` indirip çalıştır |
+| Windows (double-click) | Download `install.bat` from the Releases page and run it |
 
-Sihirbaz kurulum klasörünü sorar, son sürümü indirir, `oyna.sh` / `oyna.bat` başlatıcısı ve masaüstü kısayolu oluşturur.
-Güncelleme: `install.sh --update` · Kaldırma: `install.sh --uninstall` (Windows: `-Update` / `-Uninstall`).
-Elle: sürüm zip'ini aç, `node server.mjs app --open` (`scripts/server.mjs`, bağımlılıksız, COOP/COEP başlıklı).
+The wizard asks for an install folder, downloads the latest release and creates launchers (`play.sh` / `play.bat` for local play,
+`play-lan` for hosting a LAN lobby) and a desktop shortcut. Update: `install.sh --update` · Uninstall: `install.sh --uninstall`
+(Windows: `-Update` / `-Uninstall`). Manually: unzip a release and run `node server.mjs app --open` (`scripts/server.mjs`,
+dependency-free, sends the COOP/COEP headers).
 
-**Sürüm çıkarma:** `git tag v1.x.y && git push origin v1.x.y` → `.github/workflows/release.yml` test eder, derler, zip + sihirbaz
-dosyalarıyla Release oluşturur ve Pages'e yayınlar.
+**Releasing:** `git tag v1.x.y && git push origin v1.x.y` → `.github/workflows/release.yml` tests, builds, creates a GitHub
+Release with the zip and the wizard files, and publishes to GitHub Pages.
 
-## Çalıştırma
+## Development
+
+Prerequisites: Node.js 18+ (22 recommended), npm, a modern browser.
 
 ```bash
 npm install
-npm run dev      # geliştirme sunucusu (http://localhost:5173)
-npm run build    # tsc + üretim derlemesi
-npm run check    # tsc --noEmit + testler
+npm run dev      # dev server (http://localhost:5173)
+npm run build    # tsc + production build
+npm run check    # tsc --noEmit + tests
 ```
 
-`SharedArrayBuffer` (worker) için sunucu `Cross-Origin-Opener-Policy: same-origin` ve
-`Cross-Origin-Embedder-Policy: require-corp` başlıklarını göndermelidir (`vite.config.ts` bunu dev/preview için yapar;
-üretim sunucusunda da gerekir). Yoksa sim otomatik olarak ana thread'e düşer.
+`SharedArrayBuffer` (the worker simulation) needs the server to send `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` (`vite.config.ts` does it for dev/preview; a production server needs it too).
+Without them the simulation falls back to the main thread automatically.
 
-## Kullanım
+## Usage
 
-**Stüdyo (ana sayfa):** harita (çevre, tohum, boyut), vur-kaç, hız, görünüm/ses, birim ayarları, 2–6 takım, renk
-paleti, asker yerleştirme ve benchmark.
+**Studio (home page):** map (environment, seed, size), kiting, speed, display/sound, unit settings, 2–6 teams, color
+palette, soldier placement and a benchmark.
 
-| Girdi | İşlev |
+| Input | Action |
 |---|---|
-| Sol tık / sürükle | Asker yerleştir (fırça: Tek / Küçük / Büyük) |
-| Sağ tık / sürükle | Sil (Shift: yalnız seçili takım) |
-| Q / E | Takım değiştir · 1–5: asker türü · B: fırça · X: yerleştir/sil |
-| Ctrl+Z / Ctrl+Y (veya Z / Y) | Geri al / yinele |
-| Tekerlek, WASD, orta tuş | Yakınlaş, kaydır |
-| Space · R · Esc · 1-2-3 · F3 · V | (savaşta) duraklat · yeniden başlat · düzenle · hız · istatistik · debug |
+| Left click / drag | Place soldiers (brush: Single / Small / Large) |
+| Right click / drag | Erase (Shift: only the selected team) |
+| Q / E | Switch team · 1–5: soldier type · B: brush · X: place/erase |
+| Ctrl+Z / Ctrl+Y (or Z / Y) | Undo / redo |
+| Wheel, WASD, middle button | Zoom, pan |
+| Space · R · Esc · 1-2-3 · F3 · V | (in battle) pause · restart · edit · speed · statistics · debug |
 
-**Haritalar:** stüdyoda *Harita → Harita seç…* ile önizlemeli kart galerisi açılır (21 hazır harita, biyom filtresi,
-*Özelleştir* açılırları, **Rastgele** kartı: her şey rastgele + tohum; *Yeniden çek* / *Kilitle*). Tarif `MapSpec`
-(`src/sim/mapSpec.ts`) ile sim ve çizimde ortaktır; her harita merkeze göre simetrik ve iki ordu birbirine ulaşabilir.
-- **Biyom:** Orman, Çöl, Kar, Bataklık (zemin, ağaç/kaktüs/karlı çam/ölü ağaç, ev stili, su rengi).
-- **Kurgu:** *Klasik* (nehir + kabartma), **Vadi ve geçit** (iki yüksek set, tek kapı), **Merkez kale** (rampalı plato, halka
-  duvar, kuleler, hisar), **Adalar ve köprüler** (nehre dik iki kanal + köprüler), **Çapraz yol** (kavşak, mezralar).
-- **Kabartma / yükselti:** Düz, Tepecikler, Sıradağ, Plato, Dağ. Yükselti yalnız görsel + yokuş yukarı yavaşlama (en çok %35);
-  komşusundan ≥ 1,5 kademe yüksek tile uçurumdur (geçilmez). Zemin eğimli dörtgenlerle çizilir; birimler/dekor/mermiler
-  yüksekliğe oturur.
-- Nehir (kıvrımlı, düz, adalı, göllü, nehirsiz), orman (yoğun, seyrek, koru, çevre ormanı, ormansız), köy (köy, dağınık evler,
-  harabe kale, kamp, köysüz), geçit (ahşap köprü, taş köprü, sığ geçit) seçenekleri.
+**Maps:** *Map → Choose map…* in the studio opens a preview gallery (21 presets, biome filter, *Customize* dropdowns, a
+**Random** card: everything random + seed; *Reroll* / *Lock*). The recipe is a `MapSpec` (`src/sim/mapSpec.ts`) shared by the
+simulation and the renderer; every map is symmetric around the center and both armies can reach each other.
+- **Biome:** Forest, Desert, Snow, Swamp (ground, trees/cacti/snowy pines/dead trees, house style, water color).
+- **Layout:** *Classic* (river + relief), **Valley and pass** (two high ridges, a single gate), **Central fortress** (ramped
+  plateau, ring wall, towers, keep), **Islands and bridges** (two channels across the river + bridges), **Crossroads**
+  (junction, hamlets).
+- **Relief / elevation:** Flat, Hills, Ridge, Plateau, Mountain. Elevation is visual plus an uphill slowdown (at most 35%);
+  a tile ≥ 1.5 steps higher than its neighbor is a cliff (impassable). The ground is drawn with sloped quads; units, decor
+  and projectiles sit on the height.
+- Options for river (winding, straight, islands, lakes, none), forest (dense, sparse, grove, ring forest, none), village
+  (village, scattered houses, ruined fort, camp, none) and crossing (wooden bridge, stone bridge, shallow ford).
 
-**Komedi modu** (Totally Accurate Battle Simulator tadında; iki bağımsız anahtar — stüdyo *Görünüm ve ses → Komedi modu*,
-savaşta HUD düğmeleri, `K` tuşu, ya da `?comedy=1` ile ikisi birden):
-- **Komedi görünümü** (yalnız çizim/ses, anında açılıp kapanır): ölenler **ragdoll** olarak dönerek havaya uçar, sekip kayar,
-  su üstüne düşenler batar (ara sıra şapka/yıldız ayrılıp uçar); yalpalayan yürüyüş, vuruşta squash-stretch, tökezleme;
-  "BONK! / AAAH! / KABOOM!" yazıları, kartun sesler (bonk, boing, wail, splat, whoosh), büyütülmüş efektler, kamera sarsıntısı ve zoom darbesi.
-- **Komedi fiziği** (sim'i değiştirir, savaşı yeniden başlatır): canın büyük kısmını alan vuruşlar, tank darbeleri ve alan
-  yetenekleri birimi parabolik olarak havaya fırlatır (en çok 14 tile); suya inen **boğulur**, engel/uçuruma inen en yakın
-  yürünebilir noktaya konur, yere inince kısa süre yatar ve altındakileri ezer. Mod kapalıyken sim hiç etkilenmez.
+**Comedy mode** (in the spirit of Totally Accurate Battle Simulator; two independent switches — studio *Display and sound →
+Comedy mode*, HUD buttons in battle, the `K` key, or `?comedy=1` for both):
+- **Comedy look** (rendering/sound only, instant toggle): the dead fly off as **ragdolls**, bounce and slide, bodies that land
+  in water sink (sometimes a hat or a star pops off); wobbly walking, squash-and-stretch on hits, stumbling; "BONK! / AAAH! /
+  KABOOM!" texts, cartoon sounds (bonk, boing, wail, splat, whoosh), exaggerated effects, camera shake and zoom punch.
+- **Comedy physics** (changes the simulation, restarts the battle): hits that take most of a unit's health, tank blows and
+  area skills launch units on a parabola (up to 14 tiles); those landing in water **drown**, those landing on obstacles or
+  cliffs are placed on the nearest walkable point, and landed units lie down briefly and crush whoever is underneath.
+  With the mode off the simulation is not affected at all.
 
-**Debug katmanı:** stüdyoda *Görünüm ve ses → Hata ayıklama* anahtarı, savaşta HUD'daki *Debug* düğmesi veya `V` tuşu
-(savaş aynı dizilimle yeniden başlar) ya da `?debug=1` ile açılır. Sim ana thread'de çalışır ve test paketindeki takılma dedektörü savaşı canlı izler.
-Sorunlu birim kırmızı nabızlı halka, sıkışan birim turuncu halka, hedefi yasaklanan mor halka alır; sol üstteki panel
-sayaçları (takılan, aktif A* yolu, yasak, leash kırılması) ve son bayrakları (`idleChaser`, `cannotHit`, `oscillation`,
-`noProgress`...) gösterir. Tuşlar: `H` katmanı aç/kapat · `T` hedef çizgileri · `P` A* yolları · `G` kapalı bölgeler.
+**Debug layer:** studio *Display and sound → Debugging*, the *Debug* HUD button or `V` in battle (the battle restarts with the same
+layout), or `?debug=1`. The simulation runs on the main thread and the stall detector from the test suite watches the battle
+live. A problem unit gets a pulsing red ring, a stuck unit an orange ring, a unit whose target was banned a purple ring; the
+panel at the top left shows counters (stuck, active A* paths, banned, leash breaks) and the latest flags (`idleChaser`,
+`cannotHit`, `oscillation`, `noProgress`...). Keys: `H` toggle layer · `T` target lines · `P` A* paths · `G` closed regions.
 
-**URL parametreleri:** `?debug=1`, `?bench=10000&auto=30` (benchmark, 30 sn sonra rapor), `?sim=main` (sim ana thread),
-`?env=off` (çevresiz), `?kite=off` (vur-kaç kapalı), `?seed=3`.
+**URL parameters:** `?debug=1`, `?bench=10000&auto=30` (benchmark, report after 30 s), `?sim=main` (simulation on the main
+thread), `?env=off` (no environment), `?kite=off` (kiting off), `?seed=3`, `?comedy=1`, `?lang=en|tr`.
 
-## Çevrimiçi oyna
+## Online play
 
-Stüdyodaki **Çevrimiçi** düğmesi: ad + renk seç, sonra **Lobi kur**, **Kodla katıl** ya da **Seyret**.
+The **Online** button in the studio: choose a name and color, then **Host a lobby**, **Join with a code** or **Spectate**.
 
-- **Lobi (host):** harita (seç ya da *Rastgele*), başlangıç gold'u, yerleştirme süresi, birim seviyesi, harita boyutu, *Açık yerleştirme*
-  (herkes herkesin askerini anlık görür), komedi fiziği/görünümü, kapalı nadirlikler, parola; oyuncu **atma/susturma**. Oyuncu sayısı = takım sayısı (en çok 6).
-- **Oyun akışı:** herkes *Hazırım* der → host *Oyunu başlat* → herkes kendi bölgesine, gold bütçesiyle asker koyar (her birimin otomatik gold maliyeti vardır) →
-  herkes *HAZIR* deyince ya da süre dolunca savaş başlar. Hız ve duraklatma **yalnız host'ta**; diğerlerinde kilitli. Sonuçta host *Rövanş* başlatır.
-- **Herkesin adı, rengi, imleci var:** imleçler haritada dünya koordinatında (kamera/zoom'dan bağımsız), lobide sayfa koordinatında görünür.
-  Birim galerisi gibi bir panel açıksa imleç etiketi `Ad (Birim seçiyor)` olur. `Enter` ile oyun içi sohbet.
-- **Seyirci** oyun ortasında girebilir; kopan oyuncu sayfayı yenileyip menüdeki **Yeniden bağlan** ile (≈1 dk içinde) aynı takıma döner.
+- **Lobby (host):** map (choose or *Random*), starting gold, placement time, unit level, map size, *Open placement* (everyone
+  sees everyone's soldiers live), comedy physics/look, banned rarities, password; **kick / mute** players. Players = teams (max 6).
+- **Game flow:** everyone clicks *Ready* → the host clicks *Start game* → everyone places soldiers in their own zone with a gold
+  budget (every unit has an automatic gold cost) → the battle starts when everyone is *READY* or the time runs out. Speed and pause are
+  **host-only**; they are locked for everyone else. After the battle the host can start a *Rematch*.
+- **Everyone has a name, a color and a cursor:** cursors are drawn in world coordinates on the map (independent of camera/zoom) and in
+  page coordinates in the lobby. While a panel such as the unit gallery is open, the cursor label reads `Name (Choosing a unit)`.
+  Press `Enter` for in-game chat.
+- A **spectator** can join mid-game; a player who drops can reload the page and use **Reconnect** in the menu (within ~1 minute) to
+  return to the same team.
 
-**İnternet (varsayılan):** bir **WebSocket rölesi** üzerinden (`relay/`, ücretsiz Cloudflare Worker + Durable Object): iki cihaz farklı ağlarda/NAT arkasında olsa da bağlanır, TURN gerekmez. Röleye ulaşılamazsa doğrudan **WebRTC** (PeerJS) denenir. Lobide hangi yolun kullanıldığı kodun yanında yazar. Rölenin sonradan güncellenmesi için `relay/` içinde `npx wrangler login` (tarayıcıda izin verirsin) + `npx wrangler deploy` gerekir; çalışan röle için giriş gerekmez. Rölenin kendi adresini kullanmak için `relay/` içinde `npx wrangler deploy` çalıştırıp çıkan adresi `src/app/online/online.ts` içindeki `RELAY_URL`'e yaz.
-Host oyunu yönetir; oyun mantığı herkeste aynı deterministik simülasyonla koşar, ağdan yalnız komutlar geçer (sapma olursa kontrol toplamı yakalar, host durum görüntüsü yollar).
-**LAN:** kurulum sihirbazının `oyna-lan` başlatıcısı (ya da `node server.mjs app --open --lan`; geliştirmede `npm run dev` zaten `/ws` sunar) host'un bilgisayarında sunucuyu
-LAN'a açar; arkadaşlar yazdırılan `http://<host-ip>:5174` adresini açıp koda katılır. Menüde bağlantı türünü *LAN* seç.
+**Internet (default):** through a **WebSocket relay** (`relay/`, a free Cloudflare Worker + Durable Object): two devices connect even on different networks
+or behind NAT, no TURN server needed. If the relay is unreachable a direct **WebRTC** connection (PeerJS) is tried. The lobby shows which path is
+used next to the code. To update the relay later run `npx wrangler login` (you approve in the browser) and `npx wrangler deploy` inside `relay/`; no login is
+needed for the running relay. To use your own relay address, run `npx wrangler deploy` in `relay/` and put the printed address into `RELAY_URL` in
+`src/app/online/online.ts`. The host runs the game; the simulation runs identically on every client (deterministic), only commands cross the network
+(a checksum catches divergence and the host sends a state snapshot).
+**LAN:** the install wizard's `play-lan` launcher (or `node server.mjs app --open --lan`; in development `npm run dev` already serves `/ws`) opens the
+server to your LAN on the host's computer; friends open the printed `http://<host-ip>:5174` address and join with the code. Choose *LAN* as the connection type.
 
-Sorun giderme: *Sinyal sunucusuna ulaşılamadı* → ağ/güvenlik duvarı PeerJS sinyal sunucusunu (`0.peerjs.com`) engelliyor, LAN'ı dene.
-*Host bulundu ama doğrudan bağlantı kurulamadı* (yalnız röle ulaşılamazken WebRTC'ye düşüldüğünde) → iki cihaz farklı ağlarda ve NAT'lar doğrudan bağlantıya izin vermiyor; ücretsiz TURN sunucusu yok. Birincil yol olan **röle** bu durumda kullanılır; röle de erişilemiyorsa (ağ `workers.dev` adresini engelliyor) LAN'ı dene.
-*LAN sunucusuna bağlanılamadı* → oyunu `--lan` ile başlatmadın ya da Pages'ten LAN seçtin (Pages https olduğundan `ws://` kuramaz).
+Troubleshooting: *Could not reach the signaling server* → your network/firewall blocks the PeerJS signaling server (`0.peerjs.com`); try LAN.
+*Host found but a direct connection could not be established* (only when the relay is unreachable and WebRTC is used) → the devices are on different networks and the NATs do not
+allow a direct connection, and there is no free TURN server. The primary path, the **relay**, is used in that case; if the relay is unreachable too (your network blocks `workers.dev`) try LAN.
+*Could not connect to the LAN server* → you did not start the game with `--lan`, or you picked LAN on Pages (Pages is https and cannot open `ws://`).
 
-## Mobil
+## Mobile
 
-Telefon ve tablette tarayıcıdan oynanır (Pages adresi). Dokunmatik kontroller:
-- **Haritada:** tek parmak asker yerleştirir (sürüklersen boyar; *Sil* aracındaysa siler), **iki parmak kaydırır ve sıkıştırarak yakınlaştırır**. Savaşta tek parmak da kaydırır.
-- **Alt çekmece:** yerleştirmede alttaki ince çubuk (takım, tür, araç, *Savaşı başlat* / *HAZIR*) yatay kaydırılır; tutamacına dokununca/sürükleyince tüm araçlar açılır. Silmede *Sil: seçili takım* masaüstündeki Shift+sağ tık'ın karşılığıdır.
-- **Savaş HUD'u:** hız / duraklat / kamera (+ − ⌖) / istatistik düğmeleri tek satırda kaydırılır; istatistik paneli dokunmatikte varsayılan kapalıdır.
-- **Çevrimiçi:** lobi dar ekranda *Oyuncular | Ayarlar* sekmeleri; sağ alttaki rozet bağlantı türünü ve lobi kodunu gösterir (dokununca davet linki kopyalanır); *Sohbet* düğmesi oyun içi sohbeti açar.
-- Diyaloglar (birimler, harita) tam ekran sayfadır; dikey ve yatay ekran desteklenir.
+The game is playable in a phone or tablet browser (the Pages address). Touch controls:
+- **On the map:** one finger places soldiers (dragging paints; with the *Erase* tool it erases), **two fingers pan and pinch to zoom**. In battle one finger pans too.
+- **Bottom sheet:** the thin bar at the bottom while placing (team, type, tool, *Start battle* / *READY*) scrolls horizontally; tap or drag its handle to open all tools.
+  *Erase: selected team* is the equivalent of Shift+right click on desktop.
+- **Battle HUD:** speed / pause / camera (+ − ⌖) / statistics buttons scroll in one row; the statistics panel is hidden by default on touch devices.
+- **Online:** the lobby uses *Players | Settings* tabs on narrow screens; the badge at the bottom right shows the connection type and lobby code (tap to copy the invite link); the *Chat* button opens in-game chat.
+- Dialogs (units, maps) are full-screen pages; portrait and landscape are supported.
 
-Performans: ana cihazlarda (orta sınıf Android) 10.000 askerlik savaş ve ana iş parçacığındaki 8.000 askerlik simülasyon ~60 FPS çalışır. Kareler uzun süre yavaşlarsa çözünürlük otomatik düşürülür (Efektler: *Otomatik* iken).
+Performance: on mid-range Android a 10,000-soldier battle and an 8,000-soldier main-thread simulation run at ~60 FPS. If frames stay slow the resolution
+is lowered automatically (when *Effects* is set to *Auto*).
 
-## Birimler
+## Units
 
-5 klasik tür (Savaşçı, Okçu, Rahip, **Kalkan Tankı**, **Çekiç Tankı**) ve [the reference roster](docs/UNITS.md)
-(source terms) birimleri: **45 birim** (Yaygın/Nadir/Destansı/Efsanevi; İnsan/Karanlık/Kutsal/Vahşi). Veri `src/sim/data/troops.ts`
-(10 seviyelik can/saldırı/savunma, hareket sınıfı, menzil, hasar şekli, yetenek), yetenek parametreleri `src/sim/data/skills.ts`.
-Her birim tek askerdir (mangalar yok); roster değerleri oyun ölçeğine bölenle indirgenir (`HP_DIV`, `ATK_DIV`, savunma → zırh).
+5 classic types (Warrior, Archer, Priest, **Shield Tank**, **Hammer Tank**) and **44 roster units** in four rarities (Common / Rare / Epic / Legendary) and
+four races (Human / Dark / Sacred / Wild). Every unit is original: names, role archetypes and skill texts were authored for this game. Data lives in `src/sim/data/troops.ts`
+(10 levels of health / attack / defense generated from a role-and-rarity budget, movement class, reach, damage shape, skill) and skill parameters in
+`src/sim/data/skills.ts`. Every unit is a single soldier (no squads); raw values are scaled to game scale by divisors (`HP_DIV`, `ATK_DIV`, defense → armor).
 
-Stüdyoda **Birimler…** galerisi: nadirlik/ırk filtresi, arama, birim simgeleri, **seviye (1-10)** seçici. Tüm değerler
-*Birim ayarları* penceresinden birim bazında değiştirilebilir. Roster sanatı kullanılmaz: çizimler `src/render/looks.ts` içinde
-özgün, prosedürel tariflerdir.
+The studio's **Units…** gallery offers rarity/race filters, search, unit icons and a **level (1-10)** selector. Every value can be tuned per unit in the *Unit
+settings* dialog. Drawings are original procedural recipes in `src/render/looks.ts`.
 
-Yetenekler (`src/sim/battle.ts`): alan/dikdörtgen/delici hasar, yavaşlatma-donma, sersemletme, korku, kışkırtma, kalkan,
-yanma ve lanet bölgeleri, çağırma (Bone Caller → iskelet), yeniden doğma, iyileştirme/arındırma, öfke, yaşam çalma,
-diken yansıtma, kritik, patlama, Hex bağı, ışığa dönüşme vb.
+Skills (`src/sim/battle.ts`): area / rectangle / piercing damage, slow and freeze, stun, fear, taunt, shields, burning and curse zones, summoning
+(Bone Caller → bone soldiers), resurrection, healing / cleansing, rage, life steal, thorn reflection, crits, explosions, linked fate, turning to light, and more.
 
-## Mimari
+## Architecture
 
 ```
-src/sim/      saf TS simülasyon (Node'da da çalışır): battle, terrain, grid, units, worker, paylaşılan bellek
-src/render/   PixiJS çizim: atlas (tek doku), unitView (ayrıntılı), massRenderer (toplu), fx, audio, terrainView
-src/app/      stüdyo (DOM), editör, savaş sahnesi, durum/kalıcılık
-src/app/online/  çevrimiçi arayüz: menü, lobi, yerleştirme, imleçler, sohbet
-src/net/      protokol, host lobi durum makinesi, lockstep, taşımalar (loopback / WebSocket LAN / PeerJS)
+src/sim/         pure TS simulation (also runs in Node): battle, terrain, grid, units, worker, shared memory
+src/render/      PixiJS rendering: atlas (single texture), unitView (detailed), massRenderer (bulk), fx, audio, terrainView
+src/app/         studio (DOM), editor, battle scene, state/persistence
+src/app/online/  online UI: menu, lobby, placement, cursors, chat
+src/net/         protocol, host lobby state machine, lockstep, transports (loopback / WebSocket LAN / relay / PeerJS)
+src/i18n/        UI string tables (English + Türkçe)
+relay/           Cloudflare Worker + Durable Object relay for internet play
 ```
 
-- **Sim**: 30 Hz sabit adım, SoA tipli diziler, takım başına uniform grid; hedefleme puanlı ve yapışkan (titreme yok);
-  nehir köprü rotasıyla geçilir, sıkışan birimler A* ile çözülür; ilerleme bekçisi ulaşılamaz hedefi yasaklar; hasar
-  verilemez/uzun süre hasarsız savaşlar beraberlikle biter.
-- **Çizim**: ≤150 birimde ayrıntılı (animasyonlu) `UnitView`, fazlasında atlas'tan `ParticleContainer`. Efektler ve sesler
-  sim'den gelen olaylarla (`hit`, `death`, `heal`, `bash`, `slam`, `shot`, `land`) tetiklenir.
-- **Ses**: dosyasız WebAudio sentezi; ilk kullanıcı hareketinde açılır, ≤14 eşzamanlı ses, ekrana göre kısılır/panlanır.
+- **Simulation:** 30 Hz fixed step, SoA typed arrays, a uniform grid per team; targeting is scored and sticky (no jitter); rivers are crossed by
+  bridge routing, stuck units are resolved with A*; a progress guard bans unreachable targets; battles where no damage can be dealt or that go
+  too long without damage end in a draw.
+- **Rendering:** ≤150 units use a detailed (animated) `UnitView`, more use a `ParticleContainer` from the atlas. Effects and sounds are triggered by
+  simulation events (`hit`, `death`, `heal`, `bash`, `slam`, `shot`, `land`).
+- **Sound:** file-less WebAudio synthesis; unlocked on the first user gesture, ≤14 concurrent voices, attenuated/panned by screen position.
+- **Online:** deterministic lockstep (identical simulations, commands only), authoritative host lobby state machine, checksum + resync.
 
-## Testler
+## Tests
 
 ```bash
-npm test                                  # birim + kenar durum + 120 rastgele senaryo
-FUZZ_N=600 FUZZ_START=300 npm test        # daha geniş rastgele tarama
-HUNT=1 FUZZ_N=300 npx vitest run src/sim/__tests__/fuzz.test.ts   # hataları toplayıp raporla (test-results/fuzz-report.txt)
-DEBUG_SCN=9 DEBUG_AT=20,30 npx vitest run src/sim/__tests__/debug.test.ts  # bir senaryonun birim dökümü
-ROSTER_N=400 npx vitest run src/sim/__tests__/rosterfuzz.test.ts      # roster birimleriyle rastgele tarama
-BALANCE=1 LEVEL=6 npx vitest run src/sim/__tests__/balance.test.ts  # round-robin kazanma oranları (test-results/balance.txt)
+npm test                                  # unit + edge cases + 120 random scenarios
+FUZZ_N=600 FUZZ_START=300 npm test        # wider random sweep
+HUNT=1 FUZZ_N=300 npx vitest run src/sim/__tests__/fuzz.test.ts   # collect failures into test-results/fuzz-report.txt
+DEBUG_SCN=9 DEBUG_AT=20,30 npx vitest run src/sim/__tests__/debug.test.ts  # unit dump of one scenario
+ROSTER_N=400 npx vitest run src/sim/__tests__/rosterfuzz.test.ts  # random sweep with roster units
+BALANCE=1 LEVEL=6 npx vitest run src/sim/__tests__/balance.test.ts  # round-robin win rates (test-results/balance.txt)
 ```
-`skills.test.ts` yeteneklerin gerçekten çalıştığını (çağırma, yeniden doğma, patlama, yavaşlatma, kışkırtma, korku, bağ...), `troops.test.ts` her roster birimini 1. ve 10. seviyede takılma/döngü açısından sınar.
 
-`src/sim/testing/stall.ts` takılma dedektörü (boşta kovalayıcı, vuramayan, salınım, ilerlemesizlik, ulaşılamaz hedef)
-ve değişmezleri (yürünemez karo, NaN, harita dışı) içerir. Bilinen sınır: ~%0.3 senaryoda nadir kapalı-köşe takılması.
+`skills.test.ts` checks that skills really work (summoning, resurrection, explosions, slow, taunt, fear, linked fate...), `troops.test.ts`
+checks every roster unit at levels 1 and 10 for stalls/loops, `net*.test.ts` and `lan.test.ts` cover the online stack (lobby rules, lockstep,
+resync, reconnection, the LAN server), and `i18n.test.ts` keeps both languages in sync.
 
-## Katkıda bulunma
+`src/sim/testing/stall.ts` contains the stall detector (idle chaser, cannot-hit, oscillation, no-progress, unreachable target) and invariants
+(non-walkable tile, NaN, out of map). Known limit: a rare closed-corner stall in ~0.3% of scenarios.
 
-Hata düzeltmeleri, denge/oynanış iyileştirmeleri, çeviriler, testler ve dokümantasyon memnuniyetle karşılanır.
-Önce [CONTRIBUTING.md](CONTRIBUTING.md)'yi ve [CLA.md](CLA.md)'yi oku; büyük değişiklikler için önce bir issue aç.
-PR öncesi `npm run check` temiz olmalı ve PR şablonundaki **CLA kutusu** işaretlenmelidir.
+## Contributing
 
-## Telif
+Bug fixes, balance/gameplay improvements, translations, tests and documentation are welcome. First read [CONTRIBUTING.md](CONTRIBUTING.md) and
+[CLA.md](CLA.md); open an issue before big changes. `npm run check` must pass and the **CLA checkbox** in the pull request template must be ticked.
 
-© 2026 gkaragoz and Contributors. Tüm hakları saklıdır; kullanım koşulları [LICENSE](LICENSE) dosyasındadır.
-"the reference game" ilgili hak sahiplerinin ticari markasıdır; bu proje onlarla bağlantılı veya onaylı değildir.
+## Copyright
+
+© 2026 gkaragoz and Contributors. All rights reserved; the terms of use are in the [LICENSE](LICENSE) file.

@@ -20,20 +20,20 @@ export interface ViewState {
   maxHp: number;
   facing: number;
   moving: boolean;
-  /** Saldiri ilerlemesi 0..1, saldirmiyorsa -1. */
+  /** Attack progress 0..1, -1 if not attacking. */
   swingProgress: number;
   flash: boolean;
-  /** Olum animasyonu suresi, hayattaysa -1. */
+  /** Death animation time, -1 if alive. */
   deathT: number;
-  /** Atlas pisirme icin: yuruyus fazini sabitler. */
+  /** For atlas baking: pins the walk phase. */
   phase?: number;
-  /** Gorsel durum maskesi (ST_*): yavaslama, yanma, sersemleme... */
+  /** Visual status mask (ST_*): slow, burning, stun... */
   status?: number;
-  /** Komedi fizigi: havadaki yukseklik (tile); 0 = yerde. */
+  /** Comedy physics: height in the air (tiles); 0 = on the ground. */
   lift?: number;
 }
 
-/** Durum maskesinden renk tonu (0xffffff: etkisiz). Oncelik: dokunulmaz > sersem > yanma > yavas > kalkan > korku > kiskirtma. */
+/** Tint from the status mask (0xffffff: no effect). Priority: invulnerable > stun > burning > slow > shield > fear > taunt. */
 export function statusTint(st: number): number {
   if (st === 0) return 0xffffff;
   if (st & 32) return 0xfff2b0;
@@ -48,7 +48,7 @@ export function statusTint(st: number): number {
 
 export const DEATH_FADE = 0.7;
 
-/** Atlas'ta pisirilen pozlar: 0 bekleme, 1-2 yuruyus A/B, 3 saldiri hazirligi, 4 vurus. */
+/** Poses baked into the atlas: 0 idle, 1-2 walk A/B, 3 attack wind-up, 4 strike. */
 export const POSES = 5;
 export const POSE_STATES: ViewState[] = [
   { hp: 1, maxHp: 1, facing: 1, moving: false, swingProgress: -1, flash: false, deathT: -1 },
@@ -63,14 +63,14 @@ const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 const easeOut = (t: number): number => 1 - (1 - t) * (1 - t);
 const easeOutBack = (t: number): number => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
 
-/** Saldiri fazlari: hazirlik (0-0.4), vurus (0.4-0.6), toparlanma (0.6-1). */
+/** Attack phases: wind-up (0-0.4), strike (0.4-0.6), recovery (0.6-1). */
 function attackPhases(p: number): { wind: number; strike: number; recover: number } {
   if (p < 0) return { wind: 0, strike: 0, recover: 0 };
   return { wind: clamp01(p / 0.4), strike: clamp01((p - 0.4) / 0.2), recover: clamp01((p - 0.6) / 0.4) };
 }
 
 export class UnitView {
-  /** Sagligi gosteren cubuk modu: 'damaged' hasarliyken, 'always' her zaman, 'never' hic. */
+  /** Health bar mode: 'damaged' when hurt, 'always' always, 'never' never. */
   static barMode: 'damaged' | 'always' | 'never' = 'damaged';
 
   readonly root = new Container();
@@ -86,7 +86,7 @@ export class UnitView {
   private orb: Graphics | null = null;
   private staff: Graphics | null = null;
   private nock: Graphics | null = null;
-  /** Roster birimleri (kind >= LEGACY_COUNT): animasyon ailesi ve baslangic duruslari. */
+  /** Roster units (kind >= LEGACY_COUNT): animation family and initial stances. */
   private anim: Anim | null = null;
   private fists: Container | null = null;
   private restRot = 0;
@@ -133,7 +133,7 @@ export class UnitView {
     this.root.addChild(this.bar);
   }
 
-  /** Roster birimi: tarif tablosundan (looks.ts) cizer. */
+  /** Roster unit: draws from the recipe table (looks.ts). */
   private drawLook(kind: number, c: number, d: number): void {
     const rig: Rig = {
       torso: this.torso,
@@ -181,7 +181,7 @@ export class UnitView {
       g.ellipse(-15, 2, 5, 8).fill(c).stroke({ width: 1.5, color: d });
     }
 
-    // Govde
+    // Body
     if (kind === Kind.Shield) {
       g.roundRect(-12, -8, 24, 21, 5).fill(STEEL).stroke({ width: 1.5, color: STEEL_D });
       g.rect(-12, 2, 24, 3).fill(d);
@@ -200,7 +200,7 @@ export class UnitView {
       g.circle(14, -8, 6.5).fill(STEEL).stroke({ width: 1.2, color: STEEL_D });
     }
 
-    // Kafa
+    // Head
     const headY = kind === Kind.Shield ? -15 : kind === Kind.Brute ? -16 : -14;
     const headR = kind === Kind.Shield ? 11 : kind === Kind.Brute ? 10.5 : 12;
     if (kind === Kind.Shield) {
@@ -245,7 +245,7 @@ export class UnitView {
       bow.moveTo(0, -14).quadraticCurveTo(14, 0, 0, 14).stroke({ width: 2.5, color: BROWN });
       bow.moveTo(0, -14).lineTo(0, 14).stroke({ width: 0.8, color: 0x666666 });
       w.addChild(bow);
-      // Yaya takili ok (yalniz cekme sirasinda gorunur).
+      // Arrow nocked on the bow (visible only while drawing).
       const nock = new Graphics();
       nock.moveTo(-9, 0).lineTo(11, 0).stroke({ width: 1.8, color: 0x6b4a2b });
       nock.poly([11, -2.5, 16, 0, 11, 2.5]).fill(0xcfd4dc);
@@ -308,7 +308,7 @@ export class UnitView {
     this.phase = s.phase !== undefined ? s.phase : this.phase + dt * (s.moving ? 13 : 2);
     const sw = Math.sin(this.phase);
 
-    // Bacaklar: ayak degisimli yuruyus.
+    // Legs: walk with alternating feet.
     if (s.moving) {
       this.legL.y = sw * 2.6;
       this.legR.y = -sw * 2.6;
@@ -326,7 +326,7 @@ export class UnitView {
     let sy = 1;
     const p = s.swingProgress;
     const { wind, strike, recover } = attackPhases(p);
-    const rest = 1 - recover; // vurustan sonra geri donus
+    const rest = 1 - recover; // return after the strike
 
     switch (this.kind) {
       case Kind.Warrior: {
@@ -475,7 +475,7 @@ export class UnitView {
       }
     }
 
-    // Vurus tepkisi: kisa squash.
+    // Hit reaction: short squash.
     if (s.flash && !this.prevFlash) this.hurtT = 0.2;
     this.prevFlash = s.flash;
     if (this.hurtT > 0) {
@@ -485,17 +485,17 @@ export class UnitView {
       sx *= 1 + 0.14 * m * k;
       sy *= 1 - 0.12 * m * k;
     }
-    // Bekleme nefesi.
+    // Idle breathing.
     if (!s.moving && p < 0) sy *= 1 + Math.sin(time * 2.2 + this.seed) * 0.012;
 
-    // Komedi: yalpalayan govde, devrilip kalkma, ara sira tokezleme.
+    // Comedy: wobbling body, tipping over and getting up, occasional stumble.
     if (cz) {
       lean += (s.moving ? Math.sin(this.phase * 0.5) * 0.2 : Math.sin(time * 2.4 + this.seed) * 0.05);
       const tripT = (time * 0.33 + this.seed * 0.137) % 1;
       if (Math.floor(time * 0.33 + this.seed * 0.137 + 7) % 53 === 0 && tripT < 0.25) lean += Math.sin((tripT / 0.25) * Math.PI) * 0.8;
     }
     if (this.shadow) {
-      // Golge yerde kalir; birim havaya cikinca golge asagida kucuk gorunur.
+      // The shadow stays on the ground; when the unit goes airborne the shadow looks small below.
       const lf = s.lift ?? 0;
       this.shadow.y = lf * 38;
       this.shadow.scale.set(Math.max(0.5, 1 - lf * 0.12));
@@ -504,7 +504,7 @@ export class UnitView {
     this.torso.rotation = lean;
     this.torso.scale.set(sx, sy);
 
-    // Dogus: kisa pop-in.
+    // Spawn: short pop-in.
     const pop = this.age < 0.28 ? lerp(0.55, 1, easeOutBack(clamp01(this.age / 0.28))) : 1;
 
     this.rig.x = 0;
@@ -521,7 +521,7 @@ export class UnitView {
     } else {
       this.root.alpha = 1;
       const lift = s.lift ?? 0;
-      // Havada kolu bacagi savrularak doner (komedi fizigi).
+      // Spins in the air with arms and legs flailing (comedy physics).
       this.rig.rotation = lift > 0.04 ? (time * 13 + this.seed) * s.facing : 0;
       this.rig.y = 0;
     }

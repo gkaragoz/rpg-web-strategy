@@ -1,7 +1,7 @@
 import type { BattleConfig, SimEvent } from './battle';
 import type { Units } from './units';
 
-/** Renderer'in okudugu birim alanlari (Units ve worker anlik goruntusu ayni sekli tasir). */
+/** Unit fields read by the renderer (Units and the worker snapshot share the same shape). */
 export type UnitsView = Pick<
   Units,
   'count' | 'kind' | 'team' | 'x' | 'y' | 'px' | 'py' | 'hp' | 'maxHp' | 'facing' | 'moving' | 'swing' | 'flash' | 'alive' | 'deathT' | 'status' | 'lift'
@@ -24,18 +24,18 @@ export interface SimStats {
   steps: number;
   totalMs: number;
   maxMs: number;
-  /** Faz bazli birikimli sure (prep, grid, units, pick, separate, arrows). */
+  /** Accumulated time per phase (prep, grid, units, pick, separate, arrows). */
   prof: Record<string, number>;
-  /** Davranis sayaclari (kite, sikisma, ...). */
+  /** Behavior counters (kite, stuck, ...). */
   dbg: Record<string, number>;
 }
 
 export interface FrameInfo {
-  /** Bu karede ANA thread'de calisan sim adimi sayisi (worker'da 0). */
+  /** Number of sim steps run on the MAIN thread this frame (0 with a worker). */
   steps: number;
-  /** Bu karede ANA thread'de sim'e harcanan sure. */
+  /** Time spent on the sim on the MAIN thread this frame. */
   mainSimMs: number;
-  /** Render icin interpolasyon orani (0..1). */
+  /** Interpolation ratio for rendering (0..1). */
   alpha: number;
 }
 
@@ -49,14 +49,14 @@ export interface SimBackend {
   readonly alivePerTeam: number[];
   winner: number;
   time: number;
-  /** Her render karesinde cagrilir: inline'da sim'i ilerletir, worker'da son goruntuyu baglar. */
+  /** Called every render frame: advances the sim inline, binds the latest snapshot with a worker. */
   frame(dt: number): FrameInfo;
   reset(seed: number): Promise<void>;
   setSpeed(speed: number): void;
   setPaused(paused: boolean): void;
   resetStats(): void;
   stats(): SimStats;
-  /** Worker'i sonlandirir / kaynaklari birakir. */
+  /** Terminates the worker / releases resources. */
   dispose(): void;
 }
 

@@ -22,6 +22,7 @@ import {
   type Phase,
   type PlaceItem,
   type PlacedItem,
+  type PlaceFailReason,
   type PlayerInfo,
   type RejectReason,
   type ServerMsg,
@@ -42,12 +43,12 @@ export const DEFAULT_SETTINGS: LobbySettings = {
   banned: [],
 };
 
-/** Her oyuncunun yerlestirebilecegi en cok birim (performans ust siniri). */
+/** Most units a player may place (performance cap). */
 export const MAX_UNITS_PER_PLAYER = 1500;
 const MAX_PLAYER_NAME_TRIES = 20;
 
 export interface HostDeps {
-  /** Onceden belirlenmis lobi kodu (LAN odasi / PeerJS kimligi); yoksa uretilir. */
+  /** Predefined lobby code (LAN room / PeerJS id); generated when absent. */
   code?: string;
   now?: () => number;
   rnd?: () => number;
@@ -56,16 +57,16 @@ export interface HostDeps {
 interface Slot {
   token: string;
   disconnectedAt: number;
-  /** Kopmadan onceki hazir durumu (yerlestirmede geri baglaninca geri verilir). */
+  /** Ready state before the disconnect (restored on reconnect during placement). */
   readyBefore?: boolean;
   lastPresence: number;
   chatTimes: number[];
 }
 
 /**
- * Yetkili lobi/oyun durumu (yalniz host'ta calisir). Taşımadan bagimsiz: Transport arayuzu uzerinden
- * misafirlerle, `local()` ile host oyuncusunun kendi eylemleriyle konusur; host oyuncusu icin uretilen
- * sunucu mesajlari `onEvent` ile arayuze verilir.
+ * Authoritative lobby/game state (runs on the host only). Transport-independent: talks to guests through the
+ * Transport interface and to the host player's own actions through `local()`; server messages produced for the
+ * host player are handed to the UI via `onEvent`.
  */
 export class HostLobby {
   readonly code: string;
@@ -73,9 +74,9 @@ export class HostLobby {
   phase: Phase = 'lobby';
   settings: LobbySettings = { ...DEFAULT_SETTINGS, map: { ...DEFAULT_SETTINGS.map }, banned: [] };
   players: PlayerInfo[] = [];
-  /** Host oyuncusu icin sunucu mesajlari (arayuz). */
+  /** Server messages for the host player (UI). */
   onEvent: (msg: ServerMsg) => void = () => {};
-  /** Savas icin sim saglayicisi: guncel adim, hash ve durum goruntusu (host uygulamasi baglar). */
+  /** Sim provider for battles: current step, hash and state snapshot (wired by the host app). */
   simProvider: { snapshot(): { step: number; data: string } } | null = null;
 
   private readonly now: () => number;
@@ -97,7 +98,7 @@ export class HostLobby {
   private closed = false;
   private ghostSeq = 1;
   private readonly lastResync = new Map<string, number>();
-  /** Gonderen basina mesaj hiz siniri (jeton kovasi): kotu niyetli/hatali istemci host'u bogamasin. */
+  /** Per-sender message rate limit (token bucket) so a malicious or buggy client cannot flood the host. */
   private readonly rate = new Map<string, { tokens: number; at: number }>();
 
   constructor(
@@ -117,7 +118,7 @@ export class HostLobby {
     tp.onPeerLeave = (peer) => this.peerLeft(peer);
   }
 
-  // ---------------------------------------------------------------- yardimcilar
+  // ---------------------------------------------------------------- helpers
 
   private newPlayer(id: string, name: string, color: number, role: PlayerInfo['role']): PlayerInfo {
     return { id, name: this.uniqueName(cleanName(name), id), color: this.freeColor(color, id), ready: false, team: -1, connected: true, role, muted: false, gold: 0, units: 0 };
@@ -202,9 +203,9 @@ export class HostLobby {
     if (to !== this.hostId) this.tp.disconnect(to);
   }
 
-  // ---------------------------------------------------------------- mesajlar
+  // ---------------------------------------------------------------- messages
 
-  /** Host oyuncusunun kendi eylemi (misafir mesajiyla ayni islem hatti). */
+  /** The host player's own action (same processing path as a guest message). */
   local(msg: ClientMsg): void {
     this.handle(this.hostId, msg);
   }
@@ -214,12 +215,12 @@ export class HostLobby {
     try {
       this.dispatch(from, msg);
     } catch (e) {
-      // Bozuk/beklenmeyen mesaj lobiyi dusurmesin.
-      console.warn('[host] mesaj islenemedi', msg.t, e);
+      // A malformed or unexpected message must not take the lobby down.
+      console.warn('[host] could not process message', msg.t, e);
     }
   }
 
-  /** Presence haric mesajlar icin saniyede ~40 mesaj (patlama 80). */
+  /** About 40 messages per second for everything except presence (burst of 80). */
   private allow(from: string): boolean {
     if (from === this.hostId) return true;
     const t = this.now();
@@ -299,11 +300,11 @@ export class HostLobby {
 
   private onJoin(from: string, msg: Extract<ClientMsg, { t: 'join' }>): void {
     if (msg.version !== PROTOCOL) return this.reject(from, 'version');
-    // Ayni baglantidan ikinci join (cift tiklama / yeniden gonderim): yok say.
+    // A second join from the same connection (double click / resend): ignore.
     if (this.player(from)) return;
     if (msg.token && this.kickedTokens.has(msg.token)) return this.reject(from, 'kicked');
     if (this.passHashed !== null && (msg.pass ?? '') !== this.passHashed) return this.reject(from, 'password');
-    // Geri baglanma: jeton eslesen oyuncu. Eski baglanti henuz kopmus gorunmuyorsa (yari acik baglanti) devralinir.
+    // Reconnect: the player whose token matches. If the old connection does not look dropped yet (half-open connection), it is taken over.
     if (msg.token) {
       for (const [oldId, slot] of this.slots) {
         const p = this.player(oldId);
@@ -311,7 +312,7 @@ export class HostLobby {
           const stale = p.connected;
           this.slots.delete(oldId);
           this.pendingPresence.delete(oldId);
-          p.id = from; // once kimlik degisir: eski baglantinin kopma olayi artik bu oyuncuyu bulamaz
+          p.id = from; // change the id first: the old connection's drop event can no longer find this player
           if (stale) this.tp.disconnect(oldId);
           p.connected = true;
           if (this.phase === 'placing') p.ready = stale ? p.ready : (slot.readyBefore ?? false);
@@ -342,7 +343,7 @@ export class HostLobby {
       this.sendTo(to, { t: 'resync', step: s.step, data: s.data });
     }
     if (this.phase === 'placing') {
-      // Mevcut yerlestirmeleri (acik yerlestirmede hepsini, degilse yalniz kendininkini) gonder.
+      // Send the existing placements (all of them with open placement, otherwise only the player's own).
       const me = this.player(to);
       const items = this.units.filter((u) => this.settings.openPlacement || (me && u.team === me.team));
       if (items.length) this.sendTo(to, { t: 'placed', owner: '*', items });
@@ -357,7 +358,7 @@ export class HostLobby {
     const t = this.now();
     if (slot) {
       slot.chatTimes = slot.chatTimes.filter((x) => t - x < 10000);
-      if (slot.chatTimes.length >= 5) return; // spam siniri
+      if (slot.chatTimes.length >= 5) return; // spam limit
       slot.chatTimes.push(t);
     }
     this.emit({ t: 'chat', id: p.id, name: p.name, text, ts: t });
@@ -369,7 +370,7 @@ export class HostLobby {
     const slot = this.slots.get(from);
     const t = this.now();
     if (slot && t - slot.lastPresence < 50) {
-      this.pendingPresence.set(from, out); // en son deger sonraki tick'te gider
+      this.pendingPresence.set(from, out); // the latest value goes out on the next tick
       return;
     }
     if (slot) slot.lastPresence = t;
@@ -392,12 +393,12 @@ export class HostLobby {
     if (typeof patch.comedyVisual === 'boolean') s.comedyVisual = patch.comedyVisual;
     if (Array.isArray(patch.banned)) s.banned = patch.banned.filter((r) => ['common', 'rare', 'epic', 'legendary'].includes(r));
     if (password !== undefined) this.passHashed = password ? passHash(password) : null;
-    // Ayar degisince herkesin hazir isareti dusur (host haric): oyuncular yeni kurallari gormeli.
+    // When a setting changes, clear everyone's ready flag (except the host): players must see the new rules.
     for (const p of this.players) if (p.id !== this.hostId) p.ready = false;
     this.pushState();
   }
 
-  /** Lobi parolasi dogrulamasi icin istemcinin gonderecegi ozet. */
+  /** Digest the client sends to verify the lobby password. */
   static passwordToken(password: string): string {
     return passHash(password);
   }
@@ -408,7 +409,7 @@ export class HostLobby {
     if (!p) return;
     const slot = this.slots.get(id);
     if (slot) this.kickedTokens.add(slot.token);
-    this.sendTo(id, { t: 'kicked', reason: 'Host tarafindan atildin' });
+    this.sendTo(id, { t: 'kicked', reason: 'kicked' });
     this.removePlayer(id, true);
   }
 
@@ -423,8 +424,8 @@ export class HostLobby {
       this.players = this.players.filter((x) => x.id !== id);
       this.reteam();
     } else {
-      // Oyun surerken oyuncu ayrilirsa takim numaralari DEGISMEZ (bolgeler, birimler ve init.teamPlayers
-      // takim indeksine baglidir): oyuncu baglantisiz hayalet olarak kalir, birimleri savasir, lobiye donuste silinir.
+      // If a player leaves mid-game, team numbers do NOT change (zones, units and init.teamPlayers depend on the
+      // team index): the player stays as a disconnected ghost, their units fight, and they are removed on return to the lobby.
       p.connected = false;
       p.ready = true;
       p.id = `x${this.ghostSeq++}:${p.id}`;
@@ -445,13 +446,13 @@ export class HostLobby {
       slot.disconnectedAt = this.now();
       slot.readyBefore = p.ready;
     }
-    p.ready = true; // yerlestirme asamasi onu beklemesin
+    p.ready = true; // the placement phase must not wait for them
     this.pushState();
   }
 
-  // ---------------------------------------------------------------- oyun akisi
+  // ---------------------------------------------------------------- game flow
 
-  /** Baslat: herkes (host haric) hazir ve en az 2 oyuncu. */
+  /** Start: everyone (except the host) is ready and there are at least 2 players. */
   canStart(): boolean {
     const pl = this.players.filter((p) => p.role === 'player');
     return this.phase === 'lobby' && pl.length >= 2 && pl.every((p) => p.id === this.hostId || (p.ready && p.connected));
@@ -500,7 +501,7 @@ export class HostLobby {
 
   private onPlace(p: PlayerInfo, items: PlaceItem[]): void {
     if (this.phase !== 'placing' || p.role !== 'player' || p.ready || !this.init || !this.terrain) {
-      this.sendTo(p.id, { t: 'placeFail', cids: items.map((i) => i.cid), reason: 'Su an yerlestirilemez' });
+      this.sendTo(p.id, { t: 'placeFail', cids: items.map((i) => i.cid), reason: 'busy' });
       return;
     }
     const zone = this.zones[p.team];
@@ -515,36 +516,36 @@ export class HostLobby {
     }
     const placed: PlacedItem[] = [];
     const failed: number[] = [];
-    let reason = '';
+    let reason: PlaceFailReason = 'busy';
     for (const it of items.slice(0, 80)) {
-      const fail = (r: string): void => {
+      const fail = (r: PlaceFailReason): void => {
         failed.push(it.cid);
         reason = r;
       };
       if (!Number.isFinite(it.x) || !Number.isFinite(it.y) || !Number.isInteger(it.kind) || it.kind < 0 || it.kind >= KIND_COUNT) {
-        fail('Gecersiz birim');
+        fail('invalid');
         continue;
       }
       if (!buyable(it.kind)) {
-        fail('Birim alinamaz');
+        fail('unbuyable');
         continue;
       }
       const tr = STATS[it.kind].troop ? TROOP_BY_ID[STATS[it.kind].troop!] : undefined;
       if (tr && this.init.banned.includes(tr.rarity)) {
-        fail('Bu nadirlik kapali');
+        fail('banned');
         continue;
       }
       if (!zone.contains(it.x, it.y) || !this.terrain.walkable(it.x, it.y) || !this.terrain.reachable(it.x, it.y)) {
-        fail('Bolge disi');
+        fail('zone');
         continue;
       }
       const c = costs[it.kind] ?? 0;
       if (spent + c > this.init.gold) {
-        fail('Gold yetersiz');
+        fail('gold');
         continue;
       }
       if (n >= MAX_UNITS_PER_PLAYER) {
-        fail('Birim siniri');
+        fail('cap');
         continue;
       }
       let close = false;
@@ -556,7 +557,7 @@ export class HostLobby {
       }
       if (!close) for (const u of placed) if ((u.x - it.x) ** 2 + (u.y - it.y) ** 2 < PLACE_GAP * PLACE_GAP) close = true;
       if (close) {
-        fail('Cok yakin');
+        fail('close');
         continue;
       }
       spent += c;
@@ -566,7 +567,7 @@ export class HostLobby {
     if (failed.length) this.sendTo(p.id, { t: 'placeFail', cids: failed, reason });
     if (!placed.length) return;
     for (const u of placed) this.units.push(u);
-    // Sahibine her zaman; baskalarina yalniz acik yerlestirmede.
+    // Always to the owner; to others only with open placement.
     this.sendTo(p.id, { t: 'placed', owner: p.id, items: placed });
     if (this.settings.openPlacement) this.emit({ t: 'placed', owner: p.id, items: placed }, p.id);
     this.dirtyState = true;
@@ -597,7 +598,7 @@ export class HostLobby {
     this.pushState();
   }
 
-  /** Periyodik cagri (yaklasik 100-250 ms): yerlestirme suresi, bekleyen presence, durum yayini, geri baglanma suresi. */
+  /** Periodic call (about 100-250 ms): placement timer, pending presence, state broadcast, reconnect window. */
   tick(): void {
     if (this.closed) return;
     const t = this.now();
@@ -620,19 +621,19 @@ export class HostLobby {
       for (const [id, slot] of [...this.slots]) {
         const p = this.player(id);
         if (p && !p.connected && slot.disconnectedAt && t - slot.disconnectedAt > REJOIN_SECS * 1000 && this.phase === 'placing') {
-          // Geri donmedi: yerlestirme asamasinda oyuncu dusurulur (birimleri kalir ama takimi ayri sayilmaz).
+          // Did not come back: the player is dropped during placement (their units stay but the team no longer counts separately).
           slot.disconnectedAt = 0;
         }
       }
     }
     if (this.dirtyState && t - this.lastState >= 200) this.pushState();
-    // Yerlestirme suresi geri sayimi: saniyede bir durum yay.
+    // Placement countdown: broadcast the state once per second.
     if (this.phase === 'placing' && Number.isFinite(this.placeEndsAt) && t - this.lastState >= 1000) this.pushState();
   }
 
-  // ---------------------------------------------------------------- savas senkronu
+  // ---------------------------------------------------------------- battle sync
 
-  /** Host sim adimi attiginda cagirir: kontrol noktalarinda hash kaydeder. */
+  /** Called when the host sim steps: records the hash at checkpoints. */
   recordHash(step: number, hash: number): void {
     if (step % CHECK_EVERY !== 0) return;
     this.hashes.set(step, hash);
@@ -643,7 +644,7 @@ export class HostLobby {
     if (this.phase !== 'battle') return;
     const mine = this.hashes.get(step);
     if (mine === undefined || mine === hash) return;
-    // Surekli sapan istemci (farkli tarayici motoru vb.) agi buyuk goruntulerle bogmasin: en cok 4 sn'de bir.
+    // A client that keeps diverging (different browser engine etc.) must not flood the network with large snapshots: at most once per 4 s.
     const t = this.now();
     if (t - (this.lastResync.get(from) ?? -Infinity) < 4000) return;
     this.lastResync.set(from, t);
@@ -653,7 +654,7 @@ export class HostLobby {
     }
   }
 
-  /** Savas bitti: sonucu herkese bildirir. */
+  /** The battle is over: announces the result to everyone. */
   finish(winner: number, alive: number[]): void {
     if (this.phase !== 'battle') return;
     this.phase = 'result';
@@ -661,7 +662,7 @@ export class HostLobby {
     this.pushState();
   }
 
-  /** Host zamanli sim bilgisini yayinlar (hiz/duraklat); step = host adim sayisi. */
+  /** Broadcasts the host's timed sim info (speed/pause); step = host step count. */
   broadcastTick(step: number, speed: number, paused: boolean): void {
     this.emit({ t: 'tick', step, speed, paused });
   }
@@ -679,7 +680,7 @@ export class HostLobby {
       p.gold = 0;
       p.units = 0;
     }
-    // Kopmus oyuncular temizlenir.
+    // Disconnected players are cleaned up.
     this.players = this.players.filter((p) => p.connected);
     for (const id of [...this.slots.keys()]) if (!this.player(id)) this.slots.delete(id);
     this.reteam();
@@ -698,5 +699,5 @@ export class HostLobby {
   }
 }
 
-/** Kontrol toplami araligi (sim adimi): 30 Hz'de 2 sn. */
+/** Checksum interval (sim steps): 2 s at 30 Hz. */
 export const CHECK_EVERY = 60;

@@ -1,4 +1,4 @@
-/** Worker ile ana thread arasinda paylasilan SharedArrayBuffer duzeni. */
+/** Layout of the SharedArrayBuffer shared between the worker and the main thread. */
 export const SNAP_SLOTS = 4;
 
 export interface SnapSlot {
@@ -24,9 +24,9 @@ export interface SnapSlot {
 }
 
 export interface Shared {
-  /** [0]=son yayinlanan adim, [1]=birim sayisi, [2]=reset sayaci, [3..3+SLOTS)=slot basina ok sayisi. */
+  /** [0]=last published step, [1]=unit count, [2]=reset counter, [3..3+SLOTS)=arrow count per slot. */
   ctrlI: Int32Array;
-  /** Bkz. F_* indeksleri. */
+  /** See the F_* indices. */
   ctrlF: Float64Array;
   kind: Uint8Array;
   team: Uint8Array;
@@ -48,16 +48,16 @@ export const F_STEPS = 6;
 export const F_TOTAL_MS = 7;
 export const F_MAX_MS = 8;
 export const F_LAST_MS = 9;
-export const F_PROF = 10; // prep, grid, units, pick, separate, arrows, steps (7 deger)
-export const F_DBG = 17; // DBG_KEYS sirasiyla (7 deger)
-export const F_ALIVE_BASE = 24; // takim basina canli sayisi (6 deger)
+export const F_PROF = 10; // prep, grid, units, pick, separate, arrows, steps (7 values)
+export const F_DBG = 17; // in DBG_KEYS order (7 values)
+export const F_ALIVE_BASE = 24; // alive count per team (6 values)
 export const F_LEN = 32;
 
 export const PROF_KEYS = ['prep', 'grid', 'units', 'pick', 'separate', 'arrows', 'steps'] as const;
 
 type Ctor<T> = new (buf: ArrayBufferLike, off: number, len: number) => T;
 
-/** sab == null ise sadece toplam boyutu hesaplar. */
+/** If sab == null, only computes the total size. */
 function build(sab: SharedArrayBuffer | null, cap: number, pcap: number): { shared: Shared; size: number } {
   let off = 0;
   const alloc = <T>(C: Ctor<T>, bytes: number, len: number): T => {

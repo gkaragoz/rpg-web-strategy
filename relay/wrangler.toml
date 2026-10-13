@@ -6,7 +6,7 @@ compatibility_date = "2025-01-01"
 name = "ROOM"
 class_name = "Room"
 
-# Ucretsiz planda yalniz SQLite tabanli Durable Object kullanilabilir.
+# The free plan only allows SQLite-backed Durable Objects.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]

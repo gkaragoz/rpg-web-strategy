@@ -1,6 +1,6 @@
 name: release
 
-# v* etiketi itildiginde: test + derleme, zip/sihirbaz dosyalariyla GitHub Release ve GitHub Pages yayini.
+# When a v* tag is pushed: test + build, then publish a GitHub Release (zip + installer files) and GitHub Pages.
 on:
   push:
     tags: ['v*']

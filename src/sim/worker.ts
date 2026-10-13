@@ -59,7 +59,7 @@ function publishStatic(): void {
   sh.ctrlI[I_COUNT] = u.count;
 }
 
-/** Guncel durumu sonraki halka slotuna kopyalar ve en son Atomics.store ile yayinlar. */
+/** Copies the current state into the next ring slot and publishes it last with Atomics.store. */
 function publish(): void {
   const u = battle.units;
   const n = u.count;
@@ -136,7 +136,7 @@ function tick(): void {
       next += interval;
       n++;
     }
-    // Yetisemiyorsak birikmis borcu at: sim yavaslar, kuyruk buyumez.
+    // If we cannot keep up, drop the accumulated backlog: the sim slows down and the queue does not grow.
     if (performance.now() - next > 100) next = performance.now();
   }
   timer = setTimeout(tick, Math.max(0, next - performance.now()));

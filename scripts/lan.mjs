@@ -1,10 +1,10 @@
-// Bagimliliksiz WebSocket oda yonlendiricisi (LAN lobisi): oyun mantigi host istemcisindedir,
-// sunucu yalniz mesaj yonlendirir. Yol: /ws?room=KOD&role=host|guest
-// Cerceveler (JSON metin):
-//   host -> sunucu : {to: id | '*', except?: id, msg} | {disconnect: id}
-//   sunucu -> host : {ok:true} | {from: id, msg} | {join: id} | {leave: id}
-//   misafir -> srv : {msg}
-//   sunucu -> misafir: {ok:true, id} | {msg} | {close: neden}
+// Dependency-free WebSocket room router (LAN lobby): the game logic lives in the host client,
+// the server only relays messages. Path: /ws?room=CODE&role=host|guest
+// Frames (JSON text):
+//   host -> server : {to: id | '*', except?: id, msg} | {disconnect: id}
+//   server -> host : {ok:true} | {from: id, msg} | {join: id} | {leave: id}
+//   guest -> server : {msg}
+//   server -> guest: {ok:true, id} | {msg} | {close: reason}
 import { createHash } from 'node:crypto';
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
@@ -14,7 +14,7 @@ const MAX_GUESTS = 16;
 const PING_MS = 20000;
 const IDLE_MS = 70000;
 
-/** Tek bir WebSocket baglantisi: el sikisma sonrasi cerceve ayristirma ve gonderme. */
+/** A single WebSocket connection: frame parsing and sending after the handshake. */
 class Conn {
   constructor(socket) {
     this.socket = socket;
@@ -37,7 +37,7 @@ class Conn {
     try {
       this.socket.destroy();
     } catch {
-      /* zaten kapali */
+      /* already closed */
     }
     this.onClose();
   }
@@ -135,7 +135,7 @@ class Conn {
 }
 
 /**
- * HTTP sunucusuna /ws yukseltmesini ekler. Odalar bellekte tutulur; host ayrilinca oda kapanir.
+ * Adds the /ws upgrade to the HTTP server. Rooms are kept in memory; the room closes when the host leaves.
  * @returns {{ rooms: Map, close: () => void }}
  */
 export function attachLan(server) {
@@ -145,7 +145,7 @@ export function attachLan(server) {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const key = req.headers['sec-websocket-key'];
     if (url.pathname !== '/ws' || !key || String(req.headers.upgrade ?? '').toLowerCase() !== 'websocket') {
-      // Baska dinleyici (Vite HMR) varsa onlara birak; yoksa baglantiyi kapat.
+      // If another listener (Vite HMR) exists, leave it to them; otherwise close the connection.
       socket.on('error', () => {});
       if (server.listenerCount('upgrade') <= 1) socket.destroy();
       return;
@@ -218,7 +218,7 @@ export function attachLan(server) {
     };
   });
 
-  // Bosta kalan baglantilari temizle + canlilik icin ping.
+  // Drop idle connections + ping for liveness.
   const timer = setInterval(() => {
     const now = Date.now();
     for (const r of rooms.values()) {

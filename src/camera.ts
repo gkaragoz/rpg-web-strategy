@@ -5,7 +5,7 @@ const PAN_SPEED = 900;
 const MIN_ZOOM = 0.04;
 const MAX_ZOOM = 2.5;
 
-/** Iki parmak hareketinin kamera uzerindeki etkisi (saf fonksiyon: test edilebilir). mx/my: tuvalin merkezine gore orta nokta. */
+/** Effect of a two-finger gesture on the camera (pure function: testable). mx/my: midpoint relative to the canvas center. */
 export function gestureStep(
   cam: { x: number; y: number; zoom: number },
   prev: { mx: number; my: number; d: number },
@@ -14,28 +14,28 @@ export function gestureStep(
   const before = cam.zoom;
   const ratio = prev.d > 1 && next.d > 1 ? next.d / prev.d : 1;
   const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, before * ratio));
-  // Orta noktanin altindaki dunya noktasi, orta nokta hareket ettikce parmaklarla birlikte kalsin.
+  // The world point under the midpoint stays with the fingers as the midpoint moves.
   const x = cam.x + prev.mx / before - next.mx / zoom;
   const y = cam.y + prev.my / before - next.my / zoom;
   return { x, y, zoom };
 }
 
 export class Camera {
-  /** Ekrandaki merkez noktasi (dunya/iso piksel koordinati). */
+  /** Center point on screen (world/iso pixel coordinates). */
   x = 0;
   y: number;
   zoom = 1;
-  /** false iken girdi (klavye/fare/tekerlek) yok sayilir: otomatik benchmark icin. */
+  /** While false, input (keyboard/mouse/wheel) is ignored: for the automatic benchmark. */
   enabled = true;
-  /** Kamera sarsintisi genligi (px); hizla soner. */
+  /** Camera shake amplitude (px); decays quickly. */
   private shakeAmp = 0;
-  /** Kisa zoom darbesi (komedi modu): 0..0.08, hizla soner. */
+  /** Short zoom punch (comedy mode): 0..0.08, decays quickly. */
   private punchAmp = 0;
   private keys = new Set<string>();
-  /** Dokunmatik: aktif parmaklar (editor da okur: 2+ parmak = kamera hareketi, yerlestirme degil). */
+  /** Touch: active fingers (the editor reads this too: 2+ fingers = camera movement, not placement). */
   private readonly touches = new Map<number, { x: number; y: number }>();
   private gesture: { mx: number; my: number; d: number } | null = null;
-  /** true iken (savas) tek parmak da kaydirir. */
+  /** While true (battle), a single finger pans too. */
   singleFingerPan = false;
   private canvasEl: HTMLCanvasElement;
   get touchCount(): number {
@@ -90,7 +90,7 @@ export class Camera {
         const my = e.clientY - rect.top - rect.height / 2;
         const before = this.zoom;
         this.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.zoom * Math.exp(-e.deltaY * 0.0015)));
-        // Imlecin altindaki nokta sabit kalsin.
+        // Keep the point under the cursor fixed.
         this.x += mx / before - mx / this.zoom;
         this.y += my / before - my / this.zoom;
       },
@@ -133,7 +133,7 @@ export class Camera {
     this.gesture = this.touchState();
   }
 
-  /** Yakinlastir/uzaklastir (HUD dugmeleri): ekran merkezine dogru. */
+  /** Zoom in/out (HUD buttons): toward the screen center. */
   zoomBy(f: number): void {
     this.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.zoom * f));
   }
@@ -142,19 +142,19 @@ export class Camera {
     this.punchAmp = Math.min(0.08, Math.max(this.punchAmp, amount));
   }
 
-  /** Sarsinti ekler (en buyuk deger korunur; 0-14 px araligi). */
+  /** Adds shake (the largest value is kept; range 0-14 px). */
   shake(amount: number): void {
     this.shakeAmp = Math.min(14, Math.max(this.shakeAmp, amount));
   }
 
-  /** Harita boyutu degisince kameranin sinirlarini gunceller. */
+  /** Updates the camera bounds when the map size changes. */
   setMap(size: number): void {
     this.mapSize = size;
     this.x = 0;
     this.y = (size * TILE_H) / 2;
   }
 
-  /** Tum haritayi ekrana sigdirir. */
+  /** Fits the whole map on screen. */
   fit(screenW: number, screenH: number): void {
     this.x = 0;
     this.y = (this.mapSize * TILE_H) / 2;

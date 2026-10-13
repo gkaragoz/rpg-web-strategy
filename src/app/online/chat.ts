@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import type { Session } from '../../net/client';
 import { hex } from '../state';
 import { playerColor } from './cursors';
@@ -5,7 +6,7 @@ import { playerColor } from './cursors';
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const SHOW_MS = 9000;
 
-/** Oyun ici sohbet: Enter ile yazilir, mesajlar bir sure gorunup solar. */
+/** In-game chat: type with Enter; messages show for a while and then fade. */
 export class ChatOverlay {
   private readonly el: HTMLElement;
   private readonly log: HTMLElement;
@@ -20,13 +21,13 @@ export class ChatOverlay {
   ) {
     this.el = document.createElement('div');
     this.el.className = 'on-ingame-chat';
-    this.el.innerHTML = '<div class="on-ig-log" aria-live="polite"></div><input class="on-ig-in" maxlength="200" placeholder="Mesaj (Enter gönder, Esc kapat)" autocomplete="off" hidden /><button type="button" class="on-ig-btn" aria-label="Sohbet">Sohbet</button>';
+    this.el.innerHTML = `<div class="on-ig-log" aria-live="polite"></div><input class="on-ig-in" maxlength="200" placeholder="${esc(t('online.chat.ph'))}" autocomplete="off" hidden /><button type="button" class="on-ig-btn" aria-label="${esc(t('online.chat.btn'))}">${t('online.chat.btn')}</button>`;
     root.appendChild(this.el);
     this.log = this.el.querySelector('.on-ig-log') as HTMLElement;
     this.input = this.el.querySelector('.on-ig-in') as HTMLInputElement;
     this.seen = session.model.chat.at(-1)?.n ?? 0;
     const btn = this.el.querySelector('.on-ig-btn') as HTMLButtonElement;
-    // Dokunmatik: Enter tusu yok; dugme girisi acar (blur kapanmasin diye pointerdown'da engelle).
+    // Touch: there is no Enter key; the button opens the input (prevent default on pointerdown so blur does not close it).
     btn.addEventListener('pointerdown', (e) => e.preventDefault());
     btn.addEventListener('click', () => {
       this.input.hidden = false;
@@ -42,7 +43,7 @@ export class ChatOverlay {
       }
     };
     window.addEventListener('keydown', this.keys);
-    // Alt dock'un (telefonda yuksek) ustunde kal.
+    // Stay above the bottom dock (tall on phones).
     const place = (): void => {
       const d = document.querySelector('.on-dock');
       this.el.style.bottom = `${d ? Math.round(window.innerHeight - d.getBoundingClientRect().top + 8) : 96}px`;
@@ -65,7 +66,7 @@ export class ChatOverlay {
     this.input.blur();
   }
 
-  /** Yeni sohbet mesajlarini ekler. */
+  /** Adds new chat messages. */
   update(): void {
     const m = this.session.model;
     for (const c of m.chat) {

@@ -11,7 +11,7 @@ function duel(comedy: boolean, seed = 5): Battle {
   return new Battle(seed, config);
 }
 
-/** Birimi (x0,y0) -> (x1,y1) hedefli ucusa sokar (firlatma jitter'i olmadan), inene kadar adimlar. */
+/** Puts the unit into a flight from (x0,y0) to (x1,y1) (without launch jitter) and steps until it lands. */
 function flyTo(b: Battle, i: number, x1: number, y1: number): void {
   const u = b.units;
   u.airX0[i] = u.x[i];
@@ -28,11 +28,11 @@ function flyTo(b: Battle, i: number, x1: number, y1: number): void {
   }
 }
 
-describe('komedi fizigi', () => {
-  it('suya inen birim boguluyor, cimene inen hayatta kalip yatiyor', () => {
+describe('comedy physics', () => {
+  it('a unit landing in water drowns, a unit landing on grass survives and lies down', () => {
     const b = duel(true);
     const t = b.terrain!;
-    // Suyun merkezinden ve kara bir noktadan sec.
+    // Pick a point near the water center and a land point.
     let water = { x: 0, y: 0 };
     let land = { x: 0, y: 0 };
     outer: for (let y = 20; y < 36; y++) for (let x = 20; x < 36; x++) if (t.flags[y * t.size + x] === T_WATER) { water = { x: x + 0.5, y: y + 0.5 }; break outer; }
@@ -48,7 +48,7 @@ describe('komedi fizigi', () => {
     expect(c.terrain!.walkable(c.units.x[0], c.units.y[0])).toBe(true);
   });
 
-  it('engel uzerine inen birim en yakin yurunebilir noktaya konur', () => {
+  it('a unit landing on an obstacle is placed at the nearest walkable point', () => {
     const b = duel(true);
     const t = b.terrain!;
     let blocked: { x: number; y: number } | null = null;
@@ -59,7 +59,7 @@ describe('komedi fizigi', () => {
     expect(t.walkable(b.units.x[0], b.units.y[0])).toBe(true);
   });
 
-  it('mod kapaliyken birim hic havalanmaz', () => {
+  it('with the mode off, no unit is ever launched', () => {
     const sc = makeScenario(12);
     const b = new Battle(sc.simSeed, { ...sc.config, comedy: false });
     let maxLift = 0;
@@ -70,7 +70,7 @@ describe('komedi fizigi', () => {
     expect(maxLift).toBe(0);
   });
 
-  it('mod acikken savasta birimler havalanir ve degismezler korunur', () => {
+  it('with the mode on, units are launched in battle and invariants hold', () => {
     let launched = 0;
     for (const id of [3, 17, 42, 77]) {
       const sc = makeScenario(id);
@@ -81,18 +81,18 @@ describe('komedi fizigi', () => {
           if (b.units.lift[i] > 0) launched++;
           expect(b.units.lift[i]).toBeGreaterThanOrEqual(0);
         }
-        if (s % 60 === 0) expect(checkInvariants(b), `senaryo ${id}`).toEqual([]);
+        if (s % 60 === 0) expect(checkInvariants(b), `scenario ${id}`).toEqual([]);
       }
     }
     expect(launched).toBeGreaterThan(0);
   }, 120000);
 });
 
-// COMEDY_N: komedi fizigi acik rastgele senaryo sayisi (takilma/dongu/degismez taramasi).
+// COMEDY_N: number of random scenarios with comedy physics on (stall/loop/invariant sweep).
 const N = Number(process.env.COMEDY_N ?? 60);
-describe('komedi fizigi: rastgele senaryolar', () => {
+describe('comedy physics: random scenarios', () => {
   for (let id = 1; id <= N; id++) {
-    it(`senaryo ${id}`, () => {
+    it(`scenario ${id}`, () => {
       const sc = makeScenario(id);
       sc.config = { ...sc.config, comedy: true };
       const r = runScenario(sc);

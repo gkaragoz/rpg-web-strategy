@@ -12,14 +12,14 @@ const lanPlugin = (): Plugin => ({
   },
 });
 
-// SharedArrayBuffer (sim worker) icin cross-origin isolation gerekir.
+// SharedArrayBuffer (sim worker) requires cross-origin isolation.
 const isolation = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Embedder-Policy': 'require-corp',
 };
 
 export default defineConfig({
-  // Goreli taban: dist/ herhangi bir alt dizinde (GitHub Pages, yerel sunucu) calisir.
+  // Relative base: dist/ works from any subdirectory (GitHub Pages, local server).
   base: './',
   plugins: [lanPlugin()],
   server: { headers: isolation },

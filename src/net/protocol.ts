@@ -2,14 +2,14 @@ import type { BattleConfig } from '../sim/battle';
 import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
 
-/** Protokol surumu: uyusmayan istemci lobiye giremez. */
-export const PROTOCOL = 2;
+/** Protocol version: a client with a different version cannot join the lobby. */
+export const PROTOCOL = 3;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;
-/** Placement kalinligi: ayni takimin birimleri arasi en kucuk uzaklik (editor MIN_GAP ile uyumlu). */
+/** Placement spacing: smallest distance between units of the same team (matches the editor's MIN_GAP). */
 export const PLACE_GAP = 0.85;
-/** Kopan oyuncunun geri baglanma suresi (sn). */
+/** Time (s) a disconnected player has to reconnect. */
 export const REJOIN_SECS = 60;
 
 export type Role = 'player' | 'spectator';
@@ -18,15 +18,15 @@ export type Phase = 'lobby' | 'placing' | 'battle' | 'result';
 export interface PlayerInfo {
   id: string;
   name: string;
-  /** Renk paleti indeksi (takim rengi, 0..5). */
+  /** Color palette index (team color, 0..5). */
   color: number;
   ready: boolean;
-  /** Takim numarasi (oyuncu sirasi); seyirci icin -1. */
+  /** Team number (player order); -1 for spectators. */
   team: number;
   connected: boolean;
   role: Role;
   muted: boolean;
-  /** Yerlestirme asamasinda kalan gold ve yerlestirilen birim sayisi. */
+  /** Gold left and number of units placed during the placement phase. */
   gold: number;
   units: number;
 }
@@ -35,16 +35,16 @@ export interface LobbySettings {
   mapMode: 'random' | 'fixed';
   map: MapSpec;
   mapSeed: number;
-  /** 0: oyuncu sayisina gore otomatik. */
+  /** 0: automatic, based on the player count. */
   mapSize: number;
   gold: number;
-  /** Yerlestirme suresi (sn); 0: herkes hazir olana kadar. */
+  /** Placement time (s); 0: until everyone is ready. */
   placeSecs: number;
   level: number;
   openPlacement: boolean;
   comedyPhysics: boolean;
   comedyVisual: boolean;
-  /** Alinamayacak nadirlikler (host kapatir). */
+  /** Rarities that cannot be bought (disabled by the host). */
   banned: Rarity[];
 }
 
@@ -59,16 +59,16 @@ export interface GameInit {
   comedyPhysics: boolean;
   comedyVisual: boolean;
   banned: Rarity[];
-  /** Tur basina gold maliyeti (host hesaplar; herkes ayni tabloyu kullanir). */
+  /** Gold cost per unit kind (computed by the host; everyone uses the same table). */
   costs: number[];
-  /** Oyuncu kimlikleri takim sirasiyla (team = indeks). */
+  /** Player ids in team order (team = index). */
   teamPlayers: string[];
 }
 
 export interface BattleStart {
   init: GameInit;
   simSeed: number;
-  /** Duz liste: takim, tur, x, y (birim kimligine gore sirali). */
+  /** Flat list: team, kind, x, y (sorted by unit id). */
   layout: number[];
 }
 
@@ -79,13 +79,13 @@ export interface LobbyState {
   players: PlayerInfo[];
   settings: LobbySettings;
   locked: boolean;
-  /** Placing: kalan sure (sn, -1 = sinirsiz). */
+  /** Placing: time left (s, -1 = unlimited). */
   placeLeft: number;
   init?: GameInit;
 }
 
 export interface PlaceItem {
-  /** Istemci tarafi gecici kimlik (yanit eslemesi icin). */
+  /** Client-side temporary id (to match replies). */
   cid: number;
   kind: number;
   x: number;
@@ -102,7 +102,7 @@ export interface PlacedItem {
 
 export type RejectReason = 'full' | 'password' | 'version' | 'started' | 'kicked' | 'closed' | 'name';
 
-/** Istemci -> host. */
+/** Client -> host. */
 export type ClientMsg =
   | { t: 'join'; name: string; color: number; pass?: string; spectator?: boolean; version: number; token?: string }
   | { t: 'profile'; name: string; color: number }
@@ -120,16 +120,27 @@ export type ClientMsg =
   | { t: 'rematch' }
   | { t: 'leave' };
 
-/** Host -> istemci. */
+/**
+ * Why a placement was refused. These are stable codes on the wire; the receiving client translates them
+ * (`online.reason.<code>`).
+ * busy: not allowed right now; invalid: unknown unit; unbuyable: unit cannot be bought; banned: rarity disabled;
+ * zone: outside the team zone; gold: not enough gold; cap: unit cap reached; close: too close to another unit.
+ */
+export type PlaceFailReason = 'busy' | 'invalid' | 'unbuyable' | 'banned' | 'zone' | 'gold' | 'cap' | 'close';
+
+/** Why a session ended (stable codes, translated by the UI as `online.reason.<code>`). */
+export type CloseReason = 'closed' | 'kicked' | 'lost' | 'serverLost';
+
+/** Host -> client. */
 export type ServerMsg =
   | { t: 'welcome'; you: string; token: string; state: LobbyState; start?: BattleStart }
   | { t: 'reject'; reason: RejectReason }
   | { t: 'state'; state: LobbyState }
-  | { t: 'kicked'; reason: string }
+  | { t: 'kicked'; reason: 'kicked' }
   | { t: 'chat'; id: string; name: string; text: string; ts: number }
   | { t: 'presence'; id: string; x: number; y: number; ctx: 'world' | 'page'; act?: string }
   | { t: 'placed'; owner: string; items: PlacedItem[] }
-  | { t: 'placeFail'; cids: number[]; reason: string }
+  | { t: 'placeFail'; cids: number[]; reason: PlaceFailReason }
   | { t: 'unplaced'; owner: string; ids: number[] }
   | { t: 'start'; start: BattleStart }
   | { t: 'tick'; step: number; speed: number; paused: boolean }
@@ -139,7 +150,7 @@ export type ServerMsg =
 
 export type Msg = ClientMsg | ServerMsg;
 
-/** BattleStart'tan tum istemcilerin ayni Battle'i kurdugu yapilandirma. */
+/** The configuration from which all clients build the same Battle out of a BattleStart. */
 export function battleConfig(s: BattleStart): BattleConfig {
   return {
     mode: 'custom',
@@ -158,10 +169,10 @@ export function battleConfig(s: BattleStart): BattleConfig {
 
 export function cleanName(raw: string): string {
   const s = raw.replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, NAME_MAX);
-  return s || 'Oyuncu';
+  return s || 'Player';
 }
 
-/** Lobi kodu: karisabilecek harfler (0/O, 1/I) olmadan 6 karakter. */
+/** Lobby code: 6 characters, without easily confused ones (0/O, 1/I). */
 export function makeCode(rnd: () => number = Math.random): string {
   const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let c = '';
@@ -183,7 +194,7 @@ export function b64decode(s: string): Uint8Array {
   return out;
 }
 
-/** Basit parola ozeti (ag uzerinde duz metin dolasmasin diye; guvenlik degil, sadece engel). */
+/** Simple password digest (so plain text does not travel over the network; not real security, only a barrier). */
 export function passHash(p: string): string {
   let h = 2166136261;
   for (let i = 0; i < p.length; i++) {

@@ -1,4 +1,5 @@
 import type { Application } from 'pixi.js';
+import { t } from '../../i18n';
 import { isoX, isoY } from '../../iso';
 import { act } from '../../net/act';
 import type { OnlineModel } from '../../net/client';
@@ -10,7 +11,7 @@ import type { WorldView } from '../world';
 const SEND_MS = 66; // ~15 Hz
 const STALE_MS = 4000;
 
-/** Harita ekranlarinda ekran <-> dunya donusumu icin gerekenler (lobide null). */
+/** What map screens need for screen <-> world conversion (null in the lobby). */
 export interface MapView {
   app: Application;
   world: WorldView;
@@ -20,15 +21,15 @@ export interface MapView {
 
 const hexOf = (c: number): string => '#' + c.toString(16).padStart(6, '0');
 
-/** Oyuncu renk indeksinin ekran rengi (klasik palet). */
+/** Screen color of a player color index (classic palette). */
 export function playerColor(index: number): number {
   const cols = PALETTES[0].colors;
   return cols[((index % cols.length) + cols.length) % cols.length];
 }
 
 /**
- * Canli imlecler: herkesin adi, rengi ve imleci (ok + dolgulu "Ad (eylem)" etiketi). Harita ekranlarinda imlec dunya
- * koordinatinda (kamera/zoom'dan bagimsiz), lobide sayfa-normalize koordinatta cizilir. DOM katmani; yumusatilir.
+ * Live cursors: everyone's name, color and pointer (arrow + filled "Name (action)" label). On map screens the cursor is
+ * drawn in world coordinates (independent of camera/zoom), in the lobby in page-normalized coordinates. A DOM layer; smoothed.
  */
 export class CursorLayer {
   private readonly root: HTMLElement;
@@ -52,15 +53,15 @@ export class CursorLayer {
       this.pendingLeave = true;
     };
     window.addEventListener('pointermove', this.onMove);
-    // Dokunmatik: pointermove yalniz parmak degerken gelir; ilk dokunusu da bildir.
+    // Touch: pointermove only arrives while the finger is down; report the first touch too.
     window.addEventListener('pointerdown', this.onMove);
     document.addEventListener('pointerleave', this.onLeave);
   }
 
-  /** Harita ekraniysa gorunumu ver; lobide null. */
+  /** Pass the view on a map screen; null in the lobby. */
   setView(v: MapView | null): void {
     this.view = v;
-    // Baglam degisti: eski konumlar anlamsizlasir.
+    // Context changed: old positions become meaningless.
     for (const c of this.els.values()) c.ready = false;
   }
 
@@ -72,7 +73,7 @@ export class CursorLayer {
     this.els.clear();
   }
 
-  // ---------------------------------------------------------------- gonderme
+  // ---------------------------------------------------------------- sending
 
   private pointer(e: PointerEvent): void {
     const now = performance.now();
@@ -85,7 +86,7 @@ export class CursorLayer {
     } else {
       msg = { t: 'presence', x: +(e.clientX / window.innerWidth).toFixed(4), y: +(e.clientY / window.innerHeight).toFixed(4), ctx: 'page', act: act.text };
     }
-    // Ayni konum + ayni eylem tekrar gonderilmez.
+    // The same position + same action is not sent again.
     const key = `${msg.t === 'presence' ? msg.x + ',' + msg.y + ',' + msg.ctx + ',' + (msg.act ?? '') : ''}`;
     if (key === this.lastKey) return;
     this.lastKey = key;
@@ -119,9 +120,9 @@ export class CursorLayer {
     return { x: g.x + rect.left, y: g.y + rect.top };
   }
 
-  // ---------------------------------------------------------------- cizim
+  // ---------------------------------------------------------------- drawing
 
-  /** Her karede cagrilir. */
+  /** Called every frame. */
   update(dt: number): void {
     const st = this.model.state;
     if (!st) return;
@@ -131,7 +132,7 @@ export class CursorLayer {
       if (p.id === this.model.you) continue;
       const pr = this.model.presence.get(p.id);
       if (!pr) continue;
-      // Baglam uyusmazligi: harita gorunumu yokken world imleci gosterilmez.
+      // Context mismatch: a world cursor is not shown while there is no map view.
       if (pr.ctx === 'world' && !this.view) continue;
       seen.add(p.id);
       let c = this.els.get(p.id);
@@ -146,7 +147,10 @@ export class CursorLayer {
       const col = hexOf(playerColor(p.color));
       (c.el.querySelector('path') as SVGPathElement).setAttribute('fill', col);
       c.label.style.background = col;
-      const text = pr.act ? `${p.name} (${pr.act})` : p.name;
+      // The action is a stable code; translate it into this player's language (unknown codes are shown as sent).
+      const actKey = pr.act ? `online.act.${pr.act}` : '';
+      const actText = pr.act ? (t(actKey) === actKey ? pr.act : t(actKey)) : '';
+      const text = actText ? `${p.name} (${actText})` : p.name;
       if (c.label.textContent !== text) c.label.textContent = text;
       let tx: number;
       let ty: number;

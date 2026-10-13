@@ -7,8 +7,8 @@ import { LockstepRunner } from './lockstep';
 import type { ClientMsg } from './protocol';
 
 /**
- * Cevrimici savasin sim arka ucu: ana thread'de Battle + LockstepRunner. BattleScene bunu SimBackend olarak surer;
- * adim ilerletme host'a yetisme/bekleme ve kontrol toplami mantigini runner yurutur.
+ * Sim backend of the online battle: Battle + LockstepRunner on the main thread. BattleScene drives it as a SimBackend;
+ * the runner handles stepping, catching up with / waiting for the host, and the checksum logic.
  */
 export class LockstepSim implements SimBackend {
   readonly kind = 'inline' as const;
@@ -69,7 +69,7 @@ export class LockstepSim implements SimBackend {
   }
 
   async reset(): Promise<void> {
-    /* cevrimicide yeniden baslatma yok */
+    /* no restart online */
   }
   setSpeed(speed: number): void {
     this.runner.speed = speed;
@@ -91,5 +91,5 @@ export class LockstepSim implements SimBackend {
   }
 }
 
-/** Sim adimi sabiti (disa aktarilir: runner ile ayni). */
+/** Sim step constant (re-exported: same as the runner's). */
 export { SIM_DT };

@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 const HISTORY = 120;
 
 export interface StatsInfo {
@@ -10,8 +12,8 @@ export interface StatsInfo {
   extra?: string[];
 }
 
-/** Sag ustte FPS / profiler paneli. */
-/** Dokunmatik cihazlarda istatistik paneli varsayilan kapali (ekrani kaplar); HUD dugmesiyle acilir. */
+/** FPS / profiler panel at the top right. */
+/** On touch devices the stats panel is hidden by default (it covers the screen); opened with the HUD button. */
 export const STATS_DEFAULT_SHOWN = typeof matchMedia === 'undefined' || !matchMedia('(pointer: coarse)').matches;
 
 export class StatsPanel {
@@ -26,7 +28,7 @@ export class StatsPanel {
   private samples = 0;
   private lastUpdate = 0;
   visible = true;
-  /** Sahne panelin gosterilmesini istiyor mu (studyoda gizli). */
+  /** Whether the scene wants the panel shown (hidden in the studio). */
   private shown = true;
 
   constructor(el: HTMLElement) {
@@ -77,13 +79,13 @@ export class StatsPanel {
 
     const lines = [
       `FPS        ${(1000 / (avgMs || 1)).toFixed(0)}  (1% low ${(1000 / (lowMs || 1)).toFixed(0)})`,
-      `Kare       ${avgMs.toFixed(2)} ms`,
-      `Sim        ${(this.simAcc / (this.samples || 1)).toFixed(2)} ms  (${info.simSteps} adim/kare)`,
-      `Render     ${(this.renderAcc / (this.samples || 1)).toFixed(2)} ms  (CPU)`,
-      `Mavi ${String(info.blue).padStart(4)}   Kirmizi ${String(info.red).padStart(4)}`,
-      `Ok         ${info.projectiles}`,
+      `${t('battle.stats.frame').padEnd(11)}${avgMs.toFixed(2)} ms`,
+      `${t('battle.stats.sim').padEnd(11)}${(this.simAcc / (this.samples || 1)).toFixed(2)} ms  ${t('battle.stats.stepsPerFrame', { n: info.simSteps })}`,
+      `${t('battle.stats.render').padEnd(11)}${(this.renderAcc / (this.samples || 1)).toFixed(2)} ms  (CPU)`,
+      `${t('battle.stats.blue')} ${String(info.blue).padStart(4)}   ${t('battle.stats.red')} ${String(info.red).padStart(4)}`,
+      `${t('battle.stats.arrows').padEnd(11)}${info.projectiles}`,
       heap ? `JS heap    ${(heap.usedJSHeapSize / 1048576).toFixed(1)} MB` : '',
-      `Hiz        x${info.speed}${info.paused ? '  (duraklatildi)' : ''}`,
+      `${t('battle.stats.speed').padEnd(11)}x${info.speed}${info.paused ? '  ' + t('battle.stats.paused') : ''}`,
       ...(info.extra ?? []),
     ].filter(Boolean);
     this.el.textContent = lines.join('\n');
@@ -96,7 +98,7 @@ export class StatsPanel {
   private drawGraph(): void {
     const { ctx, graph } = this;
     ctx.clearRect(0, 0, graph.width, graph.height);
-    const scale = graph.height / 33.3; // 30 FPS = tam yukseklik
+    const scale = graph.height / 33.3; // 30 FPS = full height
     for (let i = 0; i < this.filled; i++) {
       const v = this.frames[(this.idx - this.filled + i + HISTORY * 2) % HISTORY];
       const h = Math.min(graph.height, v * scale);

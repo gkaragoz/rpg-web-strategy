@@ -1,12 +1,12 @@
 import { TROOP_BY_ID } from '../sim/data/troops';
 import { KIND_COUNT, STATS, isHealer, isMelee } from '../sim/units';
 
-/** Satir rolleri: on (yakin), orta (uzak), arka (sifaci/kusatma). */
+/** Row roles: front (melee), mid (ranged), back (healer/siege). */
 export type Lane = 'front' | 'mid' | 'back';
 
 const REF = Math.sqrt(160 * 16);
 
-/** Birimin "savasci esdegeri" maliyeti: can ve guce gore (Savasci = 1). */
+/** Unit cost in "warrior equivalents", based on health and power (Warrior = 1). */
 export function unitCost(kind: number): number {
   const s = STATS[kind];
   return Math.min(10, Math.max(0.5, Math.sqrt((s.hp * s.power) / Math.max(0.2, s.cooldown)) / REF / 1.2));
@@ -16,12 +16,12 @@ export function laneOf(kind: number): Lane {
   if (isHealer(kind)) return 'back';
   if (isMelee(kind)) return 'front';
   const t = STATS[kind].troop ? TROOP_BY_ID[STATS[kind].troop!] : undefined;
-  // Kusatma makineleri ve cok uzun menzilliler en arkada.
+  // Siege machines and very long-range units go at the very back.
   if (STATS[kind].range >= 10 || (t && t.move === 0 && t.atkSpd <= 0.35)) return 'back';
   return 'mid';
 }
 
-/** Yerlestirme listesinde bulunabilen turler (cagrilan birimler haric). */
+/** Types available in the placement list (summoned units excluded). */
 export function placeableKinds(): number[] {
   const out: number[] = [];
   for (let k = 0; k < KIND_COUNT; k++) {
@@ -35,8 +35,8 @@ export function placeableKinds(): number[] {
 const pick = <T>(rnd: () => number, list: T[]): T => list[Math.floor(rnd() * list.length) % list.length];
 
 /**
- * Rol dengeli rastgele ordu: yakin/uzak/arka hat butceye gore doldurulur.
- * `anchor` verilirse o tur kendi hattinin ana birimi olur.
+ * Role-balanced random army: the front/mid/back lanes are filled according to the budget.
+ * If `anchor` is given, that type becomes the main unit of its lane.
  */
 export function composeArmy(rnd: () => number, budget = 26, anchor = -1): Record<Lane, number[]> {
   const pool: Record<Lane, number[]> = { front: [], mid: [], back: [] };
@@ -61,7 +61,7 @@ export function composeArmy(rnd: () => number, budget = 26, anchor = -1): Record
   return rows;
 }
 
-/** Tek turden ordu: secili turden, hatti ne olursa olsun, butceye gore adet (formasyon doldur). */
+/** Single-type army: count of the selected type according to the budget, whatever its lane (fill formation). */
 export function composeFromKind(kind: number, rnd: () => number, budget = 26): Record<Lane, number[]> {
   const army = composeArmy(rnd, budget, kind);
   return army;

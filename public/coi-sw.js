@@ -1,6 +1,6 @@
 /*
- * Cross-origin isolation service worker (GitHub Pages gibi baslik gonderemeyen sunucular icin).
- * Tum yanitlara COOP/COEP ekler; boylece SharedArrayBuffer (sim worker) calisir.
+ * Cross-origin isolation service worker (for servers that cannot send headers, such as GitHub Pages).
+ * Adds COOP/COEP to every response so SharedArrayBuffer (sim worker) works.
  */
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));

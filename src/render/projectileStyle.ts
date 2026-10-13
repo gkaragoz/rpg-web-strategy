@@ -1,8 +1,8 @@
 import type { Graphics } from 'pixi.js';
 
-/** Mermi gorunumu etiketine gore renk ve boyut (massRenderer ve ayrintili mod ortak). */
+/** Color and size by projectile look tag (shared by massRenderer and detailed mode). */
 export interface ProjStyle {
-  /** true: yuvarlak parlak kure (puff dokusu), false: ok/mizrak cizgisi. */
+  /** true: round glowing orb (puff texture), false: arrow/spear line. */
   orb: boolean;
   color: number;
   scale: number;
@@ -26,7 +26,7 @@ export function projStyle(tag: number): ProjStyle {
   return PROJ_STYLES[tag] ?? PROJ_STYLES[0];
 }
 
-/** Ayrintili mod: mermiyi Graphics olarak cizer (merkez 0,0; yon +x). */
+/** Detailed mode: draws the projectile as Graphics (center 0,0; direction +x). */
 export function drawProjectile(g: Graphics, tag: number): void {
   g.clear();
   const st = projStyle(tag);

@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="tr">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#1a2332" />
-    <title>RPG Web - Savaş Stüdyosu</title>
+    <title>RPG Web - Battle Studio</title>
     <script src="./coi-register.js"></script>
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #1a2332; font-family: system-ui, sans-serif;
@@ -20,7 +20,20 @@
     </style>
   </head>
   <body>
-    <div id="loading"><div>Yükleniyor…</div><small>© gkaragoz and Contributors</small></div>
+    <div id="loading"><div>Loading…</div><small>© gkaragoz and Contributors</small></div>
+    <script>
+      // Localize the loading text before the app bundle arrives (same language detection as src/i18n.ts).
+      (function () {
+        var l = 'en';
+        try {
+          var q = new URLSearchParams(location.search).get('lang');
+          var s = q || localStorage.getItem('rpgweb.lang');
+          if (s === 'tr' || s === 'en') l = s;
+        } catch (e) {}
+        document.documentElement.lang = l;
+        if (l === 'tr') document.getElementById('loading').firstChild.textContent = 'Yükleniyor…';
+      })();
+    </script>
     <div id="studio" class="studio" hidden></div>
     <div id="hud" class="hud" hidden></div>
     <div id="stats"></div>

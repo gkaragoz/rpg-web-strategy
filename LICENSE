@@ -1,4 +1,4 @@
-# RPG Web — Savaş Stüdyosu: License
+# RPG Web — Battle Studio: License
 
 Required Notice: Copyright (c) 2026 gkaragoz and Contributors (https://github.com/gkaragoz/rpg-web-strategy)
 
@@ -110,17 +110,16 @@ If anything here conflicts with that license, the more restrictive term applies.
 
 3. **No misrepresentation.** A modified version must not misrepresent its origin or
    its relationship to the official project, must be marked as modified, and must not
-   use the name "RPG Web", "Savaş Stüdyosu" or any confusingly similar name as its own
-   primary title, nor imply endorsement by the licensor, without written permission.
+   use the name "RPG Web", "Battle Studio", "Savaş Stüdyosu" or any confusingly similar name
+   as its own primary title, nor imply endorsement by the licensor, without written permission.
 
 4. **Contributions.** Contributions submitted to the official repository are licensed to
    the licensor as described in CONTRIBUTING.md and CLA.md, and may be distributed under
    these terms and under other terms (including commercial terms) chosen by the licensor.
 
-5. **Third-party and data components.** Third-party libraries keep their own licenses
-   (see THIRD_PARTY_NOTICES.md). Unit data derived from the the reference roster
-   (src/sim/data/troops.ts and the values it contains) remains under source terms and is NOT
-   restricted by this license beyond what source terms allows; see THIRD_PARTY_NOTICES.md.
+5. **Third-party components.** Third-party libraries keep their own licenses
+   (see THIRD_PARTY_NOTICES.md). The unit roster, stats, names, skills and artwork in this
+   repository are original works of the licensor and contributors and are covered by this license.
 
 6. **Releases and history.** Versions published before this license was added had no
    license grant beyond what the law provides. This license applies to the repository and

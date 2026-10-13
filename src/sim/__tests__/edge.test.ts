@@ -28,9 +28,9 @@ function scenario(desc: string, units: U[], extra: Partial<BattleConfig> = {}): 
 
 const repeat = (n: number, f: (i: number) => U): U[] => Array.from({ length: n }, (_, i) => f(i));
 
-describe('hedefli edge case testleri', () => {
-  it('yalniz rahip vs yalniz rahip (kimse hasar veremez) bir sonuca varir', () => {
-    const sc = scenario('rahip vs rahip', [
+describe('targeted edge-case tests', () => {
+  it('priests only vs priests only (nobody can deal damage) still reaches a result', () => {
+    const sc = scenario('priest vs priest', [
       ...repeat(3, (i) => [0, Kind.Priest, 20 + i, 28] as U),
       ...repeat(3, (i) => [1, Kind.Priest, 34 + i, 28] as U),
     ]);
@@ -38,14 +38,14 @@ describe('hedefli edge case testleri', () => {
     expect(r.winner, r.flags.map((f) => f.type + ': ' + f.info).join(' | ')).not.toBe(-1);
   });
 
-  it('tek okcu vs cok rahip: sifa hasari gecse bile savas biter', () => {
-    const sc = scenario('okcu vs rahipler', [[0, Kind.Archer, 20, 28], ...repeat(6, (i) => [1, Kind.Priest, 32 + (i % 3), 27 + Math.floor(i / 3)] as U)]);
+  it('a single archer vs many priests: the battle ends even if healing outpaces damage', () => {
+    const sc = scenario('archer vs priests', [[0, Kind.Archer, 20, 28], ...repeat(6, (i) => [1, Kind.Priest, 32 + (i % 3), 27 + Math.floor(i / 3)] as U)]);
     const r = runScenario(sc, 240);
     expect(r.winner, r.flags.map((f) => f.type + ': ' + f.info).join(' | ')).not.toBe(-1);
   });
 
-  it('sifa yapan tank takimi vs zayif saldirgan savasi kilitlemez', () => {
-    const sc = scenario('tank+rahip vs savasci+okcu', [
+  it('a healing tank team vs weak attackers does not lock the battle', () => {
+    const sc = scenario('tank+priest vs warrior+archer', [
       ...repeat(2, (i) => [0, Kind.Shield, 20 + i, 28] as U),
       ...repeat(6, (i) => [0, Kind.Priest, 17 + (i % 3), 27 + Math.floor(i / 3)] as U),
       [1, Kind.Warrior, 34, 28],
@@ -55,8 +55,8 @@ describe('hedefli edge case testleri', () => {
     expect(r.winner, r.flags.map((f) => f.type + ': ' + f.info).join(' | ')).not.toBe(-1);
   });
 
-  it('tank vs savasci surusu: sersemletme zinciri savasi kilitlemez', () => {
-    const sc = scenario('2 cekic + kalkan vs 10 savasci', [
+  it('tanks vs a warrior swarm: a stun chain does not lock the battle', () => {
+    const sc = scenario('2 hammers + shield vs 10 warriors', [
       [0, Kind.Shield, 24, 28],
       [0, Kind.Brute, 25, 27],
       [0, Kind.Brute, 25, 29],
@@ -67,19 +67,19 @@ describe('hedefli edge case testleri', () => {
     expect(r.flags.filter((f) => f.type === 'cannotHit' || f.type === 'idleChaser').map((f) => f.info)).toEqual([]);
   });
 
-  it("300 saldirgan tek hedefe yonelince attackers sayaci tasmaz", () => {
+  it("the attackers counter does not overflow when 300 attackers target a single unit", () => {
     const units: U[] = [[1, Kind.Shield, 28, 28], ...repeat(300, (i) => [0, Kind.Warrior, 20 + (i % 20) * 0.5, 18 + Math.floor(i / 20) * 0.5] as U)];
-    const b = new Battle(3, scenario('tasma', units, { mapSize: 56 }).config);
+    const b = new Battle(3, scenario('overflow', units, { mapSize: 56 }).config);
     for (let s = 0; s < 60; s++) b.step(1 / 30);
     const u = b.units;
     let targeting = 0;
     for (let i = 1; i < u.count; i++) if (u.alive[i] && u.target[i] === 0) targeting++;
     expect(targeting).toBeGreaterThan(260);
-    // Sayac gercek saldirgan sayisini yansitmali (255'te sarilmamali)
+    // The counter must reflect the real attacker count (it must not wrap at 255)
     expect(u.attackers[0]).toBeGreaterThanOrEqual(Math.min(targeting, 65000) - 5);
   });
 
-  it('ayni noktaya ust uste doguş: NaN yok, hepsi hayatta ve savas biter', () => {
+  it('spawning stacked on the same point: no NaN, all alive and the battle ends', () => {
     const sc = scenario('stack', [
       ...repeat(60, () => [0, Kind.Warrior, 20, 28] as U),
       ...repeat(60, () => [1, Kind.Warrior, 36, 28] as U),
@@ -89,8 +89,8 @@ describe('hedefli edge case testleri', () => {
     expect(r.winner, r.flags.map((f) => f.type + ': ' + f.info).join(' | ')).not.toBe(-1);
   });
 
-  it('ulasilamaz kapali bolgedeki dusman: savas biter (kilitlenmez)', () => {
-    // Haritalarda bagli olmayan yurunebilir bolge ara; ilk bulunani kullan.
+  it('an enemy in an unreachable enclosed region: the battle ends (no deadlock)', () => {
+    // Search the maps for a disconnected walkable region; use the first one found.
     let found: { seed: number; terrain: Terrain; region: Int32Array; small: number; main: number } | null = null;
     for (let seed = 1; seed <= 300 && !found; seed++) {
       const t = new Terrain(56, { seed, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
@@ -103,7 +103,7 @@ describe('hedefli edge case testleri', () => {
       const small = sorted.find(([id, n]) => id !== main && n >= 1)?.[0];
       if (small !== undefined) found = { seed, terrain: t, region, small, main };
     }
-    if (!found) return; // hic kapali bolge uretilmiyorsa sorun yok
+    if (!found) return; // no problem if no enclosed region is ever generated
     const n = found.terrain.size;
     const pick = (id: number): [number, number] => {
       for (let i = 0; i < found!.region.length; i++) if (found!.region[i] === id) return [(i % n) + 0.5, Math.floor(i / n) + 0.5];
@@ -111,8 +111,8 @@ describe('hedefli edge case testleri', () => {
     };
     const a = pick(found.main);
     const c = pick(found.small);
-    const sc = scenario(`kapali bolge tohum=${found.seed}`, [[0, Kind.Warrior, a[0], a[1]], [0, Kind.Archer, a[0] + 0.5, a[1]], [1, Kind.Warrior, c[0], c[1]]], { env: true, terrainSeed: found.seed });
+    const sc = scenario(`enclosed region seed=${found.seed}`, [[0, Kind.Warrior, a[0], a[1]], [0, Kind.Archer, a[0] + 0.5, a[1]], [1, Kind.Warrior, c[0], c[1]]], { env: true, terrainSeed: found.seed });
     const r = runScenario(sc, 150);
-    expect(r.winner, `tohum ${found.seed}: ${r.flags.map((f) => f.type + ': ' + f.info).join(' | ')}`).not.toBe(-1);
+    expect(r.winner, `seed ${found.seed}: ${r.flags.map((f) => f.type + ': ' + f.info).join(' | ')}`).not.toBe(-1);
   });
 });

@@ -1,5 +1,6 @@
+import { LANGS, getLang, switchLang, t, type Lang } from '../i18n';
 import { initSheet } from './sheet';
-import { LEGACY_COUNT, MAX_TEAMS, STATS } from '../sim/units';
+import { LEGACY_COUNT, MAX_TEAMS, unitDisplayName } from '../sim/units';
 import type { Editor } from './editor';
 import { MapPicker } from './mapPicker';
 import { UnitGallery } from './unitGallery';
@@ -9,28 +10,28 @@ import { BRUSHES, MAP_SIZES, MAX_PLACED, PALETTES, hex, saveState, teamColors, t
 export interface StudioDeps {
   state: AppState;
   editor: Editor;
-  /** Tohum / cevre / harita boyutu degisti. */
+  /** Seed / environment / map size changed. */
   onMapChange: () => void;
-  /** Takim sayisi veya palet degisti (atlas yeniden pisirilir, sprite'lar yenilenir). */
+  /** Team count or palette changed (the atlas is re-baked and sprites are refreshed). */
   onPaletteChange: () => void;
   onStart: () => void;
-  /** Cevrimici mod menusu. */
+  /** Online mode menu. */
   onOnline?: () => void;
   onBench: (perTeam: number) => void;
-  /** Gorunum/ses secenekleri degisti (ses ve cubuk modu hemen uygulanir). */
+  /** Display/sound options changed (sound and bar mode apply immediately). */
   onOptions: () => void;
-  /** Birim simgesi (kopya canvas). */
+  /** Unit icon (a copy of the canvas). */
   icon: (kind: number, team: number) => HTMLCanvasElement;
-  /** Roster birim seviyesi degisti. */
+  /** Roster unit level changed. */
   onLevel: () => void;
-  /** Yeni bir tur secildi: atlas gerekiyorsa pisirilir. */
+  /** A new type was picked: the atlas is baked if needed. */
   onKindPick: (kind: number) => void;
 }
 
 const KIND_KEYS = ['1', '2', '3', '4', '5'];
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
-/** Ana sayfa: tek sayfa stüdyo (ayarlar + takimlar + yerlestirme dock'u). */
+/** Main page: single-page studio (settings + teams + placement dock). */
 export class Studio {
   private readonly root: HTMLElement;
   private readonly $: (sel: string) => HTMLElement;
@@ -90,82 +91,83 @@ export class Studio {
 
   private template(): string {
     return `
-<aside class="panel left" id="panel-left" aria-label="Ayarlar">
-  <header><h1>Savaş Stüdyosu</h1><p>Ordunu kur, haritayı seç, savaşı izle.</p></header>
+<aside class="panel left" id="panel-left" aria-label="${t('studio.panel.aria')}">
+  <header><h1>${t('studio.title')}</h1><p>${t('studio.tagline')}</p></header>
   <section>
-    <h2>Harita</h2>
-    <button id="map-btn" type="button" class="wide map-btn" aria-haspopup="dialog">Harita seç…</button>
-    <label class="row"><span>Çevre <small>nehir, orman, köy</small></span><input type="checkbox" id="env" role="switch" /></label>
-    <div class="row"><span>Tohum</span><span class="inline"><input id="seed" type="number" min="1" max="999999" inputmode="numeric" aria-label="Harita tohumu" /><button id="dice" type="button" title="Rastgele tohum" aria-label="Rastgele tohum">Rastgele</button></span></div>
-    <div class="row"><span>Boyut</span><div class="seg" id="mapsize" role="group" aria-label="Harita boyutu"></div></div>
+    <h2>${t('studio.map.h')}</h2>
+    <button id="map-btn" type="button" class="wide map-btn" aria-haspopup="dialog">${t('studio.map.pick')}</button>
+    <label class="row"><span>${t('studio.env')} <small>${t('studio.env.hint')}</small></span><input type="checkbox" id="env" role="switch" /></label>
+    <div class="row"><span>${t('studio.seed')}</span><span class="inline"><input id="seed" type="number" min="1" max="999999" inputmode="numeric" aria-label="${t('studio.seed.aria')}" /><button id="dice" type="button" title="${t('studio.dice.title')}" aria-label="${t('studio.dice.title')}">${t('studio.dice')}</button></span></div>
+    <div class="row"><span>${t('studio.size')}</span><div class="seg" id="mapsize" role="group" aria-label="${t('studio.size.aria')}"></div></div>
   </section>
   <section>
-    <h2>Savaş</h2>
-    <label class="row"><span>Vur-kaç <small>okçu, rahip kaçar</small></span><input type="checkbox" id="kite" role="switch" /></label>
-    <div class="row"><span>Hız</span><div class="seg" id="speed" role="group" aria-label="Savaş hızı"></div></div>
+    <h2>${t('studio.battle.h')}</h2>
+    <label class="row"><span>${t('studio.kite')} <small>${t('studio.kite.hint')}</small></span><input type="checkbox" id="kite" role="switch" /></label>
+    <div class="row"><span>${t('studio.speed')}</span><div class="seg" id="speed" role="group" aria-label="${t('studio.speed.aria')}"></div></div>
   </section>
   <section>
-    <h2>Görünüm ve ses</h2>
-    <label class="row"><span>Ses efektleri</span><input type="checkbox" id="snd" role="switch" /></label>
-    <div class="row"><span>Ses düzeyi</span><input type="range" id="vol" min="0" max="100" step="5" aria-label="Ses düzeyi" /></div>
-    <div class="row stack"><span>Efektler</span><div class="seg" id="fxq" role="group" aria-label="Efekt kalitesi"></div></div>
-    <label class="row"><span>Hasar sayıları</span><input type="checkbox" id="nums" role="switch" /></label>
-    <div class="row stack"><span>Can çubuğu</span><div class="seg" id="bars" role="group" aria-label="Can çubuğu"></div></div>
-    <h3>Komedi modu</h3>
-    <label class="row"><span>Komedi görünümü <small>ragdoll ölüm, abartılı animasyon ve ses</small></span><input type="checkbox" id="cv" role="switch" /></label>
-    <label class="row"><span>Komedi fiziği <small>vuruşlar uçurur, suya düşen ölür</small></span><input type="checkbox" id="cp" role="switch" /></label>
-    <label class="row"><span>Hata ayıklama <small>takılma izleme, savaş yavaşlar</small></span><input type="checkbox" id="dbg" role="switch" /></label>
+    <h2>${t('studio.display.h')}</h2>
+    <div class="row stack"><span>${t('studio.lang')}</span><div class="seg" id="lang" role="group" aria-label="${t('studio.lang.aria')}"></div></div>
+    <label class="row"><span>${t('studio.snd')}</span><input type="checkbox" id="snd" role="switch" /></label>
+    <div class="row"><span>${t('studio.vol')}</span><input type="range" id="vol" min="0" max="100" step="5" aria-label="${t('studio.vol')}" /></div>
+    <div class="row stack"><span>${t('studio.fx')}</span><div class="seg" id="fxq" role="group" aria-label="${t('studio.fx.aria')}"></div></div>
+    <label class="row"><span>${t('studio.nums')}</span><input type="checkbox" id="nums" role="switch" /></label>
+    <div class="row stack"><span>${t('studio.bars')}</span><div class="seg" id="bars" role="group" aria-label="${t('studio.bars')}"></div></div>
+    <h3>${t('studio.comedy.h')}</h3>
+    <label class="row"><span>${t('studio.cv')} <small>${t('studio.cv.hint')}</small></span><input type="checkbox" id="cv" role="switch" /></label>
+    <label class="row"><span>${t('studio.cp')} <small>${t('studio.cp.hint')}</small></span><input type="checkbox" id="cp" role="switch" /></label>
+    <label class="row"><span>${t('studio.dbg')} <small>${t('studio.dbg.hint')}</small></span><input type="checkbox" id="dbg" role="switch" /></label>
   </section>
   <section>
-    <h2>Birimler</h2>
-    <button id="units-btn" type="button" class="wide">Birim ayarları…</button>
-    <p class="note" id="units-note">Can, hız, güç, menzil, zırh ve itmeyi ayarla.</p>
+    <h2>${t('studio.units.h')}</h2>
+    <button id="units-btn" type="button" class="wide">${t('studio.units.btn')}</button>
+    <p class="note" id="units-note">${t('studio.units.note')}</p>
   </section>
   <section>
-    <h2>Benchmark</h2>
-    <div class="row"><span>Takım başına</span><div class="seg" id="benchsel" role="group" aria-label="Benchmark asker sayısı"></div></div>
-    <button id="bench" type="button" class="wide">Benchmark çalıştır</button>
-    <p class="note">Takım başına 10k = toplam 20.000 asker, yerleştirme yok.</p>
+    <h2>${t('studio.bench.h')}</h2>
+    <div class="row"><span>${t('studio.bench.per')}</span><div class="seg" id="benchsel" role="group" aria-label="${t('studio.bench.aria')}"></div></div>
+    <button id="bench" type="button" class="wide">${t('studio.bench.run')}</button>
+    <p class="note">${t('studio.bench.note')}</p>
   </section>
-  <footer class="legal">© gkaragoz and Contributors · <a href="https://github.com/gkaragoz/rpg-web-strategy/blob/master/LICENSE" target="_blank" rel="noopener">Lisans: ticari kullanım yasak</a> · <a href="https://github.com/gkaragoz/rpg-web-strategy" target="_blank" rel="noopener">GitHub</a></footer>
+  <footer class="legal">© gkaragoz and Contributors · <a href="https://github.com/gkaragoz/rpg-web-strategy/blob/master/LICENSE" target="_blank" rel="noopener">${t('studio.legal.license')}</a> · <a href="https://github.com/gkaragoz/rpg-web-strategy" target="_blank" rel="noopener">GitHub</a></footer>
 </aside>
 
-<aside class="panel right" id="panel-right" aria-label="Takımlar">
+<aside class="panel right" id="panel-right" aria-label="${t('studio.teams.aria')}">
   <section>
-    <h2>Takımlar</h2>
-    <div class="row"><span>Takım sayısı</span><span class="stepper"><button id="tm-minus" type="button" aria-label="Takım azalt">−</button><b id="tm-count">2</b><button id="tm-plus" type="button" aria-label="Takım artır">+</button></span></div>
-    <h3>Renk teması</h3>
-    <div id="palettes" role="radiogroup" aria-label="Renk teması"></div>
+    <h2>${t('studio.teams.h')}</h2>
+    <div class="row"><span>${t('studio.teams.count')}</span><span class="stepper"><button id="tm-minus" type="button" aria-label="${t('studio.teams.minus')}">−</button><b id="tm-count">2</b><button id="tm-plus" type="button" aria-label="${t('studio.teams.plus')}">+</button></span></div>
+    <h3>${t('studio.teams.theme')}</h3>
+    <div id="palettes" role="radiogroup" aria-label="${t('studio.teams.theme')}"></div>
   </section>
   <section>
-    <h2>Askerler</h2>
+    <h2>${t('studio.teams.soldiers')}</h2>
     <div id="teamrows"></div>
-    <button id="quick" type="button" class="wide">Hızlı dizilim kur</button>
+    <button id="quick" type="button" class="wide">${t('studio.teams.quick')}</button>
   </section>
 </aside>
 
-<div class="dock" role="toolbar" aria-label="Yerleştirme araçları">
+<div class="dock" role="toolbar" aria-label="${t('studio.dock.aria')}">
   <div class="dock-note" id="reason" role="status"></div>
-  <div class="dock-group primary" id="chips" role="radiogroup" aria-label="Takım"></div>
-  <div class="dock-group primary" id="kinds" role="radiogroup" aria-label="Asker türü"></div>
-  <div class="dock-group primary"><button id="gallery-btn" type="button" title="Tüm birimler (nadirlik, ırk, seviye)">Birimler…</button></div>
-  <div class="dock-group"><div class="seg" id="brush" role="group" aria-label="Fırça boyutu"></div></div>
-  <div class="dock-group primary"><div class="seg" id="tool" role="group" aria-label="Araç"></div></div>
+  <div class="dock-group primary" id="chips" role="radiogroup" aria-label="${t('studio.dock.team')}"></div>
+  <div class="dock-group primary" id="kinds" role="radiogroup" aria-label="${t('studio.dock.kind')}"></div>
+  <div class="dock-group primary"><button id="gallery-btn" type="button" title="${t('studio.dock.gallery.title')}">${t('studio.dock.gallery')}</button></div>
+  <div class="dock-group"><div class="seg" id="brush" role="group" aria-label="${t('studio.dock.brush')}"></div></div>
+  <div class="dock-group primary"><div class="seg" id="tool" role="group" aria-label="${t('studio.dock.tool')}"></div></div>
   <div class="dock-group">
-    <button id="undo" type="button" title="Geri al (Ctrl+Z)">Geri al</button>
-    <button id="redo" type="button" title="Yinele (Ctrl+Y)">Yinele</button>
-    <button id="fill" type="button" title="Seçili birimi ana alarak rol dengeli formasyon ekle">Formasyon doldur</button>
-    <button id="rand-enemy" type="button" title="Seçili takım dışındaki takımlara rastgele ordu ekle">Rastgele düşman</button>
-    <button id="clear" type="button" title="Tüm askerleri sil">Temizle</button>
+    <button id="undo" type="button" title="${t('studio.undo.title')}">${t('studio.undo')}</button>
+    <button id="redo" type="button" title="${t('studio.redo.title')}">${t('studio.redo')}</button>
+    <button id="fill" type="button" title="${t('studio.fill.title')}">${t('studio.fill')}</button>
+    <button id="rand-enemy" type="button" title="${t('studio.randEnemy.title')}">${t('studio.randEnemy')}</button>
+    <button id="clear" type="button" title="${t('studio.clear.title')}">${t('studio.clear')}</button>
   </div>
   <div class="dock-group end primary">
     <span id="total" class="total">0 / ${MAX_PLACED}</span>
-    <button id="tgl-left" type="button" class="only-narrow sec">Ayarlar</button>
-    <button id="tgl-right" type="button" class="only-narrow sec">Takımlar</button>
-    <button id="online" type="button" class="sec" title="Arkadaşlarınla çevrimiçi oyna (lobi kur / katıl)">Çevrimiçi</button>
-    <button id="start" type="button" class="primary">Savaşı başlat</button>
+    <button id="tgl-left" type="button" class="only-narrow sec">${t('studio.settings')}</button>
+    <button id="tgl-right" type="button" class="only-narrow sec">${t('studio.teamsBtn')}</button>
+    <button id="online" type="button" class="sec" title="${t('studio.online.title')}">${t('studio.online')}</button>
+    <button id="start" type="button" class="primary">${t('studio.start')}</button>
   </div>
-  <div class="dock-hint" id="hint">Sol tık: yerleştir · Sağ tık: sil · Shift+sağ tık: yalnız seçili takım · Tekerlek: yakınlaş · WASD / orta tuş: kaydır · Q/E: takım · 1-5: tür · Z/Y: geri al/yinele</div>
+  <div class="dock-hint" id="hint">${t('studio.hint')}</div>
 </div>
 <div id="toasts" class="toasts" aria-live="polite"></div>`;
   }
@@ -202,7 +204,7 @@ export class Studio {
     this.$('#tm-plus').addEventListener('click', () => this.setTeamCount(s.teamCount + 1));
     this.$('#quick').addEventListener('click', () => {
       const n = this.d.editor.quickFormation();
-      this.toast(n > 0 ? `${n} asker dizildi.` : 'Dizilim için uygun yer bulunamadı.');
+      this.toast(n > 0 ? t('studio.toast.quick', { n }) : t('studio.toast.quickNone'));
       this.render();
     });
     this.$('#undo').addEventListener('click', () => {
@@ -216,17 +218,17 @@ export class Studio {
     this.$('#rand-enemy').addEventListener('click', () => {
       const n = this.d.editor.addRandomEnemies();
       this.d.onKindPick(s.selKind);
-      this.toast(n > 0 ? `${n} düşman asker eklendi.` : 'Uygun yer bulunamadı.');
+      this.toast(n > 0 ? t('studio.toast.enemies', { n }) : t('studio.toast.none'));
       this.render();
     });
     this.$('#fill').addEventListener('click', () => {
       const n = this.d.editor.fillFormation(s.selTeam);
-      this.toast(n > 0 ? `Takım ${s.selTeam + 1}: ${n} asker eklendi.` : 'Uygun yer bulunamadı.');
+      this.toast(n > 0 ? t('studio.toast.fill', { team: s.selTeam + 1, n }) : t('studio.toast.none'));
       this.render();
     });
     this.$('#clear').addEventListener('click', () => {
       if (s.units.length === 0) return;
-      if (!window.confirm(`${s.units.length} askerin hepsi silinsin mi? (Geri al ile döndürebilirsin)`)) return;
+      if (!window.confirm(t('studio.confirm.clear', { n: s.units.length }))) return;
       this.d.editor.clear();
       this.render();
     });
@@ -279,7 +281,7 @@ export class Studio {
     if (next === s.teamCount) return;
     if (next < s.teamCount) {
       const lost = s.units.filter((u) => u.team >= next).length;
-      if (lost > 0 && !window.confirm(`Takım ${next + 1}-${s.teamCount} kaldırılacak, ${lost} asker silinecek. Devam edilsin mi?`)) return;
+      if (lost > 0 && !window.confirm(t('studio.confirm.teams', { from: next + 1, to: s.teamCount, lost }))) return;
       this.d.editor.dropTeamsAbove(next);
     }
     s.teamCount = next;
@@ -298,12 +300,12 @@ export class Studio {
   private canStart(): { ok: boolean; reason: string } {
     const s = this.d.state;
     const withUnits = new Set(s.units.map((u) => u.team)).size;
-    if (s.units.length === 0) return { ok: false, reason: 'Haritaya asker yerleştir ya da "Hızlı dizilim kur" de.' };
-    if (withUnits < 2) return { ok: false, reason: 'Savaş için en az 2 takımda asker olmalı.' };
+    if (s.units.length === 0) return { ok: false, reason: t('studio.reason.empty') };
+    if (withUnits < 2) return { ok: false, reason: t('studio.reason.twoTeams') };
     return { ok: true, reason: '' };
   }
 
-  /** Durumdan tum arayuzu yeniden cizer (hafif, sik cagrilabilir). */
+  /** Redraws the whole UI from state (cheap, can be called often). */
   render(): void {
     if (!this.visible) return;
     const s = this.d.state;
@@ -312,10 +314,12 @@ export class Studio {
     const $in = (id: string) => this.$(id) as HTMLInputElement;
 
     $in('#env').checked = s.env;
-    this.$('#map-btn').textContent = `Harita: ${this.maps.label()}…`;
+    this.$('#map-btn').textContent = t('studio.map.current', { name: this.maps.label() });
     $in('#kite').checked = s.kite;
     if (document.activeElement !== $in('#seed')) $in('#seed').value = String(s.seed);
 
+    this.seg(this.$('#lang'), LANGS.map((l) => ({ id: l.id, label: l.label })), getLang(), (id) => switchLang(id as Lang));
+    this.seg(this.$('#lang'), LANGS.map((l) => ({ id: l.id, label: l.label })), getLang(), (id) => switchLang(id as Lang));
     this.seg(this.$('#mapsize'), MAP_SIZES.map((m) => ({ id: m.id, label: m.name })), s.mapSize, (id) => {
       s.mapSize = Number(id);
       this.changed(true);
@@ -335,19 +339,19 @@ export class Studio {
     $in('#dbg').checked = op.debug;
     $in('#cv').checked = op.comedyVisual;
     $in('#cp').checked = op.comedyPhysics;
-    this.seg(this.$('#fxq'), [{ id: 'auto', label: 'Otomatik' }, { id: 'high', label: 'Yüksek' }, { id: 'low', label: 'Düşük' }, { id: 'off', label: 'Kapalı' }], op.fx, (id) => {
+    this.seg(this.$('#fxq'), (['auto', 'high', 'low', 'off'] as const).map((id) => ({ id, label: t(`studio.fx.${id}`) })), op.fx, (id) => {
       op.fx = id as typeof op.fx;
       this.optionsChanged();
     });
-    this.seg(this.$('#bars'), [{ id: 'damaged', label: 'Hasarlıyken' }, { id: 'always', label: 'Her zaman' }, { id: 'never', label: 'Kapalı' }], op.bars, (id) => {
+    this.seg(this.$('#bars'), (['damaged', 'always', 'never'] as const).map((id) => ({ id, label: t(`studio.bars.${id}`) })), op.bars, (id) => {
       op.bars = id as typeof op.bars;
       this.optionsChanged();
     });
     this.$('#tm-count').textContent = String(s.teamCount);
     const changed = this.units.changedCount();
-    this.$('#units-note').textContent = changed > 0 ? `${changed} değer varsayılandan farklı.` : 'Can, hız, güç, menzil, zırh ve itmeyi ayarla.';
+    this.$('#units-note').textContent = changed > 0 ? t('studio.units.changed', { n: changed }) : t('studio.units.note');
 
-    // Palet setleri
+    // Palette sets
     this.$('#palettes').innerHTML = PALETTES.map((p) => {
       const sel = p.id === s.palette;
       return `<button type="button" class="palette${sel ? ' sel' : ''}" role="radio" aria-checked="${sel}" data-id="${p.id}"><span class="pname">${esc(p.name)}</span><span class="swatches">${p.colors
@@ -364,12 +368,12 @@ export class Studio {
       }),
     );
 
-    // Takim satirlari
+    // Team rows
     this.$('#teamrows').innerHTML = colors
-      .map((c, t) => {
-        const total = counts[t].reduce((a, b) => a + b, 0);
-        const detail = counts[t].map((n, k) => (n > 0 ? `${STATS[k].name} ${n}` : '')).filter(Boolean).join(' · ');
-        return `<div class="trow${t === s.selTeam ? ' sel' : ''}" data-team="${t}"><i class="dot" style="background:${hex(c.main)}"></i><span class="tname">Takım ${t + 1} <b>${total}</b></span><small>${esc(detail || 'boş')}</small><button type="button" data-clear="${t}" ${total === 0 ? 'disabled' : ''} title="Takım ${t + 1} askerlerini sil">Temizle</button></div>`;
+      .map((c, ti) => {
+        const total = counts[ti].reduce((a, b) => a + b, 0);
+        const detail = counts[ti].map((n, k) => (n > 0 ? `${unitDisplayName(k)} ${n}` : '')).filter(Boolean).join(' · ');
+        return `<div class="trow${ti === s.selTeam ? ' sel' : ''}" data-team="${ti}"><i class="dot" style="background:${hex(c.main)}"></i><span class="tname">${t('studio.team.name', { n: ti + 1 })} <b>${total}</b></span><small>${esc(detail || t('studio.team.empty'))}</small><button type="button" data-clear="${ti}" ${total === 0 ? 'disabled' : ''} title="${t('studio.team.clear.title', { n: ti + 1 })}">${t('studio.team.clear')}</button></div>`;
       })
       .join('');
     this.$('#teamrows').querySelectorAll('.trow').forEach((row) =>
@@ -388,9 +392,9 @@ export class Studio {
 
     // Dock
     this.$('#chips').innerHTML = colors
-      .map((c, t) => {
-        const total = counts[t].reduce((a, b) => a + b, 0);
-        return `<button type="button" class="chip${t === s.selTeam ? ' sel' : ''}" role="radio" aria-checked="${t === s.selTeam}" data-team="${t}" title="Takım ${t + 1} (Q/E ile değiştir)"><i class="dot" style="background:${hex(c.main)}"></i>${t + 1}<small>${total}</small></button>`;
+      .map((c, ti) => {
+        const total = counts[ti].reduce((a, b) => a + b, 0);
+        return `<button type="button" class="chip${ti === s.selTeam ? ' sel' : ''}" role="radio" aria-checked="${ti === s.selTeam}" data-team="${ti}" title="${t('studio.chip.title', { n: ti + 1 })}"><i class="dot" style="background:${hex(c.main)}"></i>${ti + 1}<small>${total}</small></button>`;
       })
       .join('');
     this.$('#chips').querySelectorAll('button').forEach((b) =>
@@ -403,7 +407,7 @@ export class Studio {
     if (s.selKind >= LEGACY_COUNT) kindList.push(s.selKind);
     this.$('#kinds').innerHTML = kindList.map((k) => {
       const sel = k === s.selKind;
-      return `<button type="button" class="kind${sel ? ' sel' : ''}" role="radio" aria-checked="${sel}" data-kind="${k}" title="${esc(STATS[k].name)} (${KIND_KEYS[k]})">${KIND_KEYS[k] ? `<kbd>${KIND_KEYS[k]}</kbd>` : ''}${esc(STATS[k].name)}</button>`;
+      return `<button type="button" class="kind${sel ? ' sel' : ''}" role="radio" aria-checked="${sel}" data-kind="${k}" title="${esc(unitDisplayName(k))} (${KIND_KEYS[k]})">${KIND_KEYS[k] ? `<kbd>${KIND_KEYS[k]}</kbd>` : ''}${esc(unitDisplayName(k))}</button>`;
     }).join('');
     this.$('#kinds').querySelectorAll('button').forEach((b) =>
       b.addEventListener('click', () => {
@@ -420,9 +424,9 @@ export class Studio {
     this.seg(
       this.$('#tool'),
       [
-        { id: 'place', label: 'Yerleştir' },
-        { id: 'erase', label: 'Sil' },
-        { id: 'eraseTeam', label: 'Sil: seçili takım' },
+        { id: 'place', label: t('studio.tool.place') },
+        { id: 'erase', label: t('studio.tool.erase') },
+        { id: 'eraseTeam', label: t('studio.tool.eraseTeam') },
       ],
       s.tool === 'place' ? 'place' : s.eraseTeamOnly ? 'eraseTeam' : 'erase',
       (id) => {
@@ -439,7 +443,7 @@ export class Studio {
     const start = this.canStart();
     const startBtn = this.$('#start') as HTMLButtonElement;
     startBtn.disabled = !start.ok;
-    startBtn.title = start.ok ? 'Savaşı başlat' : start.reason;
+    startBtn.title = start.ok ? t('studio.start') : start.reason;
     this.$('#reason').textContent = start.reason;
     this.$('#reason').hidden = start.ok;
     this.d.editor.drawGhost();
@@ -447,8 +451,8 @@ export class Studio {
 
   private onKey(e: KeyboardEvent): void {
     if (!this.visible) return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    const el = e.target as HTMLElement | null;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
     const s = this.d.state;
     if (e.ctrlKey || e.metaKey) {
       if (e.code === 'KeyZ') {

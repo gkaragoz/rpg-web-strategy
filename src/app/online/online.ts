@@ -1,5 +1,6 @@
 import type { Application } from 'pixi.js';
 import type { Camera } from '../../camera';
+import { t } from '../../i18n';
 import { HostLobby } from '../../net/host';
 import { GuestSession, HostSession, type Session } from '../../net/client';
 import { LockstepSim } from '../../net/lockstepSim';
@@ -31,7 +32,7 @@ interface LastSession {
   color: number;
   at: number;
 }
-/** Geri baglanma suresi (host 60 sn tutar); biraz pay birakilir. */
+/** Reconnect window (the host keeps the slot for 60 s); a small margin is left. */
 const REJOIN_MS = 55000;
 function loadLast(): LastSession | null {
   try {
@@ -46,14 +47,14 @@ function saveLast(l: LastSession | null): void {
     if (l) sessionStorage.setItem(LAST_KEY, JSON.stringify(l));
     else sessionStorage.removeItem(LAST_KEY);
   } catch {
-    /* depolama kapali */
+    /* storage unavailable */
   }
 }
-/** Internet lobilerinin paylasilan baglanti adresi (Pages). */
-/** Internet rolesi (relay/ Cloudflare Worker): NAT/TURN gerektirmez; ulasilamazsa PeerJS (WebRTC) denenir. */
+/** Internet relay (relay/ Cloudflare Worker): needs no NAT/TURN; if unreachable, PeerJS (WebRTC) is tried. */
 export const RELAY_URL = 'wss://rpg-web-relay.gkaragoz96tablet.workers.dev';
-/** Rolenin ilk baglantisi (TLS + Durable Object soguk baslangici) LAN'dan yavas olabilir. */
+/** The first connection to the relay (TLS + Durable Object cold start) can be slower than LAN. */
 const RELAY_TIMEOUT_MS = 12000;
+/** Shared join address of internet lobbies (Pages). */
 const PAGES_URL = 'https://gkaragoz.github.io/rpg-web-strategy/';
 
 export interface OnlineEnv {
@@ -62,14 +63,14 @@ export interface OnlineEnv {
   camera: Camera;
   battle: BattleScene;
   stats: StatsPanel;
-  /** Atlas'i verilen takim renkleri/ortam/turlerle yeniden pisirir ve dunyaya baglar. */
+  /** Re-bakes the atlas with the given team colors/biome/kinds and binds it to the world. */
   bake(colors: TeamColors[], biome: MapSpec['biome'], kinds: Set<number>): void;
   getAtlas(): Atlas;
-  /** Birim simgeleri icin gecici takim renkleri (null: normal). */
+  /** Temporary team colors for unit icons (null: normal). */
   setIconColors(c: TeamColors[] | null): void;
   icon(kind: number, team: number): HTMLCanvasElement;
   battleDefaults(): Pick<BattleOptions, 'fx' | 'numbers'>;
-  /** Cevrimici moddan stüdyoya don. */
+  /** Leave online mode and return to the studio. */
   onExit(reopenMenu?: boolean): void;
   setComedyVisual(on: boolean | null): void;
 }
@@ -88,11 +89,11 @@ function saveProfile(name: string, color: number): void {
   try {
     localStorage.setItem(PROFILE_KEY, JSON.stringify({ name, color }));
   } catch {
-    /* depolama kapali */
+    /* storage unavailable */
   }
 }
 
-/** Cevrimici mod orkestratoru: menu -> lobi -> yerlestirme -> savas; oturum durumuna gore ekran degistirir. */
+/** Online mode orchestrator: menu -> lobby -> placement -> battle; switches screens according to the session state. */
 export class OnlineApp {
   private readonly root: HTMLElement;
   private screen: Screen = 'menu';
@@ -108,8 +109,8 @@ export class OnlineApp {
   private inBattle = false;
   private sim: LockstepSim | null = null;
   private kind: 'lan' | 'net' = 'lan';
-  /** Kullanilan tasima: gosterim ve tani icin. */
-  private via = 'LAN';
+  /** Transport in use ('lan' | 'relay' | 'webrtc'): for display and diagnostics. */
+  private via = 'lan';
   private lastSaved = 0;
   private dead = false;
   private busy = false;
@@ -162,33 +163,36 @@ export class OnlineApp {
     try {
       let tp: Transport | null = null;
       let code = '';
-      this.menu?.setStatus(kind === 'net' ? 'Sinyal sunucusuna bağlanılıyor…' : 'LAN sunucusuna bağlanılıyor…');
+      this.menu?.setStatus(kind === 'net' ? t('online.st.signal') : t('online.st.lanHost'));
       for (let i = 0; i < 6 && !tp; i++) {
         code = makeCode();
         try {
           if (kind === 'net') {
             try {
               tp = await WsHostTransport.create(lanUrl(code, 'host', RELAY_URL), RELAY_TIMEOUT_MS);
-              this.via = 'İnternet rölesi';
+              this.via = 'relay';
             } catch (re) {
               if (re instanceof NetError && re.code === 'taken') throw re;
-              console.warn('[online] röle host hatası', re);
-              this.menu?.setStatus('Röle ulaşılamadı, doğrudan bağlantı (WebRTC) deneniyor…');
+              console.warn('[online] relay host error', re);
+              this.menu?.setStatus(t('online.st.relayFail'));
               tp = await PeerHostTransport.create(code);
-              this.via = 'WebRTC';
+              this.via = 'webrtc';
             }
-          } else tp = await WsHostTransport.create(lanUrl(code, 'host'));
+          } else {
+            tp = await WsHostTransport.create(lanUrl(code, 'host'));
+            this.via = 'lan';
+          }
         } catch (e) {
           if (!(e instanceof NetError) || e.code !== 'taken') throw e;
         }
       }
-      if (!tp) return this.fail('Lobi kodu üretilemedi, tekrar dene.');
+      if (!tp) return this.fail(t('online.err.noCode'));
       const lobby = new HostLobby(tp, name, color, { code });
       this.kind = kind;
       const hs = new HostSession(lobby);
-      // Rolenin/sinyal sunucusunun host baglantisi koparsa lobi olmustur: kullaniciya bildir.
-      tp.onClose = (reason) => {
-        hs.model.closedReason = reason;
+      // If the relay's/signaling server's host connection drops, the lobby is gone: tell the user.
+      tp.onClose = () => {
+        hs.model.closedReason = 'serverLost';
         hs.model.apply({ t: 'closed' });
       };
       this.attach(hs);
@@ -196,9 +200,9 @@ export class OnlineApp {
       this.fail(
         e instanceof NetError && e.code === 'failed'
           ? kind === 'net'
-            ? 'İnternet bağlantısı kurulamadı (sinyal sunucusuna ulaşılamıyor). LAN dene ya da ağını kontrol et.'
-            : 'LAN sunucusuna bağlanılamadı. Oyunu "--lan" ile başlat (oyna-lan) ve o adresi aç.'
-          : `Bağlantı hatası: ${(e as Error).message}`,
+            ? t('online.err.netHost')
+            : t('online.err.lanHost')
+          : t('online.err.generic', { msg: (e as Error).message }),
       );
     }
   }
@@ -210,31 +214,32 @@ export class OnlineApp {
     this.menu?.setError('');
     saveProfile(name, color);
     try {
-      // Once LAN sunucusu (ayni adres), olmazsa internet (PeerJS).
+      // LAN server first (same address), otherwise the internet (PeerJS).
       let tp: Transport;
       let kind: 'lan' | 'net' = 'lan';
-      this.menu?.setStatus('LAN sunucusu aranıyor…');
+      this.menu?.setStatus(t('online.st.lanFind'));
       try {
         tp = await WsGuestTransport.create(lanUrl(code, 'guest'));
+        this.via = 'lan';
       } catch (e) {
         if (e instanceof NetError && (e.code === 'full' || e.code === 'taken')) throw e;
         kind = 'net';
-        this.menu?.setStatus('İnternet rölesi deneniyor…');
+        this.menu?.setStatus(t('online.st.relay'));
         try {
           tp = await WsGuestTransport.create(lanUrl(code, 'guest', RELAY_URL), RELAY_TIMEOUT_MS);
-          this.via = 'İnternet rölesi';
+          this.via = 'relay';
         } catch (re) {
           if (re instanceof NetError && (re.code === 'full' || re.code === 'taken')) throw re;
-          console.warn('[online] röle misafir hatası', re);
-          this.menu?.setStatus('Doğrudan bağlantı (WebRTC) deneniyor… (30 sn’ye kadar sürebilir)');
+          console.warn('[online] relay guest error', re);
+          this.menu?.setStatus(t('online.st.webrtc'));
           tp = await PeerGuestTransport.create(code);
-          this.via = 'WebRTC';
+          this.via = 'webrtc';
         }
       }
       this.kind = kind;
       const s = new GuestSession(tp, { name, color, pass: pass || undefined, spectator, token });
       const ok = await new Promise<string | null>((resolve) => {
-        const timer = setTimeout(() => resolve('Lobi yanıt vermedi.'), 8000);
+        const timer = setTimeout(() => resolve(t('online.err.noReply')), 8000);
         s.model.listeners.push((m) => {
           if (m.t === 'welcome') {
             clearTimeout(timer);
@@ -242,11 +247,11 @@ export class OnlineApp {
           } else if (m.t === 'reject') {
             clearTimeout(timer);
             resolve(
-              ({ full: 'Lobi dolu.', password: 'Parola yanlış.', version: 'Sürüm uyuşmuyor (sayfayı yenile).', started: 'Oyun başladı; seyirci olarak katılabilirsin.', kicked: 'Bu lobiden atıldın.', closed: 'Lobi kapalı.', name: 'Bu ad kullanımda.' } as Record<string, string>)[m.reason] ?? 'Katılınamadı.',
+              (['full', 'password', 'version', 'started', 'kicked', 'closed', 'name'] as string[]).includes(m.reason) ? t(`online.reject.${m.reason}`) : t('online.err.joinFail'),
             );
           } else if (m.t === 'closed') {
             clearTimeout(timer);
-            resolve('Bağlantı kapandı.');
+            resolve(t('online.err.dropped'));
           }
         });
       });
@@ -261,23 +266,23 @@ export class OnlineApp {
       this.fail(
         e instanceof NetError
           ? e.code === 'noroom'
-            ? 'Böyle bir lobi yok (kodu kontrol et; host sayfası açık olmalı).'
+            ? t('online.err.noRoom')
             : e.code === 'full'
-              ? 'Lobi dolu.'
+              ? t('online.err.full')
               : detail.startsWith('ice')
-                ? 'Host bulundu ama doğrudan bağlantı kurulamadı (ağ/NAT engeli). Farklı ağ ya da LAN dene; mobil veride bazı operatörler WebRTC’yi engeller.'
-                : 'Sunucuya bağlanılamadı (internet ya da PeerJS sinyal sunucusu erişimi).'
-          : `Bağlantı hatası: ${(e as Error).message}`,
+                ? t('online.err.ice')
+                : t('online.err.server')
+          : t('online.err.generic', { msg: (e as Error).message }),
       );
     }
   }
 
-  // ---------------------------------------------------------------- oturum
+  // ---------------------------------------------------------------- session
 
   private attach(s: Session): void {
     this.busy = false;
     if (this.dead) {
-      // Menu baglanti kurulurken kapatildi: gec gelen oturumu birak.
+      // The menu was closed while connecting: drop the late session.
       try {
         s.leave();
       } catch {
@@ -298,13 +303,13 @@ export class OnlineApp {
     const m = this.session?.model;
     if (!m) return;
     if (msg.t === 'closed' || msg.t === 'kicked') {
-      // Ag kopmasi (host kapatmadi, atilmadin): jeton saklanir ve menu "Yeniden baglan" ile acilir.
-      const dropped = msg.t === 'closed' && !this.session?.isHost && /koptu/i.test(m.closedReason ?? '');
-      this.toast(msg.t === 'kicked' ? `Lobiden atıldın: ${msg.reason}` : dropped ? 'Bağlantı koptu. Menüden yeniden bağlanabilirsin.' : m.closedReason ?? 'Lobi kapandı');
+      // Network drop (the host did not close the lobby, you were not kicked): the token is kept and the menu opens with "Reconnect".
+      const dropped = msg.t === 'closed' && !this.session?.isHost && m.closedReason === 'lost';
+      this.toast(msg.t === 'kicked' ? t('online.toast.kicked', { reason: t(`online.reason.${msg.reason}`) }) : dropped ? t('online.toast.lost') : t(`online.reason.${m.closedReason ?? 'closed'}`));
       this.exit(dropped);
       return;
     }
-    // Misafir: yeniden baglanma kaydinin zamani canli tutulur (kopus anindan itibaren sayilir).
+    // Guest: the reconnect record's timestamp is kept fresh (counted from the moment of the drop).
     if (!this.session?.isHost && Date.now() - this.lastSaved > 4000) {
       this.lastSaved = Date.now();
       const l = loadLast();
@@ -316,14 +321,14 @@ export class OnlineApp {
     this.placement?.onMessage(msg);
   }
 
-  /** Oturum evresine gore dogru ekrani kurar. */
+  /** Builds the right screen for the session phase. */
   private sync(): void {
     if (this.wanted() === null) return;
-    // Gecisler sirayla calissin (asenkron savas kurulumu); hedef calisma aninda yeniden okunur.
+    // Transitions run in order (asynchronous battle setup); the target is re-read at run time.
     this.transition = this.transition.then(() => this.reconcile()).catch((e) => this.setupFailed(e));
   }
 
-  /** Oturum durumunun istedigi ekran; henuz kurulamiyorsa (init/start gelmedi) ya da zaten oradaysa null. */
+  /** The screen the session state asks for; null if it cannot be built yet (init/start missing) or we are already there. */
   private wanted(): Screen | null {
     const m = this.session?.model;
     const st = m?.state;
@@ -335,11 +340,11 @@ export class OnlineApp {
     return want;
   }
 
-  /** Ekran kurulumu hata verirse bos ekranda kalma: hatayi goster, oturumu koruyarak menuye don (jeton saklanir). */
+  /** If screen setup fails, do not stay on a blank screen: show the error and return to the menu keeping the session (token is kept). */
   private setupFailed(e: unknown): void {
-    console.error('[online] ekran kurulamadi', e);
+    console.error('[online] screen setup failed', e);
     if (this.dead) return;
-    this.toast(`Ekran kurulamadı: ${String((e as Error)?.message ?? e).slice(0, 120)}. Menüden yeniden bağlanabilirsin.`, 12000);
+    this.toast(t('online.toast.setupFail', { msg: String((e as Error)?.message ?? e).slice(0, 120) }), 12000);
     this.exit(!this.session?.isHost);
   }
 
@@ -354,7 +359,7 @@ export class OnlineApp {
   private async go(want: Screen): Promise<void> {
     if (this.dead || !this.session) return;
     const st = this.session.model.state!;
-    // Mevcut ekrani kapat.
+    // Close the current screen.
     const prev = this.screen;
     if (prev === 'lobby' && want !== 'lobby') {
       this.lobby?.destroy();
@@ -399,7 +404,7 @@ export class OnlineApp {
 
   private teamColorsFor(init: GameInit): TeamColors[] {
     const st = this.session!.model.state!;
-    // Takim indeksine gore (oyuncu kimligi oyun sirasinda hayalete donusup degisebilir).
+    // By team index (a player id can turn into a ghost id mid-game).
     return init.teamPlayers.map((_, i) => makeTeamColor(playerColor(st.players.find((p) => p.role === 'player' && p.team === i)?.color ?? 0)));
   }
 
@@ -456,10 +461,10 @@ export class OnlineApp {
     this.colors = this.teamColorsFor(init);
     this.biome = init.spec.biome;
     env.setIconColors(this.colors);
-    // Katilimci ortasinda girenlerin atlasi tum turleri icermeli.
+    // The atlas of players who join midway must contain all kinds.
     const kinds = new Set<number>(Array.from({ length: LEGACY_COUNT }, (_, i) => i));
     for (let i = 0; i < start.layout.length; i += 4) kinds.add(start.layout[i + 1]);
-    // Bone Caller savasta iskelet cagirir (uyuyan iskeletler baslangicta sim'de vardir): dokusu atlas'ta olmali.
+    // The bone caller summons bone soldiers in battle (dormant skeletons exist in the sim from the start): their texture must be in the atlas.
     for (const k of [...kinds]) if (STATS[k]?.troop === 'bone-caller') kinds.add(KIND_OF_TROOP['bone-soldier']);
     env.bake(this.colors, this.biome, kinds);
     this.placement?.destroy();
@@ -492,7 +497,7 @@ export class OnlineApp {
       },
     });
     if (this.dead) {
-      // Savas kurulurken cevrimici moddan cikildi: yarim kalan savasi kapat.
+      // Online mode was left while the battle was being set up: close the half-built battle.
       env.battle.exit();
       return;
     }
@@ -509,9 +514,9 @@ export class OnlineApp {
     this.sim = null;
   }
 
-  // ---------------------------------------------------------------- dongu
+  // ---------------------------------------------------------------- loop
 
-  /** Ana dongunun cevrimici karesi. */
+  /** The online frame of the main loop. */
   frame(now: number, frameMs: number): void {
     const dt = frameMs > 500 ? 0 : Math.min(frameMs / 1000, 0.1);
     if (this.inBattle) this.env.battle.frame(now, frameMs);
@@ -520,11 +525,11 @@ export class OnlineApp {
       this.env.camera.apply(this.env.world.root, this.env.app.screen.width, this.env.app.screen.height);
       this.env.app.render();
     }
-    // Menu/lobi ekranlari haritayi kaplar: gereksiz cizim yapma (pil/isi, ozellikle telefonda).
+    // Menu/lobby screens cover the map: skip needless drawing (battery/heat, especially on phones).
     this.cursors?.update(dt);
   }
 
-  // ---------------------------------------------------------------- yardimci
+  // ---------------------------------------------------------------- helpers
 
   private toast(msg: string, ms = 4000): void {
     const el = document.createElement('div');
@@ -534,7 +539,7 @@ export class OnlineApp {
     setTimeout(() => el.remove(), ms);
   }
 
-  /** Cevrimici moddan cik: oturumu kapat, ekranlari kaldir, stüdyoya don. */
+  /** Leave online mode: close the session, remove the screens, return to the studio. */
   exit(keepRejoin = false): void {
     if (this.dead) return;
     this.dead = true;
@@ -542,7 +547,7 @@ export class OnlineApp {
     try {
       this.session?.leave();
     } catch {
-      /* baglanti zaten kapali */
+      /* connection already closed */
     }
     this.menu?.destroy();
     this.lobby?.destroy();

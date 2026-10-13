@@ -1,5 +1,6 @@
 import { Graphics, Sprite, type Application } from 'pixi.js';
 import type { Camera } from '../camera';
+import { t } from '../i18n';
 import { isoX, isoY } from '../iso';
 import type { Atlas } from '../render/atlas';
 import { KIND_COUNT, MAX_TEAMS, STATS } from '../sim/units';
@@ -19,27 +20,27 @@ export interface EditorDeps {
   camera: Camera;
   state: AppState;
   getAtlas: () => Atlas;
-  /** Yerlestirilen turlerin dokusu atlas'ta yoksa pisirir (sprite'lar yeniden kurulur). */
+  /** Bakes textures of the placed types if they are missing from the atlas (sprites are rebuilt). */
   ensureAtlas: () => void;
-  /** Birimler/sayilar degisti (arayuz sayaclarini guncelle). */
+  /** Units/counts changed (update the UI counters). */
   onChange: () => void;
   toast: (msg: string) => void;
 }
 
 const MIN_GAP = 0.85;
-/** Dairenin ekran elipsi: yaricap r tile -> rx = r*TILE_W/2*sqrt2, ry = rx/2. */
+/** Screen ellipse of a circle: radius r tiles -> rx = r*TILE_W/2*sqrt2, ry = rx/2. */
 const ELLIPSE_X = 45.25;
 
-/** Cevrimici/butceli yerlestirme kisitlari: bolge, birim maliyeti ve kalan gold. */
+/** Online/budgeted placement constraints: region, unit cost and remaining gold. */
 export interface PlacementConstraint {
-  /** (x,y) yerlestirmeye izinli bolgede mi. */
+  /** Whether (x,y) is inside the region where placement is allowed. */
   allow(x: number, y: number): boolean;
   cost(kind: number): number;
-  /** Kalan gold (mevcut yerlesimden hesaplanir). */
+  /** Remaining gold (computed from the current placement). */
   left(): number;
 }
 
-/** Haritaya birim yerlestirme: fircayla boyama, silme, geri al/yinele, formasyon. */
+/** Unit placement on the map: brush painting, erasing, undo/redo, formations. */
 export class Editor {
   private readonly sprites = new Map<PlacedUnit, Sprite>();
   private readonly ghost = new Graphics();
@@ -55,7 +56,7 @@ export class Editor {
   private readonly onDown = (e: PointerEvent) => this.pointerDown(e);
   private readonly onMove = (e: PointerEvent) => this.pointerMove(e);
   private readonly onUp = (e: PointerEvent) => this.pointerUp(e);
-  /** Dokunmatik: parmak yalniz kalirsa (ikinci parmak gelmezse) kisa gecikmeyle boyama baslar. */
+  /** Touch: if the finger stays alone (no second finger arrives), painting starts after a short delay. */
   private touchPending: { id: number; x: number; y: number; timer: ReturnType<typeof setTimeout> } | null = null;
   private readonly onCancel = (e: PointerEvent) => {
     if (e.pointerType === 'touch') this.endTouchGesture();
@@ -96,12 +97,12 @@ export class Editor {
     this.clearSprites();
   }
 
-  // ---- koordinatlar / gecerlilik ----
+  // ---- coordinates / validity ----
 
   private toTile(clientX: number, clientY: number): { x: number; y: number } {
     const rect = this.d.app.canvas.getBoundingClientRect();
     const p = this.d.world.root.toLocal({ x: clientX - rect.left, y: clientY - rect.top });
-    // Yukseltili arazide ekran noktasi yukselti kadar yukari kayar: iki turda duzelt.
+    // On elevated terrain the screen point shifts up by the elevation: correct it iteratively.
     let x = p.x / 64 + p.y / 32;
     let y = p.y / 32 - p.x / 64;
     const t = this.d.world.terrain;
@@ -132,7 +133,7 @@ export class Editor {
     return false;
   }
 
-  /** Yerlestirme gecerli mi: harita icinde, yurunebilir, baska birime cok yakin degil. */
+  /** Whether the placement is valid: inside the map, walkable, not too close to another unit. */
   isValid(x: number, y: number, extra: PlacedUnit[] = []): boolean {
     if (!this.inMap(x, y)) return false;
     if (this.constraint && !this.constraint.allow(x, y)) return false;
@@ -141,12 +142,12 @@ export class Editor {
     return !this.nearUnit(x, y, MIN_GAP, extra);
   }
 
-  // ---- fare ----
+  // ---- mouse ----
 
   private pointerDown(e: PointerEvent): void {
     if (e.pointerType === 'touch') {
       if (!this.active) return;
-      // Kamera bu olaydan once parmagi saydi: 2+ parmak = kaydirma/yakinlastirma, yerlestirme degil.
+      // The camera counted the finger before this event: 2+ fingers = pan/zoom, not placement.
       if (this.d.camera.touchCount >= 2) {
         this.finishStroke();
         this.clearTouchPending();
@@ -174,7 +175,7 @@ export class Editor {
     this.touchPending = null;
   }
 
-  /** Bekleyen dokunmayi gercek bir darbeye cevirir (parmak hala tek). */
+  /** Turns the pending touch into a real stroke (the finger is still alone). */
   private beginTouch(): void {
     const t = this.touchPending;
     this.touchPending = null;
@@ -194,7 +195,7 @@ export class Editor {
     }
   }
 
-  /** Dokunma bitti/iptal: bekleyen dokunma (kisa tik) darbeye cevrilip bitirilir, hayalet kapanir. */
+  /** Touch ended/cancelled: a pending touch (short tap) is turned into a stroke and finished, the ghost is hidden. */
   private endTouchGesture(): void {
     if (this.touchPending && this.d.camera.touchCount <= 1) this.beginTouch();
     this.clearTouchPending();
@@ -210,7 +211,7 @@ export class Editor {
     const p = this.toTile(e.clientX, e.clientY);
     this.cursor = { x: p.x, y: p.y, inside };
     if (e.pointerType === 'touch') {
-      // Parmak surukleniyorsa bekleyen dokunma hemen darbeye donusur (2+ parmak degilse).
+      // If the finger is dragged, the pending touch immediately becomes a stroke (unless 2+ fingers).
       if (this.touchPending && e.pointerId === this.touchPending.id && this.d.camera.touchCount === 1 && Math.hypot(e.clientX - this.touchPending.x, e.clientY - this.touchPending.y) > 8) {
         this.touchPending.x = e.clientX;
         this.touchPending.y = e.clientY;
@@ -235,7 +236,7 @@ export class Editor {
     this.finishStroke();
   }
 
-  /** Boyama darbesinde fircayi uygular (aralik kontroluyle). */
+  /** Applies the brush during a paint stroke (with spacing control). */
   private apply(x: number, y: number, teamOnly: boolean): void {
     const br = BRUSHES[this.d.state.brush];
     const spacing = br.count === 1 ? 0.9 : br.radius * 0.7;
@@ -262,7 +263,7 @@ export class Editor {
       }
     }
     if (this.constraint && added.length > 0) {
-      // Butce: eklenecek birimleri kalan gold'a gore kirp.
+      // Budget: trim the units to add according to the remaining gold.
       let left = this.constraint.left();
       const keep: PlacedUnit[] = [];
       for (const u of added) {
@@ -271,14 +272,14 @@ export class Editor {
         left -= c;
         keep.push(u);
       }
-      if (keep.length < added.length) this.d.toast('Gold yetersiz.');
+      if (keep.length < added.length) this.d.toast(t('studio.editor.noGold'));
       added.length = 0;
       added.push(...keep);
     }
     const room = MAX_PLACED - s.units.length;
     if (added.length > room) {
       added.length = Math.max(0, room);
-      this.d.toast(`Üst sınıra ulaşıldı (${MAX_PLACED} asker).`);
+      this.d.toast(t('studio.editor.cap', { max: MAX_PLACED }));
     }
     if (added.length === 0) return;
     for (const u of added) s.units.push(u);
@@ -313,7 +314,7 @@ export class Editor {
     this.d.onChange();
   }
 
-  // ---- hayalet fircasi ----
+  // ---- ghost brush ----
 
   drawGhost(): void {
     const g = this.ghost;
@@ -335,7 +336,7 @@ export class Editor {
     }
   }
 
-  // ---- sprite'lar ----
+  // ---- sprites ----
 
   private spriteFor(u: PlacedUnit): Sprite {
     const atlas = this.d.getAtlas();
@@ -346,7 +347,7 @@ export class Editor {
     spr.anchor.set(anc.ax, anc.ay);
     spr.position.set(isoX(u.x, u.y), isoY(u.x, u.y, this.elevAt(u.x, u.y)));
     spr.zIndex = u.x + u.y;
-    // Haritanin ortasina bakar.
+    // Faces the center of the map.
     const c = this.d.world.mapSize / 2;
     spr.scale.x = isoX(c, c) - isoX(u.x, u.y) >= 0 ? 1 : -1;
     return spr;
@@ -371,13 +372,13 @@ export class Editor {
     this.sprites.clear();
   }
 
-  /** Tum sprite'lari state'ten yeniden kurar (atlas/palet degisince, sahneye girerken). */
+  /** Rebuilds all sprites from state (when the atlas/palette changes, on entering the scene). */
   refreshSprites(): void {
     this.clearSprites();
     for (const u of this.d.state.units) this.addSprite(u);
   }
 
-  // ---- geri al / yinele ----
+  // ---- undo / redo ----
 
   undo(): void {
     const op = this.undoStack.pop();
@@ -393,7 +394,7 @@ export class Editor {
     this.undoStack.push(op);
   }
 
-  /** op'u tersine uygular: add'i geri alirken siler, remove'u geri alirken ekler. */
+  /** Applies the op in reverse: undoing an add removes, undoing a remove adds. */
   private revert(op: Op): void {
     const s = this.d.state;
     if (op.type === 'add') {
@@ -419,9 +420,9 @@ export class Editor {
     return this.redoStack.length > 0;
   }
 
-  // ---- toplu islemler ----
+  // ---- bulk operations ----
 
-  /** Takimin (veya tumunun) askerlerini siler; geri alinabilir. */
+  /** Removes the soldiers of a team (or all of them); can be undone. */
   clear(team?: number): number {
     const s = this.d.state;
     const removed = s.units.filter((u) => team === undefined || u.team === team);
@@ -438,8 +439,8 @@ export class Editor {
   }
 
   /**
-   * Blok dizilim: onde yakin, ortada uzak, arkada sifaci/kusatma hatti. Harita merkezine bakar.
-   * `army` verilmezse klasik karisim (Savasci/Okcu/Rahip + tanklar) kullanilir.
+   * Block formation: melee in front, ranged in the middle, healers/siege in the back. Faces the map center.
+   * If `army` is omitted, the classic mix (Warrior/Archer/Priest + tanks) is used.
    */
   formation(team: number, army?: Record<Lane, number[]>): PlacedUnit[] {
     const s = this.d.state;
@@ -454,7 +455,7 @@ export class Editor {
     const lx = -dy;
     const ly = dx;
     const src = army ?? { front: [0, 0, 0, 4, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], mid: [1, 1, 1, 1, 1, 1], back: [2, 2, 2] };
-    // Hat basina en cok 10 birimlik satirlar; buyuk birimler kendi satirina daha fazla derinlik ister.
+    // Rows of at most 10 units per lane; big units need more depth in their own row.
     const rows: number[][] = [];
     for (const lane of ['front', 'mid', 'back'] as Lane[]) {
       const kinds = src[lane].slice().sort((p, q) => p - q);
@@ -482,7 +483,7 @@ export class Editor {
     return out;
   }
 
-  /** Secili takim icin formasyon ekler; secili tur kendi hattinin ana birimi olur (var olanlari silmez). */
+  /** Adds a formation for the selected team; the selected type becomes the anchor of its lane (existing units are kept). */
   fillFormation(team: number): number {
     const s = this.d.state;
     const army = composeFromKind(s.selKind, this.rand);
@@ -491,7 +492,7 @@ export class Editor {
     return added.length;
   }
 
-  /** Tum takimlari temizleyip rol dengeli rastgele hizli dizilim kurar. */
+  /** Clears all teams and builds a role-balanced random quick formation. */
   quickFormation(): number {
     this.clear();
     let total = 0;
@@ -499,7 +500,7 @@ export class Editor {
     return total;
   }
 
-  /** Verilen takima rol dengeli rastgele ordu ekler. */
+  /** Adds a role-balanced random army to the given team. */
   addRandomArmy(team: number): number {
     const s = this.d.state;
     const added = this.formation(team, composeArmy(this.rand)).slice(0, Math.max(0, MAX_PLACED - s.units.length));
@@ -507,22 +508,22 @@ export class Editor {
     return added.length;
   }
 
-  /** Secili takim disindaki tum takimlara rastgele dusman ordusu ekler. */
+  /** Adds a random enemy army to every team except the selected one. */
   addRandomEnemies(): number {
     let total = 0;
     for (let t = 0; t < this.d.state.teamCount; t++) if (t !== this.d.state.selTeam) total += this.addRandomArmy(t);
     return total;
   }
 
-  /** Her cagrida farkli sonuc: sabit tohumlu uretec degil. */
+  /** A different result on every call: not a fixed-seed generator. */
   private rand = (): number => Math.random();
 
-  /** Cevrimici yerlestirme kisiti (null: serbest stüdyo). */
+  /** Online placement constraint (null: free studio). */
   constraint: PlacementConstraint | null = null;
-  /** Cevrimici esleme: her ekleme/silme (firca, geri al, formasyon...) icin cagrilir. */
+  /** Online sync: called for every add/remove (brush, undo, formation...). */
   sync: { added(units: PlacedUnit[]): void; removed(units: PlacedUnit[]): void } | null = null;
 
-  /** Birimleri bildirim gondermeden kaldirir (host reddetti). */
+  /** Removes units without notifying (the host rejected them). */
   removeSilently(units: PlacedUnit[]): void {
     const set = new Set(units);
     this.d.state.units = this.d.state.units.filter((u) => !set.has(u));
@@ -556,7 +557,7 @@ export class Editor {
     this.d.onChange();
   }
 
-  /** Harita degisince (tohum/cevre/boyut): gecersiz kalan birimleri tasir veya kaldirir. */
+  /** When the map changes (seed/environment/size): moves or removes units that became invalid. */
   revalidate(): { moved: number; removed: number } {
     const s = this.d.state;
     const t = this.d.world.terrain;
@@ -589,7 +590,7 @@ export class Editor {
     return { moved, removed };
   }
 
-  /** Takim sayisi azalinca fazlalik takimlarin askerlerini kaldirir. */
+  /** When the team count decreases, removes the soldiers of the surplus teams. */
   dropTeamsAbove(count: number): number {
     const s = this.d.state;
     const before = s.units.length;
@@ -601,7 +602,7 @@ export class Editor {
     return before - s.units.length;
   }
 
-  /** [takim][tur] sayilari. */
+  /** [team][type] counts. */
   counts(): number[][] {
     const grid = Array.from({ length: MAX_TEAMS }, () => new Array(KIND_COUNT).fill(0));
     for (const u of this.d.state.units) grid[u.team][u.kind]++;

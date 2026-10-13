@@ -1,7 +1,7 @@
 # Contributor License Agreement (CLA)
 
 This agreement is between **you** (the "Contributor") and **gkaragoz** (the "Maintainer"), the licensor of the
-RPG Web — Savaş Stüdyosu project (the "Project", https://github.com/gkaragoz/rpg-web-strategy).
+RPG Web — Battle Studio project (the "Project", https://github.com/gkaragoz/rpg-web-strategy).
 
 You agree to these terms by submitting a pull request, patch, issue attachment or any other contribution
 ("Contribution") to the Project **and** by ticking the CLA box in the pull request template (or writing
@@ -26,13 +26,5 @@ You agree to these terms by submitting a pull request, patch, issue attachment o
 5. **No warranty.** Contributions are provided "as is", without warranty of any kind.
 
 6. **Third-party material.** Do not submit code, art, sound or data that you did not create unless its license is
-   compatible and you state its source and license in the pull request. Material from the the reference roster
-   is source terms and must keep its attribution (see `THIRD_PARTY_NOTICES.md`).
-
----
-
-### Özet (Türkçe, bağlayıcı değildir)
-
-Katkın sana ait kalır; ama proje sahibine, katkını **istediği koşullarla (ticari/kapalı dahil)** kullanma, değiştirme
-ve yeniden lisanslama hakkını kalıcı olarak verirsin. Katkının sana ait olduğunu ve başkasının hakkını ihlal etmediğini
-onaylarsın. Katkın "olduğu gibi" verilir. Kabul etmek için PR şablonundaki CLA kutusunu işaretle.
+   compatible and you state its source and license in the pull request. Do not copy unit names, statistics, texts or
+   artwork from other games or sources; contributed content must be original.

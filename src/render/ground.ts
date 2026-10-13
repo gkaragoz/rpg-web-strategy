@@ -19,7 +19,7 @@ export function buildGround(size: number, pal: BiomePalette = PALETTES.forest, t
   const g = new Graphics();
   const depth = 26;
 
-  // Haritanin yan yuzleri (derinlik hissi).
+  // Side faces of the map (sense of depth).
   const lx = isoX(0, size);
   const ly = isoY(0, size);
   const bx = isoX(size, size);
@@ -41,8 +41,8 @@ export function buildGround(size: number, pal: BiomePalette = PALETTES.forest, t
     return g;
   }
 
-  // Kabartmali zemin: her tile kose yuksekliklerine gore egimli dortgen; arkadan one (x+y artan) cizilir.
-  const bright = (pal.grassA & 255) > 0xe0; // kar: beyaz doygunlugunu onlemek icin yalniz golge islenir
+  // Relief ground: each tile is a sloped quad from its corner heights; drawn back to front (x+y increasing).
+  const bright = (pal.grassA & 255) > 0xe0; // snow: only shadow is applied, to avoid saturating the white
   const P = (vx: number, vy: number): [number, number] => [isoX(vx, vy), isoY(vx, vy, terrain.vertexH(vx, vy) * LEVEL_PX)];
   for (let sum = 0; sum <= 2 * size - 2; sum++) {
     for (let tx = Math.max(0, sum - size + 1); tx <= Math.min(size - 1, sum); tx++) {
@@ -54,7 +54,7 @@ export function buildGround(size: number, pal: BiomePalette = PALETTES.forest, t
       const gx = (h10 + h11 - h00 - h01) / 2;
       const gy = (h01 + h11 - h00 - h10) / 2;
       const steep = Math.hypot(gx, gy);
-      // Isik sol-ustten: +x yonunde yukselen egimler aydinlik, +y yonunde yukselenler golgeli.
+      // Light from the top-left: slopes rising in +x are lit, slopes rising in +y are shaded.
       const hAvg = (h00 + h10 + h01 + h11) / 4;
       let k = bright ? 0.93 + 0.8 * gx - 0.9 * gy : 1 + 0.95 * gx - 0.75 * gy + 0.025 * hAvg;
       k = Math.min(bright ? 1.02 : 1.3, Math.max(0.5, k));

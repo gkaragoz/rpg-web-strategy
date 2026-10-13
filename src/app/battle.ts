@@ -16,32 +16,33 @@ import { InlineSim } from '../sim/inlineSim';
 import { STATS } from '../sim/units';
 import { WorkerSim } from '../sim/workerSim';
 import type { StatsPanel } from '../ui/stats';
+import { t } from '../i18n';
 import { hex } from './state';
 import type { WorldView } from './world';
 
 const WARMUP_FRAMES = 60;
-/** Bu sayidan az birimde ayrintili (animasyonlu) cizim, fazlasinda toplu cizim. */
+/** Below this unit count use detailed (animated) drawing, above it use mass drawing. */
 const DETAILED_MAX = 150;
 
 export interface BattleOptions {
   config: BattleConfig;
   colors: TeamColors[];
   speed: number;
-  /** Benchmark: HUD yok, otomatik rapor. */
+  /** Benchmark: no HUD, automatic report. */
   bench: boolean;
   autoSeconds: number;
   useWorker: boolean;
   seed: number;
-  /** Efekt kalitesi ('auto': birim sayisina gore) ve yuzen hasar sayilari. */
+  /** Effect quality ('auto': by unit count) and floating damage numbers. */
   fx: 'auto' | FxQuality;
   numbers: boolean;
-  /** ?debug=1: takilma izleme katmani (sim ana thread'de calisir). */
+  /** ?debug=1: stall tracking layer (the sim runs on the main thread). */
   debug?: boolean;
-  /** Savastan stüdyoya don. */
+  /** Back from the battle to the studio. */
   onEdit: () => void;
-  /** Cevrimici (lockstep) sim; verilirse BattleScene kendi sim'ini kurmaz. */
+  /** Online (lockstep) sim; if given, BattleScene does not build its own sim. */
   sim?: SimBackend;
-  /** Cevrimici mac: kontroller kilitli (hiz/duraklat yalniz host), oyuncu adlari, cikis/rovans. */
+  /** Online match: controls are locked (speed/pause host only), player names, leave/rematch. */
   online?: {
     isHost: boolean;
     teamNames: string[];
@@ -61,20 +62,20 @@ export interface BattleDeps {
   hudRoot: HTMLElement;
   banner: HTMLElement;
   audio: AudioSystem;
-  /** Sesi ac/kapat (kalici); yeni durumu dondurur. */
+  /** Toggles sound (persistent); returns the new state. */
   toggleSound: () => boolean;
   isSoundOn: () => boolean;
-  /** Hata ayiklama katmanini ac/kapat (savasi ayni dizilimle yeniden baslatir). */
+  /** Toggles the debug layer (restarts the battle with the same layout). */
   isDebugOn: () => boolean;
   toggleDebug: () => void;
-  /** Komedi gorunumu (canli) ve komedi fizigi (savasi yeniden baslatir). */
+  /** Comedy view (live) and comedy physics (restarts the battle). */
   isComedyVisual: () => boolean;
   toggleComedyVisual: () => boolean;
   isComedyPhysics: () => boolean;
   toggleComedyPhysics: () => void;
 }
 
-/** Savas sahnesi: sim (worker) + cizim (ayrintili veya toplu) + HUD + benchmark olcumu. */
+/** Battle scene: sim (worker) + drawing (detailed or mass) + HUD + benchmark measurement. */
 export class BattleScene {
   private sim!: SimBackend;
   private opts!: BattleOptions;
@@ -89,7 +90,7 @@ export class BattleScene {
   private seed = 1;
   private time = 0;
   private activeProjectiles = 0;
-  /** Arazi yuksekligi (ekran pikseli); kabartma yoksa 0. */
+  /** Terrain height (screen pixels); 0 if there is no relief. */
   private elev: (x: number, y: number) => number = () => 0;
   private drawnLine = '';
   private keyHandler: ((e: KeyboardEvent) => void) | null = null;
@@ -103,7 +104,7 @@ export class BattleScene {
   private initialHp: number[] = [];
   private visHandler: (() => void) | null = null;
 
-  // olcum
+  // measurement
   private frameLog = new Float32Array(60 * 60 * 20);
   private frameCount = 0;
   private wallStart = 0;
@@ -131,7 +132,7 @@ export class BattleScene {
     const unitCount = this.sim.units.count;
     this.initialAlive = new Array(6).fill(0);
     this.initialHp = new Array(6).fill(0);
-    // Cagrilacak (uyuyan) iskeletler baslangic sayimina girmez: yalniz canli birimler.
+    // Summoned (dormant) skeletons do not count toward the starting tally: only living units.
     let anyAlive = false;
     for (let i = 0; i < unitCount; i++) if (this.sim.units.alive[i]) anyAlive = true;
     for (let i = 0; i < unitCount; i++) {
@@ -161,7 +162,7 @@ export class BattleScene {
 
     if (!opts.bench) {
       const quality: FxQuality = opts.fx === 'auto' ? (unitCount <= 400 ? 'high' : 'low') : opts.fx;
-      // Kalabalikta yuzen sayilar okunmaz: yalniz az birimde goster.
+      // In a crowd floating numbers are unreadable: show only with few units.
       this.fx = new FxSystem(atlas, camera, quality, opts.numbers && unitCount <= 200);
       this.fx.elev = this.elev;
       this.fx.comicOn = opts.numbers && unitCount <= 400;
@@ -177,7 +178,7 @@ export class BattleScene {
     this.buildHud();
     this.keyHandler = (e) => this.onKey(e);
     window.addEventListener('keydown', this.keyHandler);
-    // Sekme gizlenince sim durur (savas kacirilmaz), ses susar.
+    // When the tab is hidden the sim pauses (the battle is not missed) and sound is muted.
     this.visHandler = () => {
       this.d.audio.setHidden(document.hidden);
       if (document.hidden) {
@@ -243,18 +244,18 @@ export class BattleScene {
     root.innerHTML = `
 <div class="hud-top" id="hud-teams"></div>
 <div class="hud-bottom">
-  <div class="seg" id="hud-speed" role="group" aria-label="Hız"></div>
-  <button type="button" id="hud-pause">Duraklat</button>
-  <button type="button" id="hud-sound" aria-pressed="true">Ses</button>
-  <button type="button" id="hud-cv" aria-pressed="false" title="Komedi görünümü (K)">Komedi görünümü</button>
-  <button type="button" id="hud-cp" class="sec" aria-pressed="false" title="Komedi fiziği (savaş yeniden başlar)">Komedi fiziği</button>
-  <button type="button" id="hud-debug" class="sec" aria-pressed="false" title="Takılma izleme katmanı (savaş yeniden başlar)">Debug</button>
-  <button type="button" id="hud-full" class="sec">Tam ekran</button>
-  <span class="hud-view" role="group" aria-label="Kamera"><button type="button" id="hud-zout" aria-label="Uzaklaş">−</button><button type="button" id="hud-zin" aria-label="Yakınlaş">+</button><button type="button" id="hud-center" aria-label="Haritayı ortala" title="Haritayı ortala">⌖</button><button type="button" id="hud-stats" aria-label="İstatistik" title="İstatistik (F3)">📊</button></span>
-  <button type="button" id="hud-restart">Yeniden başlat</button>
-  <button type="button" id="hud-edit" class="primary">Düzenle</button>
+  <div class="seg" id="hud-speed" role="group" aria-label="${t('battle.speed.aria')}"></div>
+  <button type="button" id="hud-pause">${t('battle.pause')}</button>
+  <button type="button" id="hud-sound" aria-pressed="true">${t('battle.sound')}</button>
+  <button type="button" id="hud-cv" aria-pressed="false" title="${t('battle.cv.title')}">${t('battle.cv')}</button>
+  <button type="button" id="hud-cp" class="sec" aria-pressed="false" title="${t('battle.cp.title')}">${t('battle.cp')}</button>
+  <button type="button" id="hud-debug" class="sec" aria-pressed="false" title="${t('battle.debug.title')}">${t('battle.debug')}</button>
+  <button type="button" id="hud-full" class="sec">${t('battle.fullscreen')}</button>
+  <span class="hud-view" role="group" aria-label="${t('battle.camera.aria')}"><button type="button" id="hud-zout" aria-label="${t('battle.zoomOut')}">−</button><button type="button" id="hud-zin" aria-label="${t('battle.zoomIn')}">+</button><button type="button" id="hud-center" aria-label="${t('battle.center')}" title="${t('battle.center')}">⌖</button><button type="button" id="hud-stats" aria-label="${t('battle.stats.aria')}" title="${t('battle.stats.title')}">📊</button></span>
+  <button type="button" id="hud-restart">${t('battle.restart')}</button>
+  <button type="button" id="hud-edit" class="primary">${t('battle.edit')}</button>
 </div>
-<div class="hud-hint">${window.matchMedia('(pointer: coarse)').matches ? 'Tek parmak: kaydır · İki parmak: yakınlaştır / kaydır' : ''}${window.matchMedia('(pointer: coarse)').matches ? '' : this.opts.online ? (this.opts.online.isHost ? 'Space: duraklat · 1-2-3: hız (yalnız host) · ' : 'Hız ve duraklatma yalnız host’ta · ') + 'F3: istatistik · WASD / orta tuş: kaydır · tekerlek: yakınlaş' : 'Space: duraklat · R: yeniden başlat · Esc: düzenle · 1-2-3: hız · F3: istatistik · WASD / orta tuş: kaydır · tekerlek: yakınlaş'}</div>
+<div class="hud-hint">${window.matchMedia('(pointer: coarse)').matches ? t('battle.hint.touch') : ''}${window.matchMedia('(pointer: coarse)').matches ? '' : this.opts.online ? (this.opts.online.isHost ? t('battle.hint.host') : t('battle.hint.guest')) + t('battle.hint.online') : t('battle.hint.solo')}</div>
 <div class="result" id="hud-result" hidden></div>`;
     const q = (s: string) => root.querySelector(s) as HTMLElement;
     q('#hud-pause').addEventListener('click', () => this.togglePause());
@@ -264,25 +265,25 @@ export class BattleScene {
     q('#hud-stats').addEventListener('click', () => this.d.stats.toggle());
     if (!document.documentElement.requestFullscreen) q('#hud-full').hidden = true;
     if (this.opts.online) {
-      // Cevrimici: yalniz Ses, Komedi gorunumu, Tam ekran ve Ayril kalir.
+      // Online: only Sound, Comedy view, Full screen and Leave remain.
       for (const id of ['#hud-restart', '#hud-debug', '#hud-cp']) q(id).hidden = true;
-      q('#hud-edit').textContent = this.opts.online.isHost ? 'Lobiyi kapat' : 'Lobiden ayrıl';
+      q('#hud-edit').textContent = this.opts.online.isHost ? t('battle.leave.host') : t('battle.leave.guest');
       q('#hud-edit').addEventListener('click', () => this.opts.online!.onLeave());
     }
     const cv = q('#hud-cv');
     const paintCv = (on: boolean): void => {
-      cv.textContent = on ? 'Komedi görünümü: açık' : 'Komedi görünümü: kapalı';
+      cv.textContent = on ? t('battle.cv.on') : t('battle.cv.off');
       cv.setAttribute('aria-pressed', String(on));
     };
     paintCv(this.d.isComedyVisual());
     cv.addEventListener('click', () => paintCv(this.d.toggleComedyVisual()));
     this.paintComedy = paintCv;
     const cp = q('#hud-cp');
-    cp.textContent = this.d.isComedyPhysics() ? 'Komedi fiziği: açık' : 'Komedi fiziği: kapalı';
+    cp.textContent = this.d.isComedyPhysics() ? t('battle.cp.on') : t('battle.cp.off');
     cp.setAttribute('aria-pressed', String(this.d.isComedyPhysics()));
     cp.addEventListener('click', () => this.d.toggleComedyPhysics());
     const dbg = q('#hud-debug');
-    dbg.textContent = this.d.isDebugOn() ? 'Debug: açık' : 'Debug: kapalı';
+    dbg.textContent = this.d.isDebugOn() ? t('battle.debug.on') : t('battle.debug.off');
     dbg.setAttribute('aria-pressed', String(this.d.isDebugOn()));
     dbg.addEventListener('click', () => this.d.toggleDebug());
     q('#hud-full').addEventListener('click', () => {
@@ -291,7 +292,7 @@ export class BattleScene {
     });
     const snd = q('#hud-sound');
     const paintSnd = (on: boolean): void => {
-      snd.textContent = on ? 'Ses: açık' : 'Ses: kapalı';
+      snd.textContent = on ? t('battle.sound.on') : t('battle.sound.off');
       snd.setAttribute('aria-pressed', String(on));
     };
     paintSnd(this.d.isSoundOn());
@@ -306,11 +307,11 @@ export class BattleScene {
     const el = this.d.hudRoot.querySelector('#hud-speed') as HTMLElement | null;
     if (!el) return;
     const locked = !!this.opts.online && !this.opts.online.isHost;
-    el.innerHTML = [1, 2, 4].map((v) => `<button type="button" data-v="${v}" aria-pressed="${v === this.speed}"${locked ? ' disabled title="Hızı yalnız host değiştirir"' : ''}>${v}×</button>`).join('');
+    el.innerHTML = [1, 2, 4].map((v) => `<button type="button" data-v="${v}" aria-pressed="${v === this.speed}"${locked ? ` disabled title="${t('battle.speed.locked')}"` : ''}>${v}×</button>`).join('');
     el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => this.setSpeed(Number((b as HTMLElement).dataset.v))));
     const p = this.d.hudRoot.querySelector('#hud-pause') as HTMLButtonElement | null;
     if (p) {
-      p.textContent = this.paused ? 'Devam' : 'Duraklat';
+      p.textContent = this.paused ? t('battle.resume') : t('battle.pause');
       p.disabled = locked;
     }
   }
@@ -326,11 +327,11 @@ export class BattleScene {
       const hp = new Array(6).fill(0);
       for (let i = 0; i < u.count; i++) if (u.alive[i]) hp[u.team[i]] += u.hp[i];
       teams.innerHTML = this.opts.colors
-        .map((c, t) => {
-          const n = this.sim.alivePerTeam[t];
-          const pct = Math.round(Math.min(1, hp[t] / Math.max(1, this.initialHp[t])) * 100);
-          const nm = this.opts.online ? `<b class="hud-name">${this.opts.online.teamNames[t] ?? ''}</b>` : '';
-          return `<span class="hud-team${n === 0 ? ' out' : ''}" style="background:${hex(c.main)}22;color:${hex(c.main)}" title="Takım ${t + 1}: ${n} asker, güç %${pct}"><i class="dot" style="background:${hex(c.main)}"></i>${nm}${n}<span class="hud-bar"><i style="width:${pct}%;background:${hex(c.main)}"></i></span></span>`;
+        .map((c, ti) => {
+          const n = this.sim.alivePerTeam[ti];
+          const pct = Math.round(Math.min(1, hp[ti] / Math.max(1, this.initialHp[ti])) * 100);
+          const nm = this.opts.online ? `<b class="hud-name">${this.opts.online.teamNames[ti] ?? ''}</b>` : '';
+          return `<span class="hud-team${n === 0 ? ' out' : ''}" style="background:${hex(c.main)}22;color:${hex(c.main)}" title="${t('battle.team.title', { n: ti + 1, alive: n, pct })}"><i class="dot" style="background:${hex(c.main)}"></i>${nm}${n}<span class="hud-bar"><i style="width:${pct}%;background:${hex(c.main)}"></i></span></span>`;
         })
         .join('');
     }
@@ -343,16 +344,16 @@ export class BattleScene {
       const secs = Math.round(this.sim.time);
       const dur = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
       const losses = this.opts.colors
-        .map((cc, t) => `<span style="color:${hex(cc.main)}">T${t + 1}: ${this.initialAlive[t] - this.sim.alivePerTeam[t]}/${this.initialAlive[t]}</span>`)
+        .map((cc, ti) => `<span style="color:${hex(cc.main)}">T${ti + 1}: ${this.initialAlive[ti] - this.sim.alivePerTeam[ti]}/${this.initialAlive[ti]}</span>`)
         .join(' · ');
       const on = this.opts.online;
-      const winName = w >= 0 ? (on?.teamNames[w] ?? `Takım ${w + 1}`) : '';
+      const winName = w >= 0 ? (on?.teamNames[w] ?? t('battle.team.name', { n: w + 1 })) : '';
       if (on) {
-        res.innerHTML = `<div><h2 style="color:${color}">${w >= 0 ? `${winName} kazandı` : 'Berabere'}</h2><p>Süre ${dur} · Kayıp ${losses}</p><div class="btns">${on.onRematch ? '<button type="button" id="res-restart" class="primary">Rövanş (yeni tur)</button>' : '<span class="note">Host yeni tur başlatınca lobiye dönersin.</span>'}<button type="button" id="res-edit">${on.isHost ? 'Lobiyi kapat' : 'Lobiden ayrıl'}</button></div></div>`;
+        res.innerHTML = `<div><h2 style="color:${color}">${w >= 0 ? t('battle.result.wins', { name: winName }) : t('battle.result.draw')}</h2><p>${t('battle.result.stats', { dur, losses })}</p><div class="btns">${on.onRematch ? `<button type="button" id="res-restart" class="primary">${t('battle.result.rematch')}</button>` : `<span class="note">${t('battle.result.hostNote')}</span>`}<button type="button" id="res-edit">${on.isHost ? t('battle.leave.host') : t('battle.leave.guest')}</button></div></div>`;
         document.getElementById('res-restart')?.addEventListener('click', () => on.onRematch?.());
         document.getElementById('res-edit')!.addEventListener('click', () => on.onLeave());
       } else {
-        res.innerHTML = `<div><h2 style="color:${color}">${w >= 0 ? `Takım ${w + 1} kazandı` : 'Berabere'}</h2><p>Süre ${dur} · Kayıp ${losses}</p><div class="btns"><button type="button" id="res-restart">Yeniden oyna</button><button type="button" id="res-edit" class="primary">Düzenle</button></div></div>`;
+        res.innerHTML = `<div><h2 style="color:${color}">${w >= 0 ? t('battle.result.wins', { name: t('battle.team.name', { n: w + 1 }) }) : t('battle.result.draw')}</h2><p>${t('battle.result.stats', { dur, losses })}</p><div class="btns"><button type="button" id="res-restart">${t('battle.result.replay')}</button><button type="button" id="res-edit" class="primary">${t('battle.edit')}</button></div></div>`;
         document.getElementById('res-restart')!.addEventListener('click', () => void this.restart());
         document.getElementById('res-edit')!.addEventListener('click', () => this.opts.onEdit());
       }
@@ -379,7 +380,7 @@ export class BattleScene {
     const bench = this.opts.bench;
     const on = this.opts.online;
     if (on) {
-      // Cevrimici: yeniden baslat/duzenle/debug yok; hiz ve duraklatma yalniz host'ta.
+      // Online: no restart/edit/debug; speed and pause are host-only.
       if (e.code === 'F3') {
         e.preventDefault();
         this.d.stats.toggle();
@@ -411,7 +412,7 @@ export class BattleScene {
     else if (bench && e.code === 'KeyP') this.showReport();
   }
 
-  // ---- dongu ----
+  // ---- loop ----
 
   async restart(): Promise<void> {
     if (this.resetting) return;
@@ -431,7 +432,7 @@ export class BattleScene {
   }
 
   frame(now: number, frameMs: number): void {
-    // Uzun duraklar (sekme/pencere beklemesi) simulasyonu ilerletmez.
+    // Long pauses (tab/window waiting) do not advance the simulation.
     const dt = frameMs > 500 ? 0 : Math.min(frameMs / 1000, 0.1);
     this.time += dt;
     if (!this.wallStart) {
@@ -460,7 +461,7 @@ export class BattleScene {
     const t1 = performance.now();
     if (this.comedySys) {
       if (comedy.visual) {
-        // Komedi gorunumu: olumler ragdoll olarak ucar; sentetik olaylar (inis, whoosh) ses/efekte eklenir.
+        // Comedy view: deaths fly as ragdolls; synthetic events (landing, whoosh) are added to sound/effects.
         const u = this.sim.units;
         const evs = this.sim.events;
         for (const ev of evs) {
@@ -499,14 +500,14 @@ export class BattleScene {
     const wall = this.wallSeconds();
     const stepMs = st.totalMs / Math.max(1, st.steps);
     const extra: string[] = [
-      `Sim thread ${this.sim.kind === 'worker' ? 'worker' : 'ana thread'}`,
-      `Sim/adim   ${stepMs.toFixed(2)} ms (max ${st.maxMs.toFixed(1)})  yuk %${((stepMs / (SIM_DT * 1000)) * 100).toFixed(0)}`,
-      `Zaman x    ${((this.sim.time - this.simTimeBase) / Math.max(0.001, wall)).toFixed(2)} (1.00 = gercek zaman)`,
+      `${t('battle.stats.simThread')} ${this.sim.kind === 'worker' ? t('battle.stats.worker') : t('battle.stats.mainThread')}`,
+      `${t('battle.stats.simPerStep').padEnd(11)}${stepMs.toFixed(2)} ms (max ${st.maxMs.toFixed(1)})  ${t('battle.stats.load', { pct: ((stepMs / (SIM_DT * 1000)) * 100).toFixed(0) })}`,
+      `${t('battle.stats.timeX').padEnd(11)}${((this.sim.time - this.simTimeBase) / Math.max(0.001, wall)).toFixed(2)} ${t('battle.stats.realtime')}`,
     ];
     if (this.opts.bench) {
       extra.push(
         this.drawnLine,
-        `[B]ar ${this.massOpts.bars ? 'ac' : 'kapali'}  [O]sira ${this.massOpts.sort ? 'ac' : 'kapali'}  [C]ull ${this.massOpts.cull ? 'ac' : 'kapali'}`,
+        t('battle.bench.toggles', { bars: onOff(this.massOpts.bars), sort: onOff(this.massOpts.sort), cull: onOff(this.massOpts.cull) }),
       );
     }
     stats.update(now, {
@@ -521,7 +522,7 @@ export class BattleScene {
     this.updateHud();
   }
 
-  /** Gorunur dunya dikdortgeni (iso piksel). */
+  /** Visible world rectangle (iso pixels). */
   private viewRect(): MassViewport {
     const { camera, app } = this.d;
     const w = app.screen.width / camera.zoom;
@@ -533,15 +534,15 @@ export class BattleScene {
     return (performance.now() - this.wallStart - this.stallMs) / 1000;
   }
 
-  // ---- toplu cizim ----
+  // ---- mass drawing ----
 
   private syncMass(alpha: number): void {
     this.mass!.sync(this.time, alpha, this.viewRect(), this.massOpts);
     this.activeProjectiles = this.mass!.drawnArrows;
-    this.drawnLine = `Cizilen    ${this.mass!.drawnUnits} birim, ${this.mass!.drawnDecor} dekor, ${this.mass!.drawnArrows} ok`;
+    this.drawnLine = `${t('battle.stats.drawn').padEnd(11)}${t('battle.stats.drawnLine', { units: this.mass!.drawnUnits, decor: this.mass!.drawnDecor, arrows: this.mass!.drawnArrows })}`;
   }
 
-  // ---- ayrintili cizim ----
+  // ---- detailed drawing ----
 
   private buildViews(): void {
     for (const v of this.views) v.root.destroy({ children: true });
@@ -634,7 +635,7 @@ export class BattleScene {
 
   }
 
-  // ---- benchmark olcumu ----
+  // ---- benchmark measurement ----
 
   private resetBenchStats(): void {
     this.frameCount = 0;
@@ -700,16 +701,18 @@ export class BattleScene {
     const b = this.d.banner;
     b.style.display = 'flex';
     b.innerHTML = `<div style="background:rgba(10,14,20,.85);padding:16px 22px;border-radius:10px;font:14px/1.6 ui-monospace,Consolas,monospace;text-align:left;white-space:pre">${
-      `BENCH ${r.perTeam} vs ${r.perTeam}  [${r.backend}]  (harita ${r.mapSize}x${r.mapSize}, ${r.seconds} sn)\n` +
-      `FPS ort ${r.avgFps}   1% low ${r.onePercentLowFps}\n` +
-      `Kare ort ${r.avgFrameMs} ms   p95 ${r.p95FrameMs}   p99 ${r.p99FrameMs}   en kotu ${r.worstFrameMs}\n` +
-      `Sim ${r.simMsPerStep} ms/adim (max ${r.simMaxStepMs})   ana thread sim ${r.mainThreadSimMsPerFrame} ms/kare\n` +
-      `Render ${r.renderMsPerFrame} ms/kare (CPU)\n` +
-      `Gercek zaman carpani x${r.realtimeFactor}   Canli: ${r.aliveBlue} / ${r.aliveRed}\n` +
-      `R: yeniden baslat`
+      t('battle.bench.title', { n: r.perTeam, backend: r.backend, size: r.mapSize, sec: r.seconds }) + '\n' +
+      t('battle.bench.fps', { avg: r.avgFps, low: r.onePercentLowFps }) + '\n' +
+      t('battle.bench.frame', { avg: r.avgFrameMs, p95: r.p95FrameMs, p99: r.p99FrameMs, worst: r.worstFrameMs }) + '\n' +
+      t('battle.bench.sim', { step: r.simMsPerStep, max: r.simMaxStepMs, main: r.mainThreadSimMsPerFrame }) + '\n' +
+      t('battle.bench.render', { ms: r.renderMsPerFrame }) + '\n' +
+      t('battle.bench.realtime', { factor: r.realtimeFactor, blue: r.aliveBlue, red: r.aliveRed }) + '\n' +
+      t('battle.bench.restart')
     }</div>`;
   }
 }
+
+const onOff = (v: boolean): string => t(v ? 'battle.bench.on' : 'battle.bench.off');
 
 function arcPoint(p: SimBackend['projectiles'], i: number, k: number, elev: (x: number, y: number) => number) {
   const wx = p.sx[i] + (p.tx[i] - p.sx[i]) * k;

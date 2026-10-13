@@ -1,4 +1,6 @@
-/** Oyun ici baglanti rozeti (sag alt): baglanti turu + lobi kodu; dokununca davet linkini kopyalar. */
+import { t } from '../../i18n';
+
+/** In-game connection badge (bottom right): connection type + lobby code; tapping copies the invite link. */
 export class ConnBadge {
   private readonly el: HTMLButtonElement;
   private readonly timer: ReturnType<typeof setInterval>;
@@ -14,7 +16,7 @@ export class ConnBadge {
     root.appendChild(this.el);
     this.el.addEventListener('click', () => {
       void navigator.clipboard?.writeText(this.info().link).catch(() => {});
-      this.note = 'Link kopyalandı';
+      this.note = t('online.badge.copied');
       this.paint();
       setTimeout(() => {
         this.note = '';
@@ -28,14 +30,14 @@ export class ConnBadge {
 
   private paint(): void {
     const { via, code } = this.info();
-    const lan = via === 'LAN';
+    const lan = via === 'lan';
     const icon = lan ? '🏠' : '🌐';
-    const kind = lan ? 'LAN' : 'İnternet';
+    const kind = lan ? t('online.badge.lan') : t('online.badge.net');
     this.el.textContent = this.note || `${icon} ${kind} · ${code}`;
-    this.el.title = `Bağlantı: ${via} — dokun: davet linkini kopyala`;
+    this.el.title = t('online.badge.tip', { via: t(`online.via.${via}`) });
   }
 
-  /** Alt dock'un (telefonda yuksek) ve savas alt cubugunun ustunde kal. */
+  /** Stay above the bottom dock (tall on phones) and the battle's bottom bar. */
   private place(): void {
     const h = window.innerHeight;
     let top = h;
@@ -43,7 +45,7 @@ export class ConnBadge {
       const e = document.querySelector(sel) as HTMLElement | null;
       if (!e || e.hidden) continue;
       const r = e.getBoundingClientRect();
-      // Yalniz ekranin sag alt bolgesini kaplayan ogeler icin yukari it.
+      // Only push up for elements that cover the bottom-right area of the screen.
       if (r.right > window.innerWidth - 150 && r.top < top) top = r.top;
     }
     this.el.style.bottom = `${Math.round(h - top + 8)}px`;

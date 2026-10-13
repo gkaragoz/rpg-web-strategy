@@ -1,4 +1,5 @@
 import { Graphics } from 'pixi.js';
+import { t } from '../i18n';
 import { isoX, isoY } from '../iso';
 import type { Battle } from '../sim/battle';
 import { STATS } from '../sim/units';
@@ -8,11 +9,11 @@ import type { WorldView } from '../app/world';
 const FLAG_SHOW_SECS = 12;
 
 /**
- * ?debug=1: takilma/dongu izleme katmani. Sim ana thread'de calisir (InlineSim), test
- * paketindeki StallDetector canli olarak savasi izler; sorunlu birimler haritada halkayla
- * isaretlenir, hedef cizgileri / A* yollari / kapali bolgeler anahtarlanabilir.
+   * ?debug=1: stall/loop tracking layer. The sim runs on the main thread (InlineSim), the
+   * StallDetector from the test suite watches the battle live; problem units are marked on
+   * the map with a ring, target lines / A* paths / closed regions can be toggled.
  *
- * Tuslar: H katman ac/kapat · T hedef cizgileri · P yollar · G kapali bolgeler
+   * Keys: H layer on/off · T target lines · P paths · G closed regions
  */
 export class DebugOverlay {
   private readonly g = new Graphics();
@@ -53,7 +54,7 @@ export class DebugOverlay {
     window.addEventListener('keydown', this.keyHandler);
   }
 
-  /** Her sim adiminda cagrilir (InlineSim.onStep). */
+  /** Called on every sim step (InlineSim.onStep). */
   onStep(): void {
     this.detector.observe();
     const flags = this.detector.flags;
@@ -76,7 +77,7 @@ export class DebugOverlay {
     }
   }
 
-  /** Her karede cizim + panel (alpha: sim araligindaki interpolasyon). */
+  /** Every frame: draw + panel (alpha: interpolation within the sim interval). */
   update(alpha: number): void {
     const g = this.g;
     g.clear();
@@ -97,7 +98,7 @@ export class DebugOverlay {
 
       const m = this.marked.get(i);
       if (m && m.until > b.time) {
-        // Dedektor bayragi: kirmizi nabiz halkasi.
+        // Detector flag: red pulsing ring.
         const pulse = 0.65 + 0.35 * Math.sin(performance.now() / 160);
         g.ellipse(sx, sy, 26 * pulse + 6, 13 * pulse + 3).stroke({ width: 3, color: 0xff3b30, alpha: 0.95 });
       } else if (isStuck) {
@@ -146,11 +147,11 @@ export class DebugOverlay {
       .reverse()
       .map((f) => `<div class="dbg-flag"><b>${f.type}</b> t=${f.t}<br>${f.info.replace(/</g, '&lt;')}</div>`)
       .join('');
-    const sum = [...counts.entries()].map(([k, v]) => `${k}:${v}`).join('  ') || 'temiz';
-    this.panel.innerHTML = `<div class="dbg-title">DEBUG · H katman · T hedef · P yol · G bolge</div>
-<div>Takilan ${stuck} · aktif yol ${pathCount} · yasak ${b.dbg.bans} · leash ${b.dbg.leashBreaks} · yol hatasi ${b.dbg.pathFails}</div>
-<div>Bayrak: ${sum}</div>
-<div class="dbg-sub">canli ${b.alivePerTeam.slice(0, 6).join('/')} · ${STATS.length} tur</div>${recent}`;
+    const sum = [...counts.entries()].map(([k, v]) => `${k}:${v}`).join('  ') || t('battle.dbg.clean');
+    this.panel.innerHTML = `<div class="dbg-title">${t('battle.dbg.title')}</div>
+<div>${t('battle.dbg.summary', { stuck, paths: pathCount, bans: b.dbg.bans, leash: b.dbg.leashBreaks, fails: b.dbg.pathFails })}</div>
+<div>${t('battle.dbg.flags', { sum })}</div>
+<div class="dbg-sub">${t('battle.dbg.alive', { alive: b.alivePerTeam.slice(0, 6).join('/'), kinds: STATS.length })}</div>${recent}`;
   }
 
   destroy(): void {

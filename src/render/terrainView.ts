@@ -6,12 +6,12 @@ import { PALETTES, type BiomePalette } from './biome';
 
 type Pt = [number, number];
 
-/** Dunya (x, y) -> ekran. */
+/** World (x, y) -> screen. */
 let elev = (_x: number, _y: number): number => 0;
 const scr = (x: number, y: number, z = 0): Pt => [isoX(x, y), isoY(x, y, z + elev(x, y))];
 const flat = (p: Pt[]): number[] => p.flatMap((q) => q);
 
-/** Nehir, kopruler ve yollar: zemin ile birimler arasinda duran statik katman. */
+/** River, bridges and roads: a static layer sitting between the ground and the units. */
 export function buildTerrainOverlay(t: Terrain): Container {
   const root = new Container();
   const g = new Graphics();
@@ -19,7 +19,7 @@ export function buildTerrainOverlay(t: Terrain): Container {
   const pal = PALETTES[t.spec.biome];
   elev = t.hasRelief ? (x, y) => t.elevPx(x, y) : () => 0;
 
-  // Toprak yol karolari.
+  // Dirt road tiles.
   for (const idx of t.pathTiles) {
     const tx = idx % t.size;
     const ty = Math.floor(idx / t.size);
@@ -27,7 +27,7 @@ export function buildTerrainOverlay(t: Terrain): Container {
     g.poly(flat(c)).fill({ color: pal.path, alpha: 0.9 });
   }
 
-  // Nehir: merkez cizgisinden iki kiyi noktasi dizisi -> ucgen seritler yerine tek poligon.
+  // River: two bank point arrays from the center line -> a single polygon instead of triangle strips.
   const sMin = -t.size * 0.75;
   const sMax = t.size * 0.75;
   const step = 0.75;
@@ -44,13 +44,13 @@ export function buildTerrainOverlay(t: Terrain): Container {
   };
   const hasRiver = t.riverKind !== 'none';
   if (hasRiver) {
-    band(1.0, 1, pal.bank); // kiyi
+    band(1.0, 1, pal.bank); // bank
     band(0, 1, pal.water);
     band(0, 0.62, pal.waterMid);
     band(0, 0.22, pal.waterShine, 0.8);
   }
 
-  // Nehir icindeki adalar: kiyi halkasi + zemin rengi.
+  // Islands inside the river: bank ring + ground color.
   const tileDiamond = (tx: number, ty: number, grow: number): number[] => {
     const cx = tx + 0.5;
     const cy = ty + 0.5;
@@ -64,7 +64,7 @@ export function buildTerrainOverlay(t: Terrain): Container {
     g.poly(tileDiamond(tx, ty, 0.02)).fill((tx + ty) % 2 === 0 ? pal.grassA : pal.grassB);
   }
 
-  // Dalga cizgileri.
+  // Wave lines.
   for (let s = sMin + 2; hasRiver && s < sMax; s += 3.1) {
     const o = t.offsetAt(s);
     const w = t.widthAt(s);
@@ -74,7 +74,7 @@ export function buildTerrainOverlay(t: Terrain): Container {
     g.moveTo(a[0], a[1]).lineTo(b[0], b[1]).stroke({ width: 1.5, color: pal.wave, alpha: pal.waveAlpha });
   }
 
-  // Capraz kanallar (adalar kurgusu): kiyi + su karolari, koprulerin altinda.
+  // Cross channels (island layout): bank + water tiles, under the bridges.
   const bridgeSet = new Set(t.crossBridgeTiles);
   for (const grow of [0.45, 0]) {
     for (const idx of t.crossWaterTiles) {
@@ -96,7 +96,7 @@ export function buildTerrainOverlay(t: Terrain): Container {
     g.moveTo(a[0], a[1]).lineTo(b[0], b[1]).stroke({ width: 1.4, color: pal.wave, alpha: pal.waveAlpha });
   }
 
-  // Capraz kanal koprukleri (adalar kurgusu): tile bazli ahsap/tas tabla.
+  // Cross channel bridges (island layout): tile-based wood/stone deck.
   for (const idx of t.crossBridgeTiles) {
     const tx = idx % t.size;
     const ty = Math.floor(idx / t.size);
@@ -114,7 +114,7 @@ export function buildTerrainOverlay(t: Terrain): Container {
     else drawBridge(g, t, b, pal, t.spec.crossing === 'stone');
   }
 
-  // Harita seklinde maskele (nehir haritanin disina tasmasin).
+  // Mask to the map shape (so the river does not spill outside the map).
   const n = t.size;
   const mask = new Graphics();
   mask.poly([isoX(0, 0), isoY(0, 0), isoX(n, 0), isoY(n, 0), isoX(n, n), isoY(n, n), isoX(0, n), isoY(0, n)]).fill(0xffffff);
@@ -123,7 +123,7 @@ export function buildTerrainOverlay(t: Terrain): Container {
   return root;
 }
 
-/** Sig gecit: acik renkli sig su seridi ve basamak taslari. */
+/** Ford: a light-colored shallow water strip and stepping stones. */
 function drawFord(g: Graphics, t: Terrain, b: Bridge, pal: BiomePalette): void {
   const s0 = b.s - b.halfW;
   const s1 = b.s + b.halfW;
@@ -158,14 +158,14 @@ function drawBridge(g: Graphics, t: Terrain, b: Bridge, pal: BiomePalette, stone
   ];
   const up = (p: Pt, z = Z): Pt => [p[0], p[1] - z];
 
-  // Yan yuzler: ekranda en alttaki kosenin iki komsu kenari.
+  // Side faces: the two neighboring edges of the bottom-most corner on screen.
   let bottom = 0;
   for (let i = 1; i < 4; i++) if (base[i][1] > base[bottom][1]) bottom = i;
   for (const nb of [(bottom + 1) % 4, (bottom + 3) % 4]) {
     g.poly(flat([base[bottom], base[nb], up(base[nb]), up(base[bottom])])).fill(nb === (bottom + 1) % 4 ? (stone ? pal.stoneSideA : pal.deckSideA) : stone ? pal.stoneSideB : pal.deckSideB).stroke({ width: 1, color: 0x000000, alpha: 0.35 });
   }
 
-  // Direkler/korkuluk: uzun kenarlar s = s0 ve s1; arka olan once.
+  // Posts/railing: long edges s = s0 and s1; the back one first.
   const rail = (sc: number): void => {
     for (let d = d0 + 0.3; d <= d1 - 0.2; d += 1.1) {
       const p = scr(t.worldX(sc, d), t.worldY(sc, d), Z);
@@ -190,7 +190,7 @@ function drawBridge(g: Graphics, t: Terrain, b: Bridge, pal: BiomePalette, stone
   rail(near);
 }
 
-/** Demo icin: dekoru Sprite olarak ekler (zIndex = x+y ile birimlerle birlikte siralanir). */
+/** For the demo: adds decor as a Sprite (zIndex = x+y, sorted together with units). */
 export function addDecorSprites(t: Terrain, atlas: Atlas, layer: Container): void {
   for (const d of t.decor) {
     const list = atlas.decor[d.kind];

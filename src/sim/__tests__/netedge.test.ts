@@ -4,7 +4,7 @@ import { GuestSession, HostSession } from '../../net/client';
 import { teamZones } from '../../net/economy';
 import { HostLobby } from '../../net/host';
 import { LockstepRunner } from '../../net/lockstep';
-import { battleConfig, type ClientMsg } from '../../net/protocol';
+import { PROTOCOL, battleConfig, type ClientMsg } from '../../net/protocol';
 import { LoopbackHub } from '../../net/transport';
 import { Terrain } from '../terrain';
 import { mulberry32 } from '../random';
@@ -42,15 +42,15 @@ function three(): { r: Rig; a: GuestSession; b: GuestSession } {
   return { r, a, b };
 }
 
-describe('oyun sirasinda ayrilma', () => {
-  it('yerlestirmede oyuncu ayrilinca takim numaralari kaymaz; kalanlar yerlestirebilir', () => {
+describe('leaving mid-game', () => {
+  it('when a player leaves during placement, team numbers do not shift; the rest can still place', () => {
     const { r, a, b } = three();
     const teamB = b.model.me!.team;
     expect(teamB).toBe(2);
     a.leave();
     const st = r.hs.model.state!;
     expect(st.players.find((p) => p.name === 'B')!.team).toBe(teamB);
-    expect(st.players.filter((p) => p.role === 'player').length).toBe(3); // ayrilan hayalet olarak kalir
+    expect(st.players.filter((p) => p.role === 'player').length).toBe(3); // the departed player stays as a ghost
     expect(st.players.some((p) => !p.connected)).toBe(true);
     const sp = spots(r, teamB, 3);
     b.send({ t: 'place', items: sp.map((p, i) => ({ cid: i, kind: 0, x: p.x, y: p.y })) });
@@ -63,7 +63,7 @@ describe('oyun sirasinda ayrilma', () => {
     expect(r.hs.model.start!.init.teamPlayers.length).toBe(3);
   });
 
-  it('kick yerlestirmede de takimlari kaydirmaz; lobiye donunce hayalet temizlenir', () => {
+  it('a kick does not shift teams during placement either; the ghost is cleaned up on return to the lobby', () => {
     const { r, a, b } = three();
     const teamB = b.model.me!.team;
     r.hs.send({ t: 'kick', id: a.model.you });
@@ -79,7 +79,7 @@ describe('oyun sirasinda ayrilma', () => {
     expect(st.players.find((p) => p.name === 'B')!.team).toBe(1);
   });
 
-  it('seyirci ayrilinca oyuncu takimlari etkilenmez', () => {
+  it('when a spectator leaves, player teams are unaffected', () => {
     const { r, b } = three();
     const s = join(r, 'S', { spectator: true });
     const team = b.model.me!.team;
@@ -89,17 +89,17 @@ describe('oyun sirasinda ayrilma', () => {
   });
 });
 
-describe('baglanti kenar durumlari', () => {
-  it('ayni baglantidan ikinci join yok sayilir (kopya oyuncu olusmaz)', () => {
+describe('connection edge cases', () => {
+  it('a second join from the same connection is ignored (no duplicate player)', () => {
     const r = rig();
     const ep = r.hub.connect();
     const g = new GuestSession(ep, { name: 'A', color: 1 });
-    ep.send('host', { t: 'join', name: 'A', color: 1, version: 2 } as ClientMsg);
+    ep.send('host', { t: 'join', name: 'A', color: 1, version: PROTOCOL } as ClientMsg);
     expect(r.hs.model.state!.players.length).toBe(2);
     expect(g.model.me).not.toBeNull();
   });
 
-  it('jetonla gelen yeni baglanti, yari acik eski baglantinin yerini alir', () => {
+  it('a new connection with the token replaces a half-open old connection', () => {
     const { r, b } = three();
     const token = b.model.token;
     const team = b.model.me!.team;
@@ -111,7 +111,7 @@ describe('baglanti kenar durumlari', () => {
     expect(back.model.me!.ready).toBe(false);
   });
 
-  it('bozuk mesajlar host dusurmez', () => {
+  it('malformed messages do not take the host down', () => {
     const { r, a } = three();
     const ep = r.hub.connect();
     const g = new GuestSession(ep, { name: 'X', color: 2, spectator: true });
@@ -133,35 +133,35 @@ describe('baglanti kenar durumlari', () => {
     expect(g.model.me).not.toBeNull();
   });
 
-  it('mesaj seli hiz sinirina takilir ama normal akis bozulmaz', () => {
+  it('a message flood hits the rate limit but normal flow is unaffected', () => {
     const { r, a } = three();
     const sp = spots(r, a.model.me!.team, 1)[0];
     for (let i = 0; i < 2000; i++) a.send({ t: 'place', items: [{ cid: i, kind: 0, x: sp.x, y: sp.y }] });
     expect(r.hs.model.state!.phase).toBe('placing');
     expect([...a.model.placed.values()].length).toBe(1);
-    r.clock.t += 5000; // jeton kovasi dolar
+    r.clock.t += 5000; // the token bucket refills
     a.send({ t: 'chat', text: 'selam' });
     expect(a.model.chat.length).toBeGreaterThan(0);
   });
 
-  it('eski surum (1) istemci reddedilir', () => {
+  it('an old-version client (PROTOCOL - 1) is rejected', () => {
     const r = rig();
     const ep = r.hub.connect();
     let rej = '';
     ep.onMessage = (_f, m) => {
       if ((m as { t: string }).t === 'reject') rej = (m as { reason: string }).reason;
     };
-    ep.send('host', { t: 'join', name: 'v1', color: 1, version: 1 } as ClientMsg);
+    ep.send('host', { t: 'join', name: 'v1', color: 1, version: PROTOCOL - 1 } as ClientMsg);
     expect(rej).toBe('version');
   });
 });
 
-describe('sohbet siralamasi', () => {
-  it('200 mesaji gecince sira numarasi artmaya devam eder', () => {
+describe('chat ordering', () => {
+  it('after more than 200 messages the sequence number keeps increasing', () => {
     const r = rig();
     const g = join(r, 'A');
     for (let i = 0; i < 260; i++) {
-      r.clock.t += 3000; // spam sinirini asma
+      r.clock.t += 3000; // stay under the spam limit
       g.send({ t: 'chat', text: `m${i}` });
     }
     const chat = g.model.chat;
@@ -172,7 +172,7 @@ describe('sohbet siralamasi', () => {
   });
 });
 
-describe('lockstep kenar durumlari', () => {
+describe('lockstep edge cases', () => {
   function startBattle(): { r: Rig; a: GuestSession } {
     const r = rig(5);
     const a = join(r, 'A');
@@ -192,7 +192,7 @@ describe('lockstep kenar durumlari', () => {
     return { r, a };
   }
 
-  it('host duraklayinca duraklama yayinlanir; misafir tahminle one gecmez', () => {
+  it('when the host pauses, the pause is broadcast; a guest does not run ahead on estimates', () => {
     const { r, a } = startBattle();
     const start = r.hs.model.start!;
     const hostSim = new Battle(start.simSeed, battleConfig(start));
@@ -206,7 +206,7 @@ describe('lockstep kenar durumlari', () => {
       gr.advance(1 / 60);
       r.hub.pump();
     }
-    hr.paused = true; // ornegin sekme arka plana alindi
+    hr.paused = true; // e.g. the tab went to the background
     const frozen = hostSim.stepCount;
     for (let i = 0; i < 600; i++) {
       t += 16;
@@ -219,7 +219,7 @@ describe('lockstep kenar durumlari', () => {
     expect(guestSim.stepCount).toBeLessThanOrEqual(frozen + 3);
   });
 
-  it('host sessizlesirse misafir tahmini 1.5 sn ile sinirli kalir', () => {
+  it('if the host goes silent, the guest estimate stays capped at 1.5 s', () => {
     const { r, a } = startBattle();
     const start = r.hs.model.start!;
     const hostSim = new Battle(start.simSeed, battleConfig(start));
@@ -236,13 +236,13 @@ describe('lockstep kenar durumlari', () => {
     const hs = a.model.hostStep;
     for (let i = 0; i < 1800; i++) {
       t += 16;
-      gr.advance(1 / 60); // host donmus: tick yok
+      gr.advance(1 / 60); // the host is frozen: no tick
       r.hub.pump();
     }
     expect(guestSim.stepCount).toBeLessThanOrEqual(hs + 30 * 1.5 + 12);
   });
 
-  it('hic birim yerlestirilmezse savas takilmadan biter', () => {
+  it('if no unit is placed, the battle ends without hanging', () => {
     const r = rig(3);
     const a = join(r, 'A');
     a.send({ t: 'ready', ready: true });

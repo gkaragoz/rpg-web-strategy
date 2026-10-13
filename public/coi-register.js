@@ -1,6 +1,6 @@
 /*
- * Sayfa cross-origin isolated degilse (Pages vb.) service worker'i kaydeder ve bir kez yeniden yukler.
- * Basarisiz olursa oyun sim'i ana thread'de calistirir (otomatik yedek).
+ * If the page is not cross-origin isolated (Pages etc.), registers the service worker and reloads once.
+ * If that fails, the game runs the sim on the main thread (automatic fallback).
  */
 (function () {
   if (window.crossOriginIsolated || !('serviceWorker' in navigator)) return;
@@ -9,7 +9,7 @@
   try {
     if (sessionStorage.getItem(flag)) return;
   } catch (e) {
-    /* depolama yok */
+    /* no storage available */
   }
   navigator.serviceWorker
     .register(new URL('coi-sw.js', document.currentScript.src).href)
@@ -18,7 +18,7 @@
         try {
           sessionStorage.setItem(flag, '1');
         } catch (e) {
-          /* yoksay */
+          /* ignore */
         }
         location.reload();
       };
@@ -33,6 +33,6 @@
         });
     })
     .catch(function () {
-      /* yedek: ana thread sim */
+      /* fallback: sim on the main thread */
     });
 })();

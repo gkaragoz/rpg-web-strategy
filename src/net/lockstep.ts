@@ -4,7 +4,7 @@ import { CHECK_EVERY, type HostLobby } from './host';
 import type { OnlineModel } from './client';
 import { b64decode, b64encode, type ClientMsg } from './protocol';
 
-/** Lockstep'in ihtiyac duydugu sim yuzeyi (Battle bunu saglar; worker sarmalayicisi da saglayabilir). */
+/** The sim surface lockstep needs (Battle provides it; a worker wrapper could too). */
 export interface SimLike {
   step(dt: number): void;
   readonly stepCount: number;
@@ -16,25 +16,25 @@ export interface SimLike {
 }
 
 const MAX_STEPS_PER_FRAME = 8;
-/** Host adimiyla yerel adim farki bu kadar buyurse yetisme/bekleme devreye girer. */
+/** When the gap between the host step and the local step exceeds this, catching up / waiting kicks in. */
 const LAG_TOLERANCE = 3;
-/** Host adim bilgisini yayinlama araligi (adim). */
+/** Interval (steps) at which the host broadcasts its step info. */
 const TICK_EVERY = 15;
 
 /**
- * Deterministik savasin zaman ilerletici: host kendi hizinda kosar ve adim/hiz/duraklatma bilgisini yayar;
- * misafir host'un adimina yetisir/bekler, kontrol noktalarinda hash gonderir, sapma olursa durum goruntusunu yukler.
+ * Time driver of the deterministic battle: the host runs at its own pace and broadcasts step/speed/pause info;
+ * a guest catches up with or waits for the host's step, sends hashes at checkpoints, and loads a state snapshot on divergence.
  */
 export class LockstepRunner {
   private acc = 0;
   private finished = false;
   private tickAt = 0;
-  /** Host: yerel hiz/duraklat (hiz dugmeleri). Misafirde model'den okunur. */
+  /** Host: local speed/pause (speed buttons). Read from the model on a guest. */
   speed = 1;
   paused = false;
-  /** Teshis: son yeniden senkron sayisi. */
+  /** Diagnostics: number of resyncs so far. */
   resyncs = 0;
-  /** Cizim interpolasyonu icin adim kesri (0..1). */
+  /** Step fraction for render interpolation (0..1). */
   get alpha(): number {
     return this.paused || (!this.opts.host && this.model.paused) ? 1 : Math.min(1, this.acc / SIM_DT);
   }
@@ -55,10 +55,10 @@ export class LockstepRunner {
     return (this.opts.now ?? (() => Date.now()))();
   }
 
-  /** Bir cizim karesinde cagrilir (dt saniye); calistirilan sim adimi sayisini dondurur. */
+  /** Called once per rendered frame (dt in seconds); returns the number of sim steps run. */
   advance(dt: number): number {
     const host = this.opts.host;
-    // Misafir: bekleyen yeniden senkron.
+    // Guest: pending resync.
     const rs = this.model.pendingResync;
     if (!host && rs) {
       this.model.pendingResync = null;
@@ -69,8 +69,8 @@ export class LockstepRunner {
     const speed = host ? this.speed : this.model.speed;
     const paused = host ? this.paused : this.model.paused;
     if (paused) {
-      // Host duraklatinca (ya da sekmesi arka plana alinca) misafirler tahmini adimla one gecmesin:
-      // duraklatma durumu periyodik yayinlanir.
+      // When the host pauses (or its tab goes to the background), guests must not run ahead on the estimated step:
+      // the paused state is broadcast periodically.
       if (host) {
         const t = this.now();
         if (t - this.tickAt >= 250) {
@@ -84,8 +84,8 @@ export class LockstepRunner {
     let n = Math.min(MAX_STEPS_PER_FRAME, Math.floor(this.acc / SIM_DT));
     this.acc -= Math.floor(this.acc / SIM_DT) * SIM_DT;
     if (!host && this.model.hostStep >= 0) {
-      // Host adim tahmini: son tick + gecen sure.
-      // Tahmin en cok 1.5 sn ilerler: host sessizlesirse (arka plan sekmesi, kopuk ag) misafir sonsuza dek kosmasin.
+      // Host step estimate: last tick + elapsed time.
+      // The estimate advances at most 1.5 s: if the host goes silent (background tab, dropped network) the guest must not run forever.
       const est = this.model.hostStep + Math.round((Math.min(1500, this.now() - this.model.hostStepAt) / 1000) * 30 * speed);
       const lag = est - this.sim.stepCount;
       if (lag > LAG_TOLERANCE) n = Math.min(MAX_STEPS_PER_FRAME, Math.max(n, lag - 1));

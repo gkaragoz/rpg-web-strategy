@@ -8,8 +8,8 @@ import { LoopbackHub } from '../../net/transport';
 import { Terrain } from '../terrain';
 import { mulberry32 } from '../random';
 
-/** Cevrimici akistaki gibi (rastgele harita, bolge icinde rastgele yerlesim) savas kurup adim atar: kurulum hata atmamali. */
-describe('cevrimici savas kurulumu (rastgele harita + yerlesim)', () => {
+/** Sets up a battle and steps it like the online flow does (random map, random placement inside the zone): setup must not throw. */
+describe('online battle setup (random map + placement)', () => {
   for (let seed = 1; seed <= 40; seed++) {
     it(`seed ${seed}`, () => {
       const rnd = mulberry32(seed * 104729);
@@ -17,7 +17,7 @@ describe('cevrimici savas kurulumu (rastgele harita + yerlesim)', () => {
       const clock = { t: 1000 };
       const host = new HostLobby(hub.host, 'Host', 0, { now: () => clock.t, rnd: mulberry32(seed) });
       const hs = new HostSession(host, false);
-      const n = 2 + Math.floor(rnd() * 5); // 2..6 oyuncu
+      const n = 2 + Math.floor(rnd() * 5); // 2..6 players
       const guests: GuestSession[] = [];
       for (let i = 1; i < n; i++) guests.push(new GuestSession(hub.connect(), { name: `G${i}`, color: i }));
       hs.send({ t: 'settings', settings: { mapMode: 'random', gold: 2000, level: 1 + Math.floor(rnd() * 10), comedyPhysics: rnd() < 0.3, openPlacement: rnd() < 0.5, placeSecs: 60, mapSize: [0, 0, 40, 56, 80][Math.floor(rnd() * 5)] } });
@@ -38,7 +38,7 @@ describe('cevrimici savas kurulumu (rastgele harita + yerlesim)', () => {
         }
         for (let i = 0; i < items.length; i += 50) s.send({ t: 'place', items: items.slice(i, i + 50) });
       });
-      // Sure dolsun (hazir verilmeden).
+      // Let the time run out (without anyone getting ready).
       clock.t += 61000;
       host.tick();
       hub.pump();

@@ -1,41 +1,27 @@
-# Üçüncü taraf bildirimleri
+# Third-party notices
 
-Bu proje aşağıdaki bileşenleri kullanır. Her biri kendi lisansı altındadır; **ana projenin ticari kullanım kısıtı
-(`LICENSE`) bu bileşenlere uygulanmaz**, onların kendi koşulları geçerlidir.
+This project uses the components below. Each one is under its own license; **the commercial-use restriction of the main project
+(`LICENSE`) does not apply to them**, their own terms do.
 
-## Birim verisi: the reference roster — source terms
+## Runtime dependencies
 
-`src/sim/data/troops.ts` (birim özellikleri ve yetenek açıklamaları), **the reference roster**'sindeki
-birim tablolarından alınmıştır: docs/UNITS.md
-
-- Lisans: **source terms (source terms)** (Host varsayılanı):
-  https://creativecommons.org/licenses/by-sa/3.0/
-- Atıf: "the reference roster contributors, Host".
-- **Paylaşım koşulu (ShareAlike):** bu veriden türetilmiş veri source terms ile paylaşılmalıdır. Bu nedenle roster kaynaklı
-  veri dosyaları, projenin ticari kısıtından **muaftır**; yalnızca source terms kurallarına (atıf + aynı lisansla paylaşım)
-  tabidir.
-- Değerler oyun ölçeğine bölenlerle indirgenmiş ve yetenekler özgün biçimde yeniden uygulanmıştır. Roster sanatı veya
-  görselleri **kullanılmaz**; tüm çizimler `src/render/looks.ts` içindeki prosedürel, özgün tariflerdir.
-- "the reference game" ilgili hak sahiplerinin ticari markasıdır; bu proje onlarla bağlantılı veya onaylı değildir.
-
-## Çalışma zamanı bağımlılıkları
-
-| Paket | Lisans | Kullanım |
+| Package | License | Use |
 |---|---|---|
-| [PixiJS](https://github.com/pixijs/pixijs) v8 | MIT | 2B çizim |
-| [PeerJS](https://github.com/peers/peerjs) 1.5.4 | MIT | WebRTC yedek bağlantısı |
+| [PixiJS](https://github.com/pixijs/pixijs) v8 | MIT | 2D rendering |
+| [PeerJS](https://github.com/peers/peerjs) 1.5.4 | MIT | WebRTC fallback connection |
 
-## Geliştirme bağımlılıkları
+## Development dependencies
 
 [Vite](https://github.com/vitejs/vite) (MIT), [Vitest](https://github.com/vitest-dev/vitest) (MIT),
-[TypeScript](https://github.com/microsoft/TypeScript) (Apache-2.0), `@types/node` (MIT). Ayrıca
-[Wrangler](https://github.com/cloudflare/workers-sdk) (MIT/Apache-2.0) yalnızca `relay/` dağıtımı için kullanılır.
+[TypeScript](https://github.com/microsoft/TypeScript) (Apache-2.0), `@types/node` (MIT). [Wrangler](https://github.com/cloudflare/workers-sdk)
+(MIT / Apache-2.0) is used only to deploy `relay/`.
 
-## Altyapı
+## Infrastructure
 
-İnternet rölesi bir Cloudflare Worker + Durable Object olarak çalışır (`relay/`); WebRTC yedek yolu PeerJS'in genel
-sinyal sunucusunu kullanır. Bu hizmetler kendi kullanım şartlarına tabidir.
+The internet relay runs as a Cloudflare Worker + Durable Object (`relay/`); the WebRTC fallback uses PeerJS's public signaling server and
+public STUN servers. These services are subject to their own terms of use.
 
-## Ses
+## Game content
 
-Ses efektleri dosyasız WebAudio ile sentezlenir; harici ses dosyası yoktur.
+The unit roster (names, statistics, skills and descriptions), the map generator, all drawings (procedural recipes in `src/render/looks.ts`)
+and all sounds (synthesized with WebAudio, no audio files) are original to this project and are covered by the project license.

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Bagimliliksiz statik sunucu: COOP/COEP basliklariyla (SharedArrayBuffer / worker sim icin) bir dizini sunar.
-// Kullanim: node server.mjs [dizin] [--port 5174] [--open] [--lan]
-//   --lan: agdaki baska cihazlar baglanabilsin (0.0.0.0) ve LAN adresleri yazdirilsin; /ws yolu LAN lobi odalarini yonlendirir.
+// Dependency-free static server: serves a directory with COOP/COEP headers (for SharedArrayBuffer / the worker sim).
+// Usage: node server.mjs [dizin] [--port 5174] [--open] [--lan]
+//   --lan: let other devices on the network connect (0.0.0.0) and print the LAN addresses; the /ws path routes LAN lobby rooms.
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -42,7 +42,7 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const decoded = decodeURIComponent(url.pathname);
-    // Ust dizine cikis (path traversal) engellenir.
+    // Escaping to a parent directory (path traversal) is blocked.
     let rel = normalize(decoded).split(sep).filter((p) => p && p !== '..' && p !== '.').join(sep);
     let file = join(root, rel);
     if (!file.startsWith(root)) file = join(root, 'index.html');
@@ -56,7 +56,7 @@ const server = createServer(async (req, res) => {
       st = await stat(file).catch(() => null);
     }
     if (!st) {
-      res.writeHead(404).end('Bulunamadi');
+      res.writeHead(404).end('Not found');
       return;
     }
     const body = await readFile(file);
@@ -89,7 +89,7 @@ function openBrowser(url) {
   try {
     spawn(cmd[0], cmd[1], { stdio: 'ignore', detached: true }).on('error', () => {}).unref();
   } catch {
-    /* tarayici acilamazsa adres yazdirilir */
+    /* if the browser cannot be opened, the address is printed anyway */
   }
 }
 
@@ -99,16 +99,16 @@ function listen() {
       port++;
       listen();
     } else {
-      console.error('Sunucu baslatilamadi:', e.message);
+      console.error('Could not start the server:', e.message);
       process.exit(1);
     }
   });
   const lan = flag('--lan');
   server.listen(port, lan ? '0.0.0.0' : '127.0.0.1', () => {
     const url = `http://localhost:${port}/`;
-    console.log(`\n  RPG Web - Savas Studyosu\n  ${url}`);
-    if (lan) for (const ip of lanAddresses()) console.log(`  Ag (LAN) adresi: http://${ip}:${port}/   <- arkadaslarin bunu acsin`);
-    console.log('  (kapatmak icin Ctrl+C)\n');
+    console.log(`\n  RPG Web - Battle Studio\n  ${url}`);
+    if (lan) for (const ip of lanAddresses()) console.log(`  LAN address: http://${ip}:${port}/   <- your friends should open this`);
+    console.log('  (press Ctrl+C to stop)\n');
     if (flag('--open')) openBrowser(url);
   });
 }

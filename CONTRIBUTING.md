@@ -1,48 +1,51 @@
-# Katkıda bulunma
+# Contributing
 
-Projeye katkı memnuniyetle karşılanır: hata düzeltmeleri, denge/oynanış iyileştirmeleri, çeviriler, test ve
-dokümantasyon. Proje **kaynağı açık ama ticari kullanıma kapalıdır** (bkz. [`LICENSE`](LICENSE), PolyForm
-Noncommercial 1.0.0 + ek şartlar). Katkın resmi projeye gider; ticari kullanım hakkı proje sahibindedir.
+Contributions are welcome: bug fixes, balance and gameplay improvements, translations, tests and documentation. The project is
+**source-available but closed to commercial use** (see [`LICENSE`](LICENSE): PolyForm Noncommercial 1.0.0 plus additional terms).
+Your contribution goes to the official project; the right to use it commercially stays with the project owner.
 
-## Başlamadan önce
+## Before you start
 
-1. **Lisans ve CLA'yı oku:** [`LICENSE`](LICENSE), [`CLA.md`](CLA.md). Pull request açarak ve şablondaki CLA kutusunu
-   işaretleyerek CLA'yı kabul etmiş olursun. CLA'sız PR birleştirilmez.
-2. **Önce bir issue aç** (özellikle büyük değişikliklerde): ne yapmak istediğini yaz, onay al, sonra çalış. Küçük
-   hata düzeltmeleri için doğrudan PR açabilirsin.
-3. Başkasının işini (kod, görsel, ses, veri) lisansını belirtmeden ekleme. Roster kaynaklı birim verisi source terms'dır
-   ([`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)).
+1. **Read the license and the CLA:** [`LICENSE`](LICENSE) and [`CLA.md`](CLA.md). By opening a pull request and ticking the CLA
+   box in the template you accept the CLA. Pull requests without the CLA are not merged.
+2. **Open an issue first** (especially for large changes): describe what you want to do, get a go-ahead, then work on it.
+   Small bug fixes can go straight to a pull request.
+3. **Original content only.** Do not copy code, art, sound, unit names, statistics or text from other games or sources. Third-party
+   libraries must be license-compatible and listed in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-## Geliştirme
+## Development
 
 ```bash
 git clone https://github.com/gkaragoz/rpg-web-strategy.git
 cd rpg-web-strategy
 npm install
 npm run dev       # http://localhost:5173
-npm run check     # tsc --noEmit + testler (PR öncesi geçmeli)
+npm run check     # tsc --noEmit + tests (must pass before a PR)
 ```
 
-- **Kod stili:** mevcut dosyaların stiline uy (TypeScript, katı tipler, kısa Türkçe açıklayıcı yorumlar, arayüz metinleri
-  Türkçe). Gereksiz bağımlılık ekleme; yeni bağımlılık için issue'da gerekçe yaz (sabit sürüm).
-- **Simülasyon (`src/sim`) deterministiktir:** çevrimiçi mod herkesin aynı sonucu üretmesine dayanır. `Math.random`,
-  `Date.now`, `performance.now` gibi belirsiz kaynakları sim yoluna sokma; rastgelelik için `Mulberry` kullan.
-  Sim'i değiştiren PR'larda `src/sim/__tests__/determinism.test.ts` ve `net*.test.ts` geçmeli.
-- **Testler:** her hata düzeltmesi/özellik için mümkünse test ekle (`src/sim/__tests__`).
-- **Çevrimiçi/ağ kodu** (`src/net`, `src/app/online`, `relay/`): protokolü değiştirirsen `PROTOCOL` sürümünü artır.
-- **Mobil:** arayüz değişikliklerini dar ekranda (≈ 380 px, dikey ve yatay) ve dokunmatikle de dene.
+- **Code style:** follow the existing files (TypeScript, strict types, short English comments). Do not add unnecessary dependencies; for a
+  new dependency explain why in the issue (pinned version).
+- **Language:** code, comments, commit messages and documentation are in **English**. The game UI is bilingual (English + Türkçe): add UI
+  text through the tables in `src/i18n/` (both languages) and use `t('area.key')`; never hard-code UI strings. `npm test` checks that
+  both tables stay in sync. Translations into new languages are welcome (open an issue first).
+- **The simulation (`src/sim`) is deterministic:** online play relies on every client producing the same result. Do not introduce
+  nondeterministic sources such as `Math.random`, `Date.now` or `performance.now` into the simulation path; use `Mulberry` for randomness.
+  Pull requests that change the simulation must keep `src/sim/__tests__/determinism.test.ts` and the `net*.test.ts` files green.
+- **Tests:** add a test for every bug fix or feature when possible (`src/sim/__tests__`).
+- **Online / network code** (`src/net`, `src/app/online`, `relay/`): if you change the protocol, bump `PROTOCOL`.
+- **Mobile:** try UI changes on a narrow screen (≈ 380 px, portrait and landscape) and with touch.
 
-## Pull request süreci
+## Pull request process
 
-1. Fork → dal aç (`fix/...`, `feat/...`) → küçük, odaklı commit'ler.
-2. `npm run check` temiz olmalı.
-3. PR şablonunu doldur; **CLA kutusunu işaretle**.
-4. İnceleme sonrası birleştirilir. Proje sahibi katkıyı değiştirebilir veya reddedebilir.
+1. Fork → create a branch (`fix/...`, `feat/...`) → small, focused commits.
+2. `npm run check` must be clean.
+3. Fill in the pull request template and **tick the CLA box**.
+4. After review it is merged. The project owner may change or reject a contribution.
 
-## Güvenlik
+## Security
 
-Güvenlik açığı bulursan herkese açık issue açma; GitHub profilinden proje sahibine özel olarak ulaş.
+If you find a security issue, do not open a public issue; contact the project owner privately through the GitHub profile.
 
-## Davranış
+## Conduct
 
-Saygılı ol. Kişisel saldırı, taciz ve ayrımcılık kabul edilmez; bu tür davranışlar katkı hakkını sona erdirebilir.
+Be respectful. Personal attacks, harassment and discrimination are not accepted and may end your right to contribute.
