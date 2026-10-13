@@ -12,7 +12,7 @@ Browser isometric auto-battle game (PixiJS v8 + Vite + TypeScript, Vitest). Up t
 | `npm run lint:repo` | forbidden terms, Turkish-in-code, README images (`scripts/check-repo.mjs`) |
 | `npm run build` | tsc + production build into `dist/` |
 | `npm run screenshots` | rebuild + regenerate `docs/screenshots/*` and the README block (headless Chrome) |
-| `BALANCE=1 LEVEL=5 npx vitest run src/sim/__tests__/balance.test.ts` | roster win-rate table → `test-results/balance.txt` |
+| `BALANCE=1 npx vitest run src/sim/__tests__/balance.test.ts` | roster win-rate table → `test-results/balance.txt` |
 
 ## Repo map (open files by purpose; big files: search with Grep, do not read whole)
 - `src/sim/` — pure deterministic simulation (also runs in Node/tests). `battle.ts` (2.5k lines: AI, skills, physics — grep for the skill id or method), `terrain.ts` (1k, map generation), `units.ts` (stats, `KIND_OF_TROOP`, `TAG_OF`), `mapSpec.ts` (map recipes/presets), `data/troops.ts` (roster) + `data/skills.ts` (skill numbers), `testing/` (scenario + stall detector helpers), `__tests__/`.

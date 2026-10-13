@@ -211,6 +211,8 @@ const scenes = {
     await page.viewport(1600, 900);
     await page.nav(`${BASE}?lang=en`);
     await page.eval(`document.getElementById('gallery-btn').click()`);
+    await sleep(1500);
+    await page.eval(`document.querySelector('[data-r="epic"]').click()`);
     await sleep(4000);
     await page.shot('units');
   },

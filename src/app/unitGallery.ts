@@ -1,7 +1,9 @@
 import { loc, t } from '../i18n';
 import { RACE_NAMES, RARITY_NAMES, TROOP_BY_ID, type Race, type Rarity } from '../sim/data/troops';
 import { KIND_COUNT, LEGACY_COUNT, STATS, isHealer, isMelee, unitDisplayName } from '../sim/units';
+import { unitGold } from '../net/economy';
 import { trackDialog } from '../net/act';
+import { cardIcon, type CardIcon } from './cardIcons';
 import type { UnitPreview } from './unitPreview';
 import { saveState, type AppState } from './state';
 
@@ -82,20 +84,49 @@ export class UnitGallery {
     return out;
   }
 
-  private card(k: number): string {
+  /** Largest value of every stat among the listed units (bar scale). */
+  private maxima(): { hp: number; power: number; range: number; speed: number } {
+    const m = { hp: 1, power: 1, range: 1, speed: 1 };
+    for (let k = 0; k < KIND_COUNT; k++) {
+      const s = STATS[k];
+      m.hp = Math.max(m.hp, s.hp);
+      m.power = Math.max(m.power, s.power);
+      m.range = Math.max(m.range, s.range);
+      m.speed = Math.max(m.speed, s.speed);
+    }
+    return m;
+  }
+
+  private stat(cls: string, icon: CardIcon, label: string, frac: number, value: string): string {
+    const pct = Math.round(Math.min(1, Math.max(0.06, frac)) * 100);
+    return `<span class="ug-stat ${cls}">${cardIcon(icon)}<span class="ug-sl">${esc(label)}</span><span class="ug-meter"><i style="width:${pct}%"></i></span><b>${esc(value)}</b></span>`;
+  }
+
+  private card(k: number, mx: ReturnType<UnitGallery['maxima']>): string {
     const s = STATS[k];
     const tr = k >= LEGACY_COUNT ? TROOP_BY_ID[s.troop ?? ''] : undefined;
-    const role = isHealer(k) ? t('units.role.healer') : isMelee(k) ? t('units.role.melee') : t('units.role.ranged');
+    const healer = isHealer(k);
+    const role = healer ? t('units.role.healer') : isMelee(k) ? t('units.role.melee') : t('units.role.ranged');
+    const roleIcon: CardIcon = healer ? 'healer' : isMelee(k) ? 'sword' : 'bow';
     const meta = tr ? `${loc(RARITY_NAMES[tr.rarity])} · ${loc(RACE_NAMES[tr.race])}` : t('units.classic');
-    const stats = t('units.statline', { hp: Math.round(s.hp), power: Math.round(s.power), range: s.range.toFixed(1), role });
-    const skill = tr?.skillText ? `<span class="ug-skill">${esc(loc(tr.skillText))}</span>` : '';
+    const skillText = tr?.skillText ? loc(tr.skillText) : '';
+    const skill = skillText
+      ? `<span class="ug-skill">${cardIcon('star')}<span><b>${esc(t('units.skill'))}</b> ${esc(skillText)}</span></span>`
+      : `<span class="ug-skill none">${cardIcon('star')}<span>${esc(t('units.noSkill'))}</span></span>`;
     const sel = this.d.state.selKind === k;
-    const price = this.d.online ? `<span class="ug-price">${esc(t('units.gold', { n: this.d.online.cost(k) }))}</span>` : '';
+    const gold = this.d.online ? this.d.online.cost(k) : unitGold(k);
+    const price = `<span class="ug-price">${cardIcon('coin')}${esc(t('units.gold', { n: gold }))}</span>`;
+    const stats =
+      this.stat('hp', 'heart', t('units.stat.hp.label'), Math.sqrt(s.hp / mx.hp), String(Math.round(s.hp))) +
+      this.stat('pw', 'flame', t('units.stat.power.label'), Math.sqrt(s.power / mx.power), String(Math.round(s.power))) +
+      this.stat('rg', 'range', t('units.stat.range.label'), s.range / mx.range, s.range.toFixed(1)) +
+      this.stat('sp', 'bolt', t('units.stat.speed.label'), s.speed / mx.speed, s.speed.toFixed(1));
     return `<button type="button" class="ug-card r-${tr ? tr.rarity : 'legacy'}${sel ? ' sel' : ''}" data-kind="${k}" aria-pressed="${sel}">${price}
   <span class="ug-icon" data-icon="${k}"></span>
   <span class="ug-name">${esc(unitDisplayName(k))}</span>
   <span class="ug-meta">${esc(meta)}</span>
-  <span class="ug-stats">${esc(stats)}</span>${skill}
+  <span class="ug-role">${cardIcon(roleIcon, 15)}${esc(role)}</span>
+  <span class="ug-stats">${stats}</span>${skill}
 </button>`;
   }
 
@@ -112,6 +143,7 @@ export class UnitGallery {
     ].join('');
     const raceChips = [this.chip('data-c', 'all', t('units.gallery.allRaces'), this.race === 'all'), ...RACES.map((r) => this.chip('data-c', r, loc(RACE_NAMES[r]), this.race === r))].join('');
     const list = this.kinds();
+    const mx = this.maxima();
     this.dlg.innerHTML = `
 <form method="dialog">
   <header><h2>${esc(t('units.gallery.title'))}</h2><p>${esc(t('units.gallery.hint'))}</p></header>
@@ -120,7 +152,7 @@ export class UnitGallery {
     <div class="seg" role="group" aria-label="${esc(t('units.gallery.race'))}">${raceChips}</div>
     <input id="ug-search" type="search" placeholder="${esc(t('units.gallery.search'))}" value="${esc(this.query)}" aria-label="${esc(t('units.gallery.searchAria'))}" />
   </div>
-  <div class="ug-grid">${list.map((k) => this.card(k)).join('') || `<p class="note">${esc(t('units.gallery.none'))}</p>`}</div>
+  <div class="ug-grid">${list.map((k) => this.card(k, mx)).join('') || `<p class="note">${esc(t('units.gallery.none'))}</p>`}</div>
   <footer><span class="note">${esc(t('units.gallery.footer', { n: list.length, name: STATS[s.selKind] ? unitDisplayName(s.selKind) : '' }))}</span><button type="submit" class="primary">${esc(t('units.close'))}</button></footer>
 </form>`;
 

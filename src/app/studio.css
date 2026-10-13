@@ -829,15 +829,113 @@ input[type='range'] {
 .ug-name {
   font-weight: 600;
 }
-.ug-meta,
-.ug-stats,
-.ug-skill {
+.ug-meta {
   font-size: 11.5px;
   opacity: 0.75;
 }
+.ug-card {
+  position: relative;
+  width: 100%;
+}
+.ug-price {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #f6d27a;
+  background: rgba(10, 14, 22, 0.78);
+  border: 1px solid rgba(246, 210, 122, 0.35);
+  border-radius: 99px;
+}
+.ug-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 3px 0 2px;
+  padding: 2px 8px 2px 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: #243148;
+  border-radius: 99px;
+}
+.ug-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  margin-top: 2px;
+}
+.ug-stat {
+  display: grid;
+  grid-template-columns: 14px 44px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+.ug-stat .ug-sl {
+  opacity: 0.75;
+}
+.ug-stat b {
+  font-weight: 600;
+  text-align: right;
+}
+.ug-stat .ug-meter {
+  display: block;
+  height: 6px;
+  padding: 0;
+  overflow: hidden;
+  background: #0f1622;
+  border-radius: 3px;
+}
+.ug-stat .ug-meter i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: currentColor;
+}
+.ug-stat.hp {
+  color: #e8574f;
+}
+.ug-stat.pw {
+  color: #f0a030;
+}
+.ug-stat.rg {
+  color: #4a9be8;
+}
+.ug-stat.sp {
+  color: #3dbb8a;
+}
+.ug-stat .ug-sl,
+.ug-stat b {
+  color: var(--text);
+}
+.ci {
+  flex: none;
+}
 .ug-skill {
-  opacity: 0.9;
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 5px;
+  font-size: 11.5px;
+  line-height: 1.35;
   color: #f0c870;
+}
+.ug-skill .ci {
+  margin-top: 1px;
+}
+.ug-skill b {
+  font-weight: 600;
+}
+.ug-skill.none {
+  color: var(--text);
+  opacity: 0.45;
 }
 
 /* ---- Unit settings: wide window, rows with previews, fixed header ---- */
@@ -1666,6 +1764,16 @@ button.on {
   .ug-card {
     padding: 6px 8px;
     font-size: 12px;
+  }
+  .ug-stat {
+    grid-template-columns: 13px 38px minmax(0, 1fr) 30px;
+    gap: 4px;
+    font-size: 10.5px;
+  }
+  .ug-price {
+    top: 6px;
+    right: 6px;
+    font-size: 10.5px;
   }
   .ug-bar {
     padding: 8px 10px 0;
