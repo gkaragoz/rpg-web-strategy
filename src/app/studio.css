@@ -1358,3 +1358,10 @@ button.on {
 .on-ig-line.gone {
   opacity: 0;
 }
+.on-ig-btn {
+  pointer-events: auto;
+  margin-top: 4px;
+  padding: 3px 10px;
+  font-size: 12px;
+  opacity: 0.75;
+}
