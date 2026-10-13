@@ -36,6 +36,9 @@ export interface PlacedUnit {
   kind: number;
   x: number;
   y: number;
+  /** Cevrimici: host'un verdigi birim kimligi ve bekleyen istemci kimligi. */
+  id?: number;
+  cid?: number;
 }
 
 /** Gorunum ve ses secenekleri. */
@@ -79,6 +82,10 @@ export interface AppState {
   stats: StatOverrides;
   options: Options;
   units: PlacedUnit[];
+  /** Cevrimici yerlestirme gibi gecici durumlar localStorage'a yazilmaz. */
+  ephemeral?: boolean;
+  /** Takim renkleri (palet yerine); cevrimicide oyuncu renkleri. */
+  customColors?: TeamColors[];
   /** Hic kaydedilmis kurulum yoksa ilk acilista hizli dizilim kurulur. */
   fresh: boolean;
   /** Tur tablosu surumu (KINDS_VER). */
@@ -126,6 +133,16 @@ export function paletteById(id: string): PaletteSet {
 }
 
 /** Secili palet ve takim sayisi icin takim renk ciftleri. */
+/** Durumun takim renkleri: ozel renkler varsa onlar, yoksa palet. */
+export function colorsOf(s: AppState): TeamColors[] {
+  return s.customColors ?? teamColors(s.palette, s.teamCount);
+}
+
+/** Tek bir ana renkten takim rengi (koyu ton turetilir). */
+export function makeTeamColor(main: number): TeamColors {
+  return { main, dark: darken(main, 0.55) };
+}
+
 export function teamColors(paletteId: string, count: number): TeamColors[] {
   const p = paletteById(paletteId);
   return Array.from({ length: Math.min(MAX_TEAMS, Math.max(1, count)) }, (_, i) => ({
@@ -211,6 +228,7 @@ export function loadState(): AppState {
 let saveTimer: number | undefined;
 /** Kaydi biraz geciktirir (surukleyerek boyarken her adimda yazmasin). */
 export function saveState(s: AppState): void {
+  if (s.ephemeral) return;
   window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => {
     try {

@@ -2,6 +2,7 @@ import { Application, Container, Rectangle } from 'pixi.js';
 import './app/studio.css';
 import { BattleScene, type BattleOptions } from './app/battle';
 import { Editor } from './app/editor';
+import { OnlineApp } from './app/online/online';
 import { loadState, saveState, teamColors } from './app/state';
 import { Studio } from './app/studio';
 import { WorldView } from './app/world';
@@ -9,7 +10,7 @@ import { Camera } from './camera';
 import { bakeAtlas, type Atlas } from './render/atlas';
 import { AudioSystem } from './render/audio';
 import { comedy } from './render/comedy';
-import { POSE_STATES, UnitView } from './render/unitView';
+import { POSE_STATES, UnitView, type TeamColors } from './render/unitView';
 import type { BattleConfig } from './sim/battle';
 import { KIND_OF_TROOP, LEGACY_COUNT, STATS, setUnitLevel } from './sim/units';
 import { StatsPanel } from './ui/stats';
@@ -154,7 +155,10 @@ const battle = new BattleScene({
     return state.options.sound;
   },
 });
-let mode: 'studio' | 'battle' = 'studio';
+let mode: 'studio' | 'battle' | 'online' = 'studio';
+let online: OnlineApp | null = null;
+/** Cevrimici mod: simge renkleri (null: stüdyo paleti). */
+let iconColors: TeamColors[] | null = null;
 
 function studioConfig(): BattleConfig {
   return { mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, terrainSeed: state.seed, map: state.map, level: state.level, comedy: comedyPhysicsOn(), stats: state.stats };
@@ -229,8 +233,8 @@ function ensureAtlas(): void {
 const iconCache = new Map<string, HTMLCanvasElement>();
 /** Birim simgesi: UnitView'den bir kez cizilip onbellege alinir; her cagrida kopya doner. */
 function renderIcon(kind: number, team: number): HTMLCanvasElement {
-  const colors = teamColors(state.palette, state.teamCount);
-  const key = `${kind}:${team}:${state.palette}:${state.level}`;
+  const colors = iconColors ?? teamColors(state.palette, state.teamCount);
+  const key = `${kind}:${team}:${iconColors ? iconColors.map((c) => c.main).join('.') : state.palette}:${state.level}`;
   let src = iconCache.get(key);
   if (!src) {
     const W = 120;
@@ -266,6 +270,7 @@ studio = new Studio(studioRoot, {
   onMapChange,
   onPaletteChange,
   onStart: () => void startBattle(),
+  onOnline: () => startOnline(),
   onOptions: applyOptions,
   icon: renderIcon,
   onLevel: () => {
@@ -349,6 +354,55 @@ async function startBench(): Promise<void> {
   mode = 'battle';
 }
 
+// ---- Cevrimici ----
+
+function startOnline(joinCode?: string): void {
+  if (online) return;
+  saveState(state);
+  studio.hide();
+  editor.exit();
+  mode = 'online';
+  const app2 = online = new OnlineApp({
+    app,
+    world,
+    camera,
+    battle,
+    stats,
+    bake: (colors, biome, kinds) => {
+      const old = atlas;
+      atlasBiome = biome;
+      atlas = bakeAtlas(app.renderer, colors, biome, kinds);
+      world.setAtlas(atlas, true);
+      old.dispose();
+    },
+    getAtlas,
+    setIconColors: (c) => {
+      iconColors = c;
+      iconCache.clear();
+    },
+    icon: renderIcon,
+    battleDefaults: () => ({ fx: state.options.fx, numbers: state.options.numbers }),
+    setComedyVisual: (on) => {
+      comedy.visual = on ?? comedyVisualOn();
+    },
+    onExit: () => {
+      online = null;
+      iconColors = null;
+      rebakeAtlas();
+      applyOptions();
+      setUnitLevel(state.level);
+      mode = 'studio';
+      rebuildWorld(false);
+      camera.fit(app.screen.width, app.screen.height);
+      stats.setShown(false);
+      studio.show();
+      editor.enter();
+      if (location.hash.startsWith('#join=')) history.replaceState(null, '', location.pathname + location.search);
+    },
+  });
+  app2.openMenu(joinCode);
+}
+
 // ---- Ana dongu ----
 
 let last = performance.now();
@@ -356,6 +410,10 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
   const frameMs = now - last;
   last = now;
+  if (mode === 'online' && online) {
+    online.frame(now, frameMs);
+    return;
+  }
   if (mode === 'battle') {
     battle.frame(now, frameMs);
     return;
@@ -381,6 +439,8 @@ if (isBench) {
   stats.setShown(false);
   studio.show();
   editor.enter();
+  const joinHash = /^#join=([A-Za-z0-9]{4,8})$/.exec(location.hash);
+  if (joinHash) startOnline(joinHash[1].toUpperCase());
 }
 loading?.remove();
 requestAnimationFrame(frame);

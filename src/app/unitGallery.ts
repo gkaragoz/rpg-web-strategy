@@ -1,5 +1,6 @@
 import { RACE_NAMES, RARITY_NAMES, TROOP_BY_ID, type Race, type Rarity } from '../sim/data/troops';
 import { KIND_COUNT, LEGACY_COUNT, MAX_LEVEL, STATS, isHealer, isMelee } from '../sim/units';
+import { trackDialog } from '../net/act';
 import { saveState, type AppState } from './state';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -18,6 +19,8 @@ export interface GalleryDeps {
   onLevel: () => void;
   /** Birim secildi (atlas gerekiyorsa pisirilir). */
   onPick: (kind: number) => void;
+  /** Cevrimici: birim gold maliyeti ve kapali nadirlikler; seviye secici gizlenir. */
+  online?: { cost(kind: number): number; banned(): string[] };
 }
 
 /** Birim galerisi: nadirlik/irk filtreli, aramali, simgeli kart listesi + seviye secici. */
@@ -26,12 +29,14 @@ export class UnitGallery {
   private rarity: RarityFilter = 'all';
   private race: RaceFilter = 'all';
   private query = '';
+  private readonly actTrack: { open(): void };
 
   constructor(private readonly d: GalleryDeps) {
     this.dlg = document.createElement('dialog');
     this.dlg.className = 'unit-dialog gallery-dialog';
     this.dlg.setAttribute('aria-label', 'Birim galerisi');
     document.body.appendChild(this.dlg);
+    this.actTrack = trackDialog(this.dlg, 'Birim seçiyor');
     this.dlg.addEventListener('click', (e) => {
       if (e.target === this.dlg) this.dlg.close();
     });
@@ -39,6 +44,7 @@ export class UnitGallery {
 
   open(): void {
     this.render();
+    this.actTrack.open();
     if (!this.dlg.open) this.dlg.showModal();
   }
 
@@ -53,6 +59,7 @@ export class UnitGallery {
     for (let k = 0; k < KIND_COUNT; k++) {
       const t = k >= LEGACY_COUNT ? TROOP_BY_ID[STATS[k].troop ?? ''] : undefined;
       if (t?.summoned) continue; // iskelet yalniz Bone Caller ile gelir
+      if (this.d.online && t && this.d.online.banned().includes(t.rarity)) continue;
       if (this.rarity === 'legacy') {
         if (k >= LEGACY_COUNT) continue;
       } else if (this.rarity !== 'all') {
@@ -73,7 +80,8 @@ export class UnitGallery {
     const stats = `Can ${Math.round(s.hp)} · Güç ${Math.round(s.power)} · Menzil ${s.range.toFixed(1)} · ${role}`;
     const skill = t?.skillText ? `<span class="ug-skill">${esc(t.skillText)}</span>` : '';
     const sel = this.d.state.selKind === k;
-    return `<button type="button" class="ug-card r-${t ? t.rarity : 'legacy'}${sel ? ' sel' : ''}" data-kind="${k}" aria-pressed="${sel}">
+    const price = this.d.online ? `<span class="ug-price">${this.d.online.cost(k)} gold</span>` : '';
+    return `<button type="button" class="ug-card r-${t ? t.rarity : 'legacy'}${sel ? ' sel' : ''}" data-kind="${k}" aria-pressed="${sel}">${price}
   <span class="ug-icon" data-icon="${k}"></span>
   <span class="ug-name">${esc(s.name)}</span>
   <span class="ug-meta">${esc(meta)}</span>
@@ -101,7 +109,7 @@ export class UnitGallery {
   <div class="ug-bar">
     <div class="seg" role="group" aria-label="Nadirlik">${rarityChips}</div>
     <div class="seg" role="group" aria-label="Irk">${raceChips}</div>
-    <label class="ug-field">Seviye <select id="ug-level">${levels}</select></label>
+    ${this.d.online ? '' : `<label class="ug-field">Seviye <select id="ug-level">${levels}</select></label>`}
     <input id="ug-search" type="search" placeholder="Ara…" value="${esc(this.query)}" aria-label="Birim ara" />
   </div>
   <div class="ug-grid">${list.map((k) => this.card(k)).join('') || '<p class="note">Eşleşen birim yok.</p>'}</div>
@@ -129,7 +137,7 @@ export class UnitGallery {
       again.focus();
       again.setSelectionRange(pos, pos);
     });
-    this.dlg.querySelector('#ug-level')!.addEventListener('change', (e) => {
+    this.dlg.querySelector('#ug-level')?.addEventListener('change', (e) => {
       s.level = Number((e.target as HTMLSelectElement).value);
       saveState(s);
       this.d.onLevel();

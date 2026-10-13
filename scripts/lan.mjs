@@ -145,9 +145,12 @@ export function attachLan(server) {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const key = req.headers['sec-websocket-key'];
     if (url.pathname !== '/ws' || !key || String(req.headers.upgrade ?? '').toLowerCase() !== 'websocket') {
-      socket.destroy();
+      // Baska dinleyici (Vite HMR) varsa onlara birak; yoksa baglantiyi kapat.
+      socket.on('error', () => {});
+      if (server.listenerCount('upgrade') <= 1) socket.destroy();
       return;
     }
+    socket.on('error', () => {});
     const accept = createHash('sha1')
       .update(key + GUID)
       .digest('base64');

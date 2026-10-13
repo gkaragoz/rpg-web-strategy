@@ -13,6 +13,8 @@ export interface StudioDeps {
   /** Takim sayisi veya palet degisti (atlas yeniden pisirilir, sprite'lar yenilenir). */
   onPaletteChange: () => void;
   onStart: () => void;
+  /** Cevrimici mod menusu. */
+  onOnline?: () => void;
   onBench: (perTeam: number) => void;
   /** Gorunum/ses secenekleri degisti (ses ve cubuk modu hemen uygulanir). */
   onOptions: () => void;
@@ -156,6 +158,7 @@ export class Studio {
     <span id="total" class="total">0 / ${MAX_PLACED}</span>
     <button id="tgl-left" type="button" class="only-narrow">Ayarlar</button>
     <button id="tgl-right" type="button" class="only-narrow">Takımlar</button>
+    <button id="online" type="button" title="Arkadaşlarınla çevrimiçi oyna (lobi kur / katıl)">Çevrimiçi</button>
     <button id="start" type="button" class="primary">Savaşı başlat</button>
   </div>
   <div class="dock-hint" id="hint">Sol tık: yerleştir · Sağ tık: sil · Shift+sağ tık: yalnız seçili takım · Tekerlek: yakınlaş · WASD / orta tuş: kaydır · Q/E: takım · 1-5: tür · Z/Y: geri al/yinele</div>
@@ -224,6 +227,7 @@ export class Studio {
       this.render();
     });
     this.$('#bench').addEventListener('click', () => this.d.onBench(s.benchPerTeam));
+    this.$('#online').addEventListener('click', () => this.d.onOnline?.());
     $in('#snd').addEventListener('change', (e) => {
       s.options.sound = (e.target as HTMLInputElement).checked;
       this.optionsChanged();

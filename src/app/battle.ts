@@ -39,6 +39,17 @@ export interface BattleOptions {
   debug?: boolean;
   /** Savastan stüdyoya don. */
   onEdit: () => void;
+  /** Cevrimici (lockstep) sim; verilirse BattleScene kendi sim'ini kurmaz. */
+  sim?: SimBackend;
+  /** Cevrimici mac: kontroller kilitli (hiz/duraklat yalniz host), oyuncu adlari, cikis/rovans. */
+  online?: {
+    isHost: boolean;
+    teamNames: string[];
+    getSpeed: () => number;
+    getPaused: () => boolean;
+    onLeave: () => void;
+    onRematch?: () => void;
+  };
 }
 
 export interface BattleDeps {
@@ -114,7 +125,7 @@ export class BattleScene {
     this.resetBenchStats();
 
     const cfg = opts.config;
-    this.sim = opts.useWorker ? await WorkerSim.create(cfg, this.seed) : new InlineSim(cfg, this.seed);
+    this.sim = opts.sim ?? (opts.useWorker ? await WorkerSim.create(cfg, this.seed) : new InlineSim(cfg, this.seed));
     this.sim.setSpeed(this.speed);
 
     const unitCount = this.sim.units.count;
@@ -240,10 +251,16 @@ export class BattleScene {
   <button type="button" id="hud-restart">Yeniden başlat</button>
   <button type="button" id="hud-edit" class="primary">Düzenle</button>
 </div>
-<div class="hud-hint">Space: duraklat · R: yeniden başlat · Esc: düzenle · 1-2-3: hız · F3: istatistik · WASD / orta tuş: kaydır · tekerlek: yakınlaş</div>
+<div class="hud-hint">${this.opts.online ? (this.opts.online.isHost ? 'Space: duraklat · 1-2-3: hız (yalnız host) · ' : 'Hız ve duraklatma yalnız host’ta · ') + 'F3: istatistik · WASD / orta tuş: kaydır · tekerlek: yakınlaş' : 'Space: duraklat · R: yeniden başlat · Esc: düzenle · 1-2-3: hız · F3: istatistik · WASD / orta tuş: kaydır · tekerlek: yakınlaş'}</div>
 <div class="result" id="hud-result" hidden></div>`;
     const q = (s: string) => root.querySelector(s) as HTMLElement;
     q('#hud-pause').addEventListener('click', () => this.togglePause());
+    if (this.opts.online) {
+      // Cevrimici: yalniz Ses, Komedi gorunumu, Tam ekran ve Ayril kalir.
+      for (const id of ['#hud-restart', '#hud-debug', '#hud-cp']) q(id).hidden = true;
+      q('#hud-edit').textContent = 'Lobiye dön';
+      q('#hud-edit').addEventListener('click', () => this.opts.online!.onLeave());
+    }
     const cv = q('#hud-cv');
     const paintCv = (on: boolean): void => {
       cv.textContent = on ? 'Komedi görünümü: açık' : 'Komedi görünümü: kapalı';
@@ -280,10 +297,14 @@ export class BattleScene {
   private renderSpeed(): void {
     const el = this.d.hudRoot.querySelector('#hud-speed') as HTMLElement | null;
     if (!el) return;
-    el.innerHTML = [1, 2, 4].map((v) => `<button type="button" data-v="${v}" aria-pressed="${v === this.speed}">${v}×</button>`).join('');
+    const locked = !!this.opts.online && !this.opts.online.isHost;
+    el.innerHTML = [1, 2, 4].map((v) => `<button type="button" data-v="${v}" aria-pressed="${v === this.speed}"${locked ? ' disabled title="Hızı yalnız host değiştirir"' : ''}>${v}×</button>`).join('');
     el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => this.setSpeed(Number((b as HTMLElement).dataset.v))));
-    const p = this.d.hudRoot.querySelector('#hud-pause');
-    if (p) p.textContent = this.paused ? 'Devam' : 'Duraklat';
+    const p = this.d.hudRoot.querySelector('#hud-pause') as HTMLButtonElement | null;
+    if (p) {
+      p.textContent = this.paused ? 'Devam' : 'Duraklat';
+      p.disabled = locked;
+    }
   }
 
   private updateHud(force = false): void {
@@ -300,7 +321,8 @@ export class BattleScene {
         .map((c, t) => {
           const n = this.sim.alivePerTeam[t];
           const pct = Math.round(Math.min(1, hp[t] / Math.max(1, this.initialHp[t])) * 100);
-          return `<span class="hud-team${n === 0 ? ' out' : ''}" style="background:${hex(c.main)}22;color:${hex(c.main)}" title="Takım ${t + 1}: ${n} asker, güç %${pct}"><i class="dot" style="background:${hex(c.main)}"></i>${n}<span class="hud-bar"><i style="width:${pct}%;background:${hex(c.main)}"></i></span></span>`;
+          const nm = this.opts.online ? `<b class="hud-name">${this.opts.online.teamNames[t] ?? ''}</b>` : '';
+          return `<span class="hud-team${n === 0 ? ' out' : ''}" style="background:${hex(c.main)}22;color:${hex(c.main)}" title="Takım ${t + 1}: ${n} asker, güç %${pct}"><i class="dot" style="background:${hex(c.main)}"></i>${nm}${n}<span class="hud-bar"><i style="width:${pct}%;background:${hex(c.main)}"></i></span></span>`;
         })
         .join('');
     }
@@ -315,19 +337,29 @@ export class BattleScene {
       const losses = this.opts.colors
         .map((cc, t) => `<span style="color:${hex(cc.main)}">T${t + 1}: ${this.initialAlive[t] - this.sim.alivePerTeam[t]}/${this.initialAlive[t]}</span>`)
         .join(' · ');
-      res.innerHTML = `<div><h2 style="color:${color}">${w >= 0 ? `Takım ${w + 1} kazandı` : 'Berabere'}</h2><p>Süre ${dur} · Kayıp ${losses}</p><div class="btns"><button type="button" id="res-restart">Yeniden oyna</button><button type="button" id="res-edit" class="primary">Düzenle</button></div></div>`;
-      document.getElementById('res-restart')!.addEventListener('click', () => void this.restart());
-      document.getElementById('res-edit')!.addEventListener('click', () => this.opts.onEdit());
+      const on = this.opts.online;
+      const winName = w >= 0 ? (on?.teamNames[w] ?? `Takım ${w + 1}`) : '';
+      if (on) {
+        res.innerHTML = `<div><h2 style="color:${color}">${w >= 0 ? `${winName} kazandı` : 'Berabere'}</h2><p>Süre ${dur} · Kayıp ${losses}</p><div class="btns">${on.onRematch ? '<button type="button" id="res-restart" class="primary">Rövanş (yeni tur)</button>' : '<span class="note">Host yeni tur başlatabilir.</span>'}<button type="button" id="res-edit">Lobiye dön</button></div></div>`;
+        document.getElementById('res-restart')?.addEventListener('click', () => on.onRematch?.());
+        document.getElementById('res-edit')!.addEventListener('click', () => on.onLeave());
+      } else {
+        res.innerHTML = `<div><h2 style="color:${color}">${w >= 0 ? `Takım ${w + 1} kazandı` : 'Berabere'}</h2><p>Süre ${dur} · Kayıp ${losses}</p><div class="btns"><button type="button" id="res-restart">Yeniden oyna</button><button type="button" id="res-edit" class="primary">Düzenle</button></div></div>`;
+        document.getElementById('res-restart')!.addEventListener('click', () => void this.restart());
+        document.getElementById('res-edit')!.addEventListener('click', () => this.opts.onEdit());
+      }
     }
   }
 
   private setSpeed(v: number): void {
+    if (this.opts.online && !this.opts.online.isHost) return;
     this.speed = v;
     this.sim.setSpeed(v);
     this.renderSpeed();
   }
 
   private togglePause(): void {
+    if (this.opts.online && !this.opts.online.isHost) return;
     this.paused = !this.paused;
     this.sim.setPaused(this.paused);
     this.renderSpeed();
@@ -335,6 +367,21 @@ export class BattleScene {
 
   private onKey(e: KeyboardEvent): void {
     const bench = this.opts.bench;
+    const on = this.opts.online;
+    if (on) {
+      // Cevrimici: yeniden baslat/duzenle/debug yok; hiz ve duraklatma yalniz host'ta.
+      if (e.code === 'F3') {
+        e.preventDefault();
+        this.d.stats.toggle();
+      } else if (e.code === 'KeyK') this.paintComedy?.(this.d.toggleComedyVisual());
+      else if (on.isHost && e.code === 'Space') {
+        e.preventDefault();
+        this.togglePause();
+      } else if (on.isHost && e.code === 'Digit1') this.setSpeed(1);
+      else if (on.isHost && e.code === 'Digit2') this.setSpeed(2);
+      else if (on.isHost && e.code === 'Digit3') this.setSpeed(4);
+      return;
+    }
     if (e.code === 'KeyR') void this.restart();
     else if (e.code === 'F3') {
       e.preventDefault();
@@ -384,6 +431,16 @@ export class BattleScene {
     if (this.resetting) return;
     const { camera, app, world, stats } = this.d;
 
+    const on = this.opts.online;
+    if (on && !on.isHost) {
+      const sp = on.getSpeed();
+      const pa = on.getPaused();
+      if (sp !== this.speed || pa !== this.paused) {
+        this.speed = sp;
+        this.paused = pa;
+        this.renderSpeed();
+      }
+    }
     camera.update(dt);
     camera.apply(world.root, app.screen.width, app.screen.height);
 

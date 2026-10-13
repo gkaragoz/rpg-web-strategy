@@ -5,7 +5,7 @@ import type { Atlas } from '../render/atlas';
 import { KIND_COUNT, MAX_TEAMS, STATS } from '../sim/units';
 import { composeArmy, composeFromKind, type Lane } from './armies';
 import { POSES } from '../render/unitView';
-import { BRUSHES, MAX_PLACED, saveState, teamColors, type AppState, type PlacedUnit } from './state';
+import { BRUSHES, MAX_PLACED, colorsOf, saveState, type AppState, type PlacedUnit } from './state';
 import type { WorldView } from './world';
 
 interface Op {
@@ -221,6 +221,7 @@ export class Editor {
       this.stroke!.units.push(u);
     }
     saveState(s);
+    this.sync?.added(added);
     this.d.onChange();
   }
 
@@ -241,6 +242,7 @@ export class Editor {
       this.stroke!.units.push(u);
     }
     saveState(s);
+    this.sync?.removed(removed);
     this.d.onChange();
   }
 
@@ -256,7 +258,7 @@ export class Editor {
     const { x, y } = this.cursor;
     const cx = isoX(x, y);
     const cy = isoY(x, y, this.elevAt(x, y));
-    const colors = teamColors(s.palette, s.teamCount);
+    const colors = colorsOf(s);
     const col = erase ? 0xffffff : colors[Math.min(s.selTeam, colors.length - 1)].main;
     const bad = !erase && br.count === 1 && !this.isValid(x, y);
     const radius = erase ? (br.count === 1 ? 0.9 : br.radius) : br.radius;
@@ -331,11 +333,13 @@ export class Editor {
       const set = new Set(op.units);
       s.units = s.units.filter((u) => !set.has(u));
       for (const u of op.units) this.dropSprite(u);
+      this.sync?.removed(op.units);
     } else {
       for (const u of op.units) {
         s.units.push(u);
         this.addSprite(u);
       }
+      this.sync?.added(op.units);
     }
     saveState(s);
     this.d.onChange();
@@ -361,6 +365,7 @@ export class Editor {
     this.undoStack.push({ type: 'remove', units: removed });
     this.redoStack = [];
     saveState(s);
+    this.sync?.removed(removed);
     this.d.onChange();
     return removed.length;
   }
@@ -447,6 +452,18 @@ export class Editor {
 
   /** Cevrimici yerlestirme kisiti (null: serbest stüdyo). */
   constraint: PlacementConstraint | null = null;
+  /** Cevrimici esleme: her ekleme/silme (firca, geri al, formasyon...) icin cagrilir. */
+  sync: { added(units: PlacedUnit[]): void; removed(units: PlacedUnit[]): void } | null = null;
+
+  /** Birimleri bildirim gondermeden kaldirir (host reddetti). */
+  removeSilently(units: PlacedUnit[]): void {
+    const set = new Set(units);
+    this.d.state.units = this.d.state.units.filter((u) => !set.has(u));
+    for (const u of units) this.dropSprite(u);
+    this.undoStack = this.undoStack.filter((op) => !op.units.some((u) => set.has(u)));
+    this.redoStack = [];
+    this.d.onChange();
+  }
 
   private addMany(added: PlacedUnit[]): void {
     if (this.constraint) {
@@ -468,6 +485,7 @@ export class Editor {
     this.undoStack.push({ type: 'add', units: added });
     this.redoStack = [];
     saveState(s);
+    this.sync?.added(added);
     this.d.onChange();
   }
 

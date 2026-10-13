@@ -1,5 +1,6 @@
 import { RACE_NAMES, RARITY_NAMES, TROOP_BY_ID, type Rarity } from '../sim/data/troops';
 import { DEFAULT_STATS, KIND_COUNT, LEGACY_COUNT, STATS, TUNABLE, isTank, type StatKey } from '../sim/units';
+import { trackDialog } from '../net/act';
 import { saveState, type AppState } from './state';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -9,6 +10,7 @@ const RARITY_ORDER: Rarity[] = ['common', 'rare', 'epic', 'legendary'];
 /** Birim ayarlari penceresi: her satir bir birim; can, hiz, guc, bekleme, menzil, zirh, itme. */
 export class UnitSettings {
   private readonly dlg: HTMLDialogElement;
+  private readonly actTrack: { open(): void };
 
   constructor(
     private readonly state: AppState,
@@ -19,6 +21,7 @@ export class UnitSettings {
     this.dlg.className = 'unit-dialog unit-settings';
     this.dlg.setAttribute('aria-label', 'Birim ayarları');
     document.body.appendChild(this.dlg);
+    this.actTrack = trackDialog(this.dlg, 'Birim ayarları');
     this.dlg.addEventListener('click', (e) => {
       if (e.target === this.dlg) this.dlg.close();
     });
@@ -33,6 +36,7 @@ export class UnitSettings {
 
   open(): void {
     this.render();
+    this.actTrack.open();
     if (!this.dlg.open) this.dlg.showModal();
   }
 

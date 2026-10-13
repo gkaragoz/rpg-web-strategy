@@ -34,6 +34,10 @@ export class LockstepRunner {
   paused = false;
   /** Teshis: son yeniden senkron sayisi. */
   resyncs = 0;
+  /** Cizim interpolasyonu icin adim kesri (0..1). */
+  get alpha(): number {
+    return this.paused || (!this.opts.host && this.model.paused) ? 1 : Math.min(1, this.acc / SIM_DT);
+  }
 
   constructor(
     readonly sim: SimLike,

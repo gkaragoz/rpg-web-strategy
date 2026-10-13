@@ -21,6 +21,7 @@ import {
 } from '../sim/mapSpec';
 import { mulberry32 } from '../sim/random';
 import { T_BLOCKED, T_BRIDGE, T_GRASS, T_PATH, T_WATER, Terrain } from '../sim/terrain';
+import { trackDialog } from '../net/act';
 import { hex, saveState, type AppState } from './state';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -98,15 +99,19 @@ export function drawMinimap(canvas: HTMLCanvasElement, spec: MapSpec, seed: numb
 export class MapPicker {
   private readonly dlg: HTMLDialogElement;
   private filter: Biome | 'all' = 'all';
+  private readonly actTrack: { open(): void };
 
   constructor(
     private readonly state: AppState,
     private readonly onChange: () => void,
+    /** false: secimler localStorage'a yazilmaz (cevrimici lobi). */
+    private readonly persist = true,
   ) {
     this.dlg = document.createElement('dialog');
     this.dlg.className = 'unit-dialog map-dialog';
     this.dlg.setAttribute('aria-label', 'Harita seç');
     document.body.appendChild(this.dlg);
+    this.actTrack = trackDialog(this.dlg, 'Harita seçiyor');
     this.dlg.addEventListener('click', (e) => {
       if (e.target === this.dlg) this.dlg.close();
     });
@@ -122,6 +127,7 @@ export class MapPicker {
 
   open(): void {
     this.render();
+    this.actTrack.open();
     if (!this.dlg.open) this.dlg.showModal();
   }
 
@@ -150,7 +156,7 @@ export class MapPicker {
   }
 
   private commit(): void {
-    saveState(this.state);
+    if (this.persist) saveState(this.state);
     this.render();
     this.onChange();
   }
