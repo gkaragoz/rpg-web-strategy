@@ -17,6 +17,7 @@ import type { BattleOptions, BattleScene } from '../battle';
 import { makeTeamColor } from '../state';
 import type { WorldView } from '../world';
 import { ConnBadge } from './badge';
+import type { UnitPreview } from '../unitPreview';
 import { ChatOverlay } from './chat';
 import { CursorLayer, playerColor } from './cursors';
 import { Placement } from './placement';
@@ -69,6 +70,8 @@ export interface OnlineEnv {
   /** Temporary team colors for unit icons (null: normal). */
   setIconColors(c: TeamColors[] | null): void;
   icon(kind: number, team: number): HTMLCanvasElement;
+  /** Shared attack-preview player for the unit gallery. */
+  preview?: UnitPreview;
   battleDefaults(): Pick<BattleOptions, 'fx' | 'numbers'>;
   /** Leave online mode and return to the studio. */
   onExit(reopenMenu?: boolean): void;
@@ -431,6 +434,7 @@ export class OnlineApp {
         getAtlas: () => env.getAtlas(),
         ensureAtlas: (kinds) => this.ensureKinds(kinds),
         icon: (k, t) => env.icon(k, t),
+        preview: env.preview,
         toast: (m) => this.toast(m),
         root: this.root,
       },

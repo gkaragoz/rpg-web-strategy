@@ -10,6 +10,7 @@ import type { Atlas } from '../../render/atlas';
 import { POSES, type TeamColors } from '../../render/unitView';
 import { KIND_OF_TROOP, LEGACY_COUNT, MAX_TEAMS, STATS, unitDisplayName } from '../../sim/units';
 import { initSheet } from '../sheet';
+import type { UnitPreview } from '../unitPreview';
 import { Editor } from '../editor';
 import { UnitGallery } from '../unitGallery';
 import { BRUSHES, defaultState, hex, type AppState, type PlacedUnit } from '../state';
@@ -26,6 +27,7 @@ export interface PlacementEnv {
   /** Re-bakes the atlas if a texture for the given kinds is missing; returns true if it did. */
   ensureAtlas: (kinds: Set<number>) => boolean;
   icon: (kind: number, team: number) => HTMLCanvasElement;
+  preview?: UnitPreview;
   toast: (msg: string) => void;
   /** Root element for the screen layout (top strip + dock). */
   root: HTMLElement;
@@ -104,6 +106,7 @@ export class Placement {
       this.gallery = new UnitGallery({
         state: this.state,
         icon: env.icon,
+        preview: env.preview,
         onLevel: () => {},
         onPick: () => {
           this.ensureKinds();

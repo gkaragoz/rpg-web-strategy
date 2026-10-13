@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import type { UnitPreview } from './unitPreview';
 import { initSheet } from './sheet';
 import { LEGACY_COUNT, MAX_TEAMS, unitDisplayName } from '../sim/units';
 import type { Editor } from './editor';
@@ -22,6 +23,8 @@ export interface StudioDeps {
   onOptions: () => void;
   /** Unit icon (a copy of the canvas). */
   icon: (kind: number, team: number) => HTMLCanvasElement;
+  /** Animated attack previews for the unit gallery. */
+  preview?: UnitPreview;
   /** Roster unit level changed. */
   onLevel: () => void;
   /** A new type was picked: the atlas is baked if needed. */
@@ -49,6 +52,7 @@ export class Studio {
     this.gallery = new UnitGallery({
       state: d.state,
       icon: d.icon,
+      preview: d.preview,
       onLevel: () => {
         d.onLevel();
         this.render();

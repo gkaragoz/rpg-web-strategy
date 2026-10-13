@@ -2,6 +2,7 @@ import { Application, Container, Rectangle } from 'pixi.js';
 import { getLang, t } from './i18n';
 import { startBottomStack } from './app/bottomStack';
 import { mountLangPicker } from './app/langPicker';
+import { UnitPreview, type FrameJob } from './app/unitPreview';
 import './app/studio.css';
 import { BattleScene, type BattleOptions } from './app/battle';
 import { Editor } from './app/editor';
@@ -236,7 +237,7 @@ function rebakeAtlas(): void {
   world.setAtlas(atlas, true);
   editor.refreshSprites();
   old.dispose();
-  iconCache.clear();
+  clearIcons();
 }
 
 /** Re-bakes the atlas if the textures of the needed types are missing. */
@@ -250,6 +251,59 @@ function ensureAtlas(): void {
 }
 
 const iconCache = new Map<string, HTMLCanvasElement>();
+/** Drops cached unit icons and animated preview sheets (palette, level or team colours changed). */
+function clearIcons(): void {
+  iconCache.clear();
+  preview.clear();
+}
+
+/**
+ * Starts rendering the attack-preview sheet of a unit: `frames` attack frames (swingProgress 0..1) plus one idle frame,
+ * one frame per `step()` so the gallery never blocks the main thread.
+ */
+function beginFrameJob(kind: number, team: number, frames: number): FrameJob {
+  const colors = iconColors ?? teamColors(state.palette, state.teamCount);
+  const W = 120;
+  const H = 150;
+  const res = matchMedia('(pointer: coarse)').matches ? 1 : 1.25;
+  const fw = Math.round(W * res);
+  const fh = Math.round(H * res);
+  const view = new UnitView(kind, colors[Math.min(team, colors.length - 1)], 0);
+  view.update(POSE_STATES[0], 0, 1); // advance the spawn pop-in so frames are full size
+  const box = new Container();
+  const sc = 1.45 / Math.max(1, STATS[kind].scale * 0.75);
+  view.root.position.set(W / 2, H - 18);
+  view.root.scale.set(sc);
+  box.addChild(view.root);
+  const sheet = document.createElement('canvas');
+  sheet.width = fw * (frames + 1);
+  sheet.height = fh;
+  const ctx = sheet.getContext('2d')!;
+  let i = 0;
+  let dead = false;
+  const cleanup = (): void => {
+    if (dead) return;
+    dead = true;
+    box.destroy({ children: true });
+  };
+  return {
+    step() {
+      if (dead) return null;
+      const swing = i < frames ? i / (frames - 1) : -1;
+      view.update({ ...POSE_STATES[0], swingProgress: swing }, 0, 0);
+      const tex = app.renderer.generateTexture({ target: box, frame: new Rectangle(0, 0, W, H), resolution: res, antialias: true });
+      const c = app.renderer.extract.canvas(tex) as HTMLCanvasElement;
+      tex.destroy(true);
+      ctx.drawImage(c, i * fw, 0, fw, fh);
+      i++;
+      if (i <= frames) return null;
+      cleanup();
+      return { canvas: sheet, frames, fw, fh };
+    },
+    cancel: cleanup,
+  };
+}
+const preview = new UnitPreview({ begin: beginFrameJob });
 /** Unit icon: drawn once from UnitView and cached; a copy is returned on every call. */
 function renderIcon(kind: number, team: number): HTMLCanvasElement {
   const colors = iconColors ?? teamColors(state.palette, state.teamCount);
@@ -292,9 +346,10 @@ studio = new Studio(studioRoot, {
   onOnline: () => startOnline(),
   onOptions: applyOptions,
   icon: renderIcon,
+  preview,
   onLevel: () => {
     setUnitLevel(state.level);
-    iconCache.clear();
+    clearIcons();
     saveState(state);
   },
   onKindPick: () => {
@@ -397,9 +452,10 @@ function startOnline(joinCode?: string): void {
     getAtlas,
     setIconColors: (c) => {
       iconColors = c;
-      iconCache.clear();
+      clearIcons();
     },
     icon: renderIcon,
+    preview,
     battleDefaults: () => ({ fx: state.options.fx, numbers: state.options.numbers }),
     setComedyVisual: (on) => {
       comedy.visual = on ?? comedyVisualOn();

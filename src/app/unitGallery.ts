@@ -2,6 +2,7 @@ import { loc, t } from '../i18n';
 import { RACE_NAMES, RARITY_NAMES, TROOP_BY_ID, type Race, type Rarity } from '../sim/data/troops';
 import { KIND_COUNT, LEGACY_COUNT, MAX_LEVEL, STATS, isHealer, isMelee, unitDisplayName } from '../sim/units';
 import { trackDialog } from '../net/act';
+import type { UnitPreview } from './unitPreview';
 import { saveState, type AppState } from './state';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -22,6 +23,8 @@ export interface GalleryDeps {
   onPick: (kind: number) => void;
   /** Online: unit gold cost and disabled rarities; the level picker is hidden. */
   online?: { cost(kind: number): number; banned(): string[] };
+  /** Animated attack previews (optional): attached after every render, detached when the dialog closes. */
+  preview?: UnitPreview;
 }
 
 /** Unit gallery: card list with rarity/race filters, search and icons, plus a level picker. */
@@ -41,10 +44,12 @@ export class UnitGallery {
     this.dlg.addEventListener('click', (e) => {
       if (e.target === this.dlg) this.dlg.close();
     });
+    this.dlg.addEventListener('close', () => this.d.preview?.detach());
   }
 
   /** Closes the dialog and removes it from the DOM (so an open modal cannot leave the screen locked; the action label is cleared). */
   destroy(): void {
+    this.d.preview?.detach();
     if (this.dlg.open) this.dlg.close();
     this.dlg.remove();
   }
@@ -161,5 +166,6 @@ export class UnitGallery {
     );
     // Icons (after the cards are created).
     this.dlg.querySelectorAll<HTMLElement>('[data-icon]').forEach((el) => el.appendChild(this.d.icon(Number(el.dataset.icon), s.selTeam)));
+    this.d.preview?.attach(this.dlg, s.selTeam);
   }
 }
