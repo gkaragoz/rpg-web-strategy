@@ -1,11 +1,37 @@
 /// <reference lib="webworker" />
 import { mapSizeFor, terrainFor } from './battle';
-import { C_ACTIVE, C_COUNT, C_DONE, C_GEN, C_LOS, C_NEXT, C_QUIT, C_READY, C_STEP, F_BRAKE, F_DT, type HelperInit } from './movePool';
+import { Grid } from './grid';
+import {
+  C_ACTIVE,
+  C_COUNT,
+  C_DONE,
+  C_GEN,
+  C_LOS,
+  C_MASK,
+  C_NEXT,
+  C_PHASE,
+  C_QUIT,
+  C_READY,
+  C_SEPPH,
+  C_STEP,
+  F_BRAKE,
+  F_DECAY,
+  F_DT,
+  F_GAIN,
+  F_MAXSTEP,
+  PH_MOVE,
+  PH_PICK,
+  PH_SEP_APPLY,
+  PH_SEP_SCAN,
+  type HelperInit,
+} from './movePool';
 import { Mover, chunkSize } from './mover';
-import { Units } from './units';
+import { Picker } from './picker';
+import { Separator } from './separator';
+import { Units, applyStats } from './units';
 
 /**
- * Helper thread of the movement phase (created by the page, set up with the shared buffers of the sim thread): waits for the
+ * Helper thread of the parallel phases (created by the page, set up with the shared buffers of the sim thread): waits for the
  * sim thread to open a phase and takes chunks from the shared counter.
  */
 const ctx = (typeof self !== 'undefined' ? self : globalThis) as unknown as DedicatedWorkerGlobalScope;
@@ -22,12 +48,18 @@ const KINDS: Record<string, ViewCtor> = (() => {
 
 /** The helper's life: set up from the shared buffers, then serve phases until the sim thread says quit. Blocks (Atomics.wait). */
 export function runHelper(m: HelperInit): void {
+  applyStats(m.config.stats);
   const units = Object.create(Units.prototype) as Units;
   for (const [k, buf] of Object.entries(m.units)) (units as unknown as Record<string, unknown>)[k] = new (KINDS[k] ?? Float32Array)(buf);
   (units as unknown as { cap: number }).cap = m.cap;
   const ctrl = new Int32Array(m.ctrl);
   const fctrl = new Float64Array(m.fctrl);
-  const mover = new Mover(units, terrainFor(m.config), mapSizeFor(m.config), m.rageA, new Int32Array(m.counts));
+  const terrain = terrainFor(m.config);
+  const mapSize = mapSizeFor(m.config);
+  const grids = m.grids.map((g) => Grid.view(g));
+  const mover = new Mover(units, terrain, mapSize, m.rageA, new Int32Array(m.counts));
+  const picker = new Picker(units, terrain, grids.slice(0, m.teamCount), m.teamCount);
+  const separator = new Separator(units, terrain, grids[m.teamCount], mapSize);
   // Read the generation first, then announce: a phase opened after this read wakes us, one opened before it does not count us.
   let seen = Atomics.load(ctrl, C_GEN);
   const index = Atomics.add(ctrl, C_READY, 1);
@@ -37,16 +69,31 @@ export function runHelper(m: HelperInit): void {
     if (Atomics.load(ctrl, C_QUIT)) return;
     if (index >= Atomics.load(ctrl, C_ACTIVE)) continue;
     const count = Atomics.load(ctrl, C_COUNT);
-    mover.stepNo = Atomics.load(ctrl, C_STEP);
+    const phase = Atomics.load(ctrl, C_PHASE);
+    const dt = fctrl[F_DT];
+    const step = Atomics.load(ctrl, C_STEP);
+    mover.stepNo = step;
     mover.losEvery = Atomics.load(ctrl, C_LOS);
     mover.brakeK = fctrl[F_BRAKE];
-    const dt = fctrl[F_DT];
+    picker.step = step;
+    picker.dt = dt;
+    picker.aliveMask = Atomics.load(ctrl, C_MASK);
+    separator.phase = Atomics.load(ctrl, C_SEPPH);
+    separator.gain = fctrl[F_GAIN];
+    separator.maxStep = fctrl[F_MAXSTEP];
+    separator.decay = fctrl[F_DECAY];
+    if (phase === PH_PICK) picker.prepare();
     const size = chunkSize(count);
     const chunks = Math.ceil(count / size);
     for (;;) {
       const k = Atomics.add(ctrl, C_NEXT, 1);
       if (k >= chunks) break;
-      mover.runChunk(k * size, Math.min(count, (k + 1) * size), dt);
+      const from = k * size;
+      const to = Math.min(count, from + size);
+      if (phase === PH_MOVE) mover.runChunk(from, to, dt);
+      else if (phase === PH_PICK) picker.runChunk(from, to);
+      else if (phase === PH_SEP_SCAN) separator.scan(from, to);
+      else if (phase === PH_SEP_APPLY) separator.apply(from, to);
     }
     Atomics.add(ctrl, C_DONE, 1);
     Atomics.notify(ctrl, C_DONE);

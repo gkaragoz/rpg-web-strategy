@@ -348,6 +348,9 @@ export class Units {
   mvSpeed: Float32Array;
   mvFlags: Uint8Array;
   mvFail: Uint8Array;
+  /** Result of the target-picking phase (see Picker): chosen unit, -1 none, -2 keep the current target; pickMark = computed this step. */
+  pickBest: Int32Array;
+  pickMark: Uint8Array;
   /** Elements per unit of arrays longer than one slot per unit (snapshots copy `count * stride`). */
   readonly strides: Record<string, number> = { pathPts: PATH_MAX * 2 };
 
@@ -365,6 +368,8 @@ export class Units {
     this.mvSpeed = new Float32Array(cap);
     this.mvFlags = new Uint8Array(cap);
     this.mvFail = new Uint8Array(cap);
+    this.pickBest = new Int32Array(cap);
+    this.pickMark = new Uint8Array(cap);
     this.team = new Uint8Array(cap);
     this.kind = new Uint8Array(cap);
     this.x = new Float32Array(cap);
@@ -486,6 +491,7 @@ export class Units {
     this.pathN[i] = 0;
     this.mvFlags[i] = 0;
     this.mvFail[i] = 0;
+    this.pickMark[i] = 0;
     this.stuckT[i] = this.sideT[i] = 0;
     this.sideDir[i] = 1;
     this.kbVx[i] = this.kbVy[i] = 0;

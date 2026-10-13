@@ -1,8 +1,10 @@
 import { Grid } from './grid';
-import { Terrain, T_BLOCKED, T_WATER } from './terrain';
+import { Terrain, T_WATER } from './terrain';
 import type { MapSpec } from './mapSpec';
 import { simDtFor } from './constants';
-import { MovePool, type HelperInit } from './movePool';
+import { MovePool, PH_MOVE, PH_PICK, PH_SEP_APPLY, PH_SEP_SCAN, type HelperInit } from './movePool';
+import { PICK_KEEP, Picker } from './picker';
+import { Separator } from './separator';
 import { Mover, MV_FACE, MV_INTENT, MV_ROUTE, CNT_PATHS, CNT_PATH_FAILS, CNT_STUCK, chunkSize } from './mover';
 import { PROJ_TAG, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides, KIND_COUNT } from './units';
 import { PF_PIERCE, PF_SKILL, Projectiles } from './projectiles';
@@ -14,36 +16,15 @@ const DMG_OF = Uint8Array.from(STATS, (s) => s.dmgType);
 const ARM_OF = Uint8Array.from(STATS, (s) => s.armorCls);
 import type { SkillId } from './data/troops';
 import { Mulberry } from './random';
+import { GRID_CELL, MELEE_SLACK, SEP_CELL, SEP_DECAY, SEP_GAIN, SEP_MAX_STEP, SEP_STRIDE } from './tuning';
 import { copyTyped, fnv, pasteTyped, type BattleSnapshot, type Typed } from './snapshot';
 
 export const MAP_SIZE = 56;
 const ARROW_SPEED = 13;
-const MELEE_SLOTS = 3;
-const SEPARATION_RADIUS = 0.9;
 const LANDING_RADIUS = 0.75;
-const GRID_CELL = 4;
-/** Fine grid for separation: cell size ~ separation radius, a 3x3 neighborhood is enough. */
-const SEP_CELL = 1;
-/** Separation processes 1/SEP_STRIDE of the units each step; the push strength grows by the same factor. */
-const SEP_STRIDE = 3;
-/** Push velocity: gain, maximum displacement per step (tiles), decay per step. */
-const SEP_GAIN = 1.5;
-const SEP_MAX_STEP = 0.08;
-const SEP_DECAY = 0.82;
-/** If there is no enemy within this many cell rings, walk toward the army. */
-const MAX_RING = 6;
-const PRIEST_RING = 2;
-/** Target score penalty for an enemy on the opposite bank (enemies on the same bank are fought first). */
-const OTHER_BANK_PENALTY = 15;
 /** If no one dies for this many seconds, damage grows by STALE_RAMP percent per second. */
 const STALE_AFTER = 20;
 const STALE_RAMP = 0.08;
-/** Resistance to switching targets (score bonus) and the retarget search interval (s). */
-const SWITCH_BONUS = 6;
-/** A target in range is locked: while within range (scaled by this multiplier) no new target is searched. */
-const ENGAGE_LOCK = 1.25;
-/** Melee attack range tolerance (so a unit pushed around in a crowd can still hit). */
-const MELEE_SLACK = 0.4;
 /** Extra close-combat range margin against tank targets (tank push radius 1.8 > 1.4). */
 const TANK_REACH = 0.6;
 /** Comedy physics: longest launch distance (tiles). */
@@ -173,6 +154,9 @@ export class Battle {
   private scanEveryK = KITE.scanEvery;
   /** A* paths for stuck units (unit -> waypoints) and the per-frame path computation budget. */
   private mover: Mover;
+  private readonly picker: Picker;
+  private readonly separator: Separator;
+  private aliveMask = 0;
   private pool: MovePool | null = null;
   /** Test hook: permutation of the movement chunks to execute (see runMoves). */
   chunkOrder: ((chunks: number) => number[]) | null = null;
@@ -211,6 +195,8 @@ export class Battle {
     this.allTeams = Array.from({ length: this.teamCount }, (_, t) => t);
     this.grids = Array.from({ length: this.teamCount }, () => new Grid(this.mapSize, GRID_CELL, total));
     this.sepGrid = new Grid(this.mapSize, SEP_CELL, total);
+    this.picker = new Picker(this.units, this.terrain, this.grids, this.teamCount);
+    this.separator = new Separator(this.units, this.terrain, this.sepGrid, this.mapSize);
     this.reset(seed);
   }
 
@@ -221,7 +207,8 @@ export class Battle {
    */
   useThreads(helpers: number, post: (init: HelperInit) => void, log?: (msg: string) => void): void {
     if (this.pool || helpers < 1 || typeof SharedArrayBuffer === 'undefined') return;
-    const pool = new MovePool(this.units, this.config, skillParams('rage').a, helpers, post, log);
+    const grids = [...this.grids, this.sepGrid].map((g) => g.share());
+    const pool = new MovePool(this.units, this.config, skillParams('rage').a, helpers, post, grids, this.teamCount, log);
     this.pool = pool;
     this.mover = new Mover(this.units, this.terrain, this.mapSize, skillParams('rage').a, pool.counts);
   }
@@ -427,12 +414,17 @@ export class Battle {
       }
       this.nearestEnemy[tm] = best;
     }
+    let mask = 0;
+    for (let tm = 0; tm < this.teamCount; tm++) if (n[tm] > 0) mask |= 1 << tm;
+    this.aliveMask = mask;
 
     let tn = performance.now();
     pf.prep += tn - tp;
     tp = tn;
     for (let tm = 0; tm < this.teamCount; tm++) this.grids[tm].build(u, tm);
     this.sepGrid.build(u, -1);
+    this.beginPhases(dt);
+    this.runPhase(PH_PICK, u.count, (from, to) => this.picker.runChunk(from, to));
     tn = performance.now();
     pf.grid += tn - tp;
     tp = tn;
@@ -592,7 +584,7 @@ export class Battle {
 
     if (u.retarget[i] <= 0) {
       const tq = performance.now();
-      this.pickTarget(i);
+      this.pickNow(i);
       this.prof.pick += performance.now() - tq;
       u.retarget[i] = u.target[i] < 0 ? 0.4 + this.rng() * 0.3 : 1.8 + this.rng() * 2.0;
     }
@@ -868,7 +860,11 @@ export class Battle {
     return (u.x[i] - this.frontX[tm]) * ex + (u.y[i] - this.frontY[tm]) * ey > KITE.leash;
   }
 
-  private pickTarget(i: number): void {
+  /**
+   * The unit's target choice at its retarget moment: normally the result of the picking phase at the start of the step
+   * (`Picker`), recomputed here when that result is missing or no longer valid.
+   */
+  private pickNow(i: number): void {
     const u = this.units;
     if (u.tauntT[i] > 0) {
       const b = u.tauntBy[i];
@@ -877,84 +873,22 @@ export class Battle {
         return;
       }
     }
-    const kind = u.kind[i];
-    const team = u.team[i];
+    let best: number;
+    if (u.pickMark[i]) {
+      best = u.pickBest[i];
+      u.pickMark[i] = 0;
+      // The chosen unit (or the locked current target) may have died since the phase ran.
+      if ((best >= 0 && !u.alive[best]) || (best === PICK_KEEP && !(u.target[i] >= 0 && u.alive[u.target[i]]))) best = this.picker.pick(i);
+    } else best = this.picker.pick(i);
+    this.applyPick(i, best);
+  }
+
+  /** Makes the choice effective: attacker/healer counts and chase state. */
+  private applyPick(i: number, best: number): void {
+    const u = this.units;
+    if (best === PICK_KEEP) return;
     const cur = u.target[i];
-    const isPriest = isHealer(kind);
-    const melee = isMelee(kind);
-    // Priests scan allies, the others scan all enemy teams.
-    const searchTeams = isPriest ? this.selfList[team] : this.enemyList[team];
-    const maxRing = isPriest ? PRIEST_RING : MAX_RING;
-    const g0 = this.grids[0];
-    const cols = g0.cols;
-    const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / g0.cell) | 0));
-    const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / g0.cell) | 0));
-    const terrain = this.terrain;
-    const sideI = terrain ? terrain.sideAt(u.x[i], u.y[i]) : 0;
-    const reach = STATS[kind].range * 0.95;
-    const myRegion = terrain ? terrain.regionAt(u.x[i], u.y[i]) : -1;
-    const banned = u.banT[i] > 0 ? u.banTarget[i] : -1;
-
-    // A current target in range (or within hitting distance) is locked: to avoid jitter/loops.
-    if (cur >= 0 && u.alive[cur] && !isPriest) {
-      const cdx = u.x[cur] - u.x[i];
-      const cdy = u.y[cur] - u.y[i];
-      const lockR = (melee ? STATS[kind].range + MELEE_SLACK : STATS[kind].range) * ENGAGE_LOCK;
-      if (cdx * cdx + cdy * cdy <= lockR * lockR) return;
-    }
-    let best = -1;
-    let bestScore = Infinity;
-    let foundRing = -1;
-
-    for (let r = 0; r <= maxRing; r++) {
-      if (foundRing >= 0 && r > foundRing) break;
-      for (let gy = cy - r; gy <= cy + r; gy++) {
-        if (gy < 0 || gy >= cols) continue;
-        const edgeRow = gy === cy - r || gy === cy + r;
-        const step = edgeRow || r === 0 ? 1 : 2 * r;
-        for (let gx = cx - r; gx <= cx + r; gx += step) {
-          if (gx < 0 || gx >= cols) continue;
-          const c = gy * cols + gx;
-          for (let ti = 0; ti < searchTeams.length; ti++) {
-            const grid = this.grids[searchTeams[ti]];
-            for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
-              const j = grid.items[k];
-              if (j === i || j === banned || (isPriest && u.hp[j] >= u.maxHp[j])) continue;
-              const ddx = u.x[j] - u.x[i];
-              const ddy = u.y[j] - u.y[i];
-              const dist = Math.sqrt(ddx * ddx + ddy * ddy);
-              const jitter = this.rng() * 0.8;
-              const tank = isTank(u.kind[j]);
-              let score: number;
-              if (melee) {
-                const att = u.attackers[j] - (j === cur ? 1 : 0);
-                score = dist + att * 3.5 + jitter * 2 + (att >= (tank ? TANK.meleeSlots : MELEE_SLOTS) ? 100 : 0);
-                if (tank) score -= TANK.tauntBonus; // a tank draws enemies onto itself
-              } else if (isRanged(kind)) {
-                const att = u.attackers[j] - (j === cur ? 1 : 0);
-                score = dist + att * 2 + (u.hp[j] / u.maxHp[j]) * 3 + jitter * 2;
-              } else {
-                const heal = u.healers[j] - (j === cur ? 1 : 0);
-                score = (u.hp[j] / u.maxHp[j]) * 10 + dist * 0.3 + heal * 4 + jitter;
-              }
-              // Closed pocket/island: unreachable if out of range, do not target.
-              if (terrain && myRegion !== -1 && dist > reach && terrain.regionAt(u.x[j], u.y[j]) !== myRegion) continue;
-              // A target across the river only if needed: an archer in range shoots over the river.
-              if (terrain && (melee || isPriest || dist > reach) && terrain.sideAt(u.x[j], u.y[j]) !== sideI) {
-                score += OTHER_BANK_PENALTY;
-              }
-              if (j === cur) score -= SWITCH_BONUS;
-              if (score < bestScore) {
-                bestScore = score;
-                best = j;
-              }
-              if (foundRing < 0) foundRing = r;
-            }
-          }
-        }
-      }
-    }
-
+    const isPriest = isHealer(u.kind[i]);
     if (cur >= 0 && cur !== best) {
       if (isPriest) {
         if (u.healers[cur] > 0) u.healers[cur]--;
@@ -969,6 +903,37 @@ export class Battle {
       u.chaseBest[i] = Infinity;
     }
     u.target[i] = best;
+  }
+
+  /** Publishes this step's inputs to the parallel kernels (and the helper threads). */
+  private beginPhases(dt: number): void {
+    const sep = this.separator;
+    sep.phase = this.sepTick % SEP_STRIDE;
+    sep.gain = SEP_GAIN * this.tk;
+    sep.maxStep = SEP_MAX_STEP * this.tk;
+    sep.decay = this.sepDecayK;
+    const picker = this.picker;
+    picker.step = this.stepNo;
+    picker.dt = dt;
+    picker.aliveMask = this.aliveMask;
+    picker.prepare();
+    this.pool?.setStep({ dt, step: this.stepNo, losEvery: this.losEvery, brakeK: this.brakeK, aliveMask: this.aliveMask, sepPhase: sep.phase, gain: sep.gain, maxStep: sep.maxStep, decay: sep.decay });
+  }
+
+  /** Runs one parallel phase over all units: on the helper threads when there are any, otherwise chunk by chunk right here. */
+  private runPhase(phase: number, count: number, fn: (from: number, to: number) => void): void {
+    if (this.pool) {
+      this.pool.run(phase, count, fn);
+      return;
+    }
+    const size = chunkSize(count);
+    const chunks = Math.ceil(count / size);
+    // Test hook: the order in which chunks are executed must not change the result (helper threads take them in any order).
+    const order = this.chunkOrder ? this.chunkOrder(chunks) : null;
+    for (let k = 0; k < chunks; k++) {
+      const c = order ? order[k] : k;
+      fn(c * size, Math.min(count, (c + 1) * size));
+    }
   }
 
   private marchToEnemy(i: number, dt: number): void {
@@ -2078,17 +2043,7 @@ export class Battle {
     mover.stepNo = this.stepNo;
     mover.brakeK = this.brakeK;
     mover.losEvery = this.losEvery;
-    if (this.pool) this.pool.run(n, dt, this.stepNo, this.brakeK, this.losEvery, (from, to) => mover.runChunk(from, to, dt));
-    else {
-      const size = chunkSize(n);
-      const chunks = Math.ceil(n / size);
-      // Test hook: the order in which chunks are executed must not change the result (helper threads take them in any order).
-      const order = this.chunkOrder ? this.chunkOrder(chunks) : null;
-      for (let k = 0; k < chunks; k++) {
-        const c = order ? order[k] : k;
-        mover.runChunk(c * size, Math.min(n, (c + 1) * size), dt);
-      }
-    }
+    this.runPhase(PH_MOVE, n, (from, to) => mover.runChunk(from, to, dt));
     const c = mover.counts;
     this.dbg.stuck += c[CNT_STUCK];
     this.dbg.paths += c[CNT_PATHS];
@@ -2115,114 +2070,14 @@ export class Battle {
     if (Math.abs(sx) > 0.05) this.units.facing[i] = sx >= 0 ? 1 : -1;
   }
 
-  /** Pushing against units in neighboring cells: each pair is processed once (j > i). */
+  /** Soft separation of crowded units (two parallel phases, see `Separator`), then the tanks' push. */
   private separate(): void {
-    const u = this.units;
-    const phase = this.sepTick++ % SEP_STRIDE;
-    const lim = this.mapSize - 0.5;
-    const r2 = SEPARATION_RADIUS * SEPARATION_RADIUS;
-    const grid = this.sepGrid;
-    const cols = grid.cols;
-    const terrain = this.terrain;
-    const flags = terrain ? terrain.flags : null;
-    const n = this.mapSize;
-    const isBad = (x: number, y: number): boolean => {
-      const f = flags![(Math.fround(y) | 0) * n + (Math.fround(x) | 0)];
-      return f === T_WATER || f === T_BLOCKED;
-    };
-    // Push: the destination must not be water/an obstacle, and on a corner diagonal move the side neighbors must be open.
-    const bad = (ox: number, oy: number, x: number, y: number): boolean => {
-      if (!flags) return false;
-      if (isBad(x, y)) return true;
-      const fx = Math.fround(x);
-      const fy = Math.fround(y);
-      const gx = Math.fround(ox);
-      const gy = Math.fround(oy);
-      return (gx | 0) !== (fx | 0) && (gy | 0) !== (fy | 0) && (isBad(fx, gy) || isBad(gx, fy));
-    };
-    // Soft separation: each step accumulates push velocity from 1/SEP_STRIDE of the neighbor pairs (j > i)
-    // (+ to i, - to j); all units apply the push velocity EVERY step and the velocity decays. This avoids
-    // the frame-to-frame jitter caused by hard mutual pushing.
-    const maxStep = SEP_MAX_STEP * this.tk;
-    const gain = SEP_GAIN * this.tk;
-    const sx = u.sepX;
-    const sy = u.sepY;
-    for (let i = 0; i < u.count; i++) {
-      if (!u.alive[i]) continue;
-      if (u.airT[i] > 0) continue;
-      if (i % SEP_STRIDE === phase) {
-        const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / grid.cell) | 0));
-        const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / grid.cell) | 0));
-        const xi = u.x[i];
-        const yi = u.y[i];
-        // An attacking unit holds its ground: its neighbors push it less (the hit animation keeps playing).
-        const wi = u.swing[i] > 0 ? 0.35 : 1;
-        for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
-          for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
-            const c = gy * cols + gx;
-            for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
-              const j = grid.items[k];
-              if (j <= i || !u.alive[j] || u.airT[j] > 0) continue;
-              const dx = xi - u.x[j];
-              const dy = yi - u.y[j];
-              const d2 = dx * dx + dy * dy;
-              if (d2 >= r2) continue;
-              let fx: number;
-              let fy: number;
-              if (d2 < 1e-6) {
-                // Exactly on top of each other: a fixed, deterministic direction based on the index.
-                const a = (i * 2.399963) % 6.283185;
-                fx = Math.cos(a) * SEPARATION_RADIUS * 0.5;
-                fy = Math.sin(a) * SEPARATION_RADIUS * 0.5;
-              } else {
-                const d = Math.sqrt(d2);
-                const f = ((SEPARATION_RADIUS - d) * 0.5) / d;
-                fx = dx * f;
-                fy = dy * f;
-              }
-              const wj = u.swing[j] > 0 ? 0.35 : 1;
-              sx[i] += fx * gain * wi;
-              sy[i] += fy * gain * wi;
-              sx[j] -= fx * gain * wj;
-              sy[j] -= fy * gain * wj;
-            }
-          }
-        }
-      }
-    }
-    for (let i = 0; i < u.count; i++) {
-      if (!u.alive[i]) continue;
-      let vx = sx[i];
-      let vy = sy[i];
-      const m = vx * vx + vy * vy;
-      if (m < 1e-7) {
-        sx[i] = sy[i] = 0;
-        if (u.x[i] > lim || u.y[i] > lim || u.x[i] < 0.5 || u.y[i] < 0.5) {
-          u.x[i] = Math.min(lim, Math.max(0.5, u.x[i]));
-          u.y[i] = Math.min(lim, Math.max(0.5, u.y[i]));
-        }
-        continue;
-      }
-      if (m > maxStep * maxStep) {
-        const q = maxStep / Math.sqrt(m);
-        vx *= q;
-        vy *= q;
-      }
-      const bx = u.x[i];
-      const by = u.y[i];
-      let nx = Math.min(lim, Math.max(0.5, bx + vx));
-      let ny = Math.min(lim, Math.max(0.5, by + vy));
-      if (bad(bx, by, nx, ny)) {
-        nx = bx;
-        ny = by;
-        sx[i] = sy[i] = 0;
-      }
-      u.x[i] = nx;
-      u.y[i] = ny;
-      sx[i] *= this.sepDecayK;
-      sy[i] *= this.sepDecayK;
-    }
-    this.pushAroundTanks(bad);
+    const n = this.units.count;
+    const sep = this.separator;
+    this.sepTick++;
+    this.runPhase(PH_SEP_SCAN, n, (from, to) => sep.scan(from, to));
+    this.runPhase(PH_SEP_APPLY, n, (from, to) => sep.apply(from, to));
+    this.pushAroundTanks((ox, oy, x, y) => sep.bad(ox, oy, x, y));
   }
 
   /** Tanks (2x size) clearly push nearby units. */

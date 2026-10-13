@@ -12,10 +12,36 @@ export const C_LOS = 5; // line-of-sight interval
 export const C_QUIT = 6;
 export const C_READY = 7; // helpers that finished their setup (each takes the next index)
 export const C_ACTIVE = 8; // helpers taking part in the current phase (indices 0 .. active-1)
-export const C_LEN = 10;
-/** Float64 params: dt, brakeK. */
+export const C_PHASE = 9; // which kernel the current phase runs (PH_*)
+export const C_MASK = 10; // bit mask of the teams that are alive
+export const C_SEPPH = 11; // separation turn (step % SEP_STRIDE)
+export const C_LEN = 12;
+/** Float64 params. */
 export const F_DT = 0;
 export const F_BRAKE = 1;
+export const F_GAIN = 2;
+export const F_MAXSTEP = 3;
+export const F_DECAY = 4;
+export const F_LEN = 6;
+
+/** Kernels that can run on helper threads. */
+export const PH_MOVE = 0;
+export const PH_PICK = 1;
+export const PH_SEP_SCAN = 2;
+export const PH_SEP_APPLY = 3;
+
+/** Per-step inputs of the kernels, written once per step by the sim thread. */
+export interface StepParams {
+  dt: number;
+  step: number;
+  losEvery: number;
+  brakeK: number;
+  aliveMask: number;
+  sepPhase: number;
+  gain: number;
+  maxStep: number;
+  decay: number;
+}
 
 /** Message that sets a helper up (sent by the page: helpers are created there, see WorkerSim). */
 export interface HelperInit {
@@ -27,6 +53,9 @@ export interface HelperInit {
   ctrl: SharedArrayBuffer;
   fctrl: SharedArrayBuffer;
   counts: SharedArrayBuffer;
+  /** Team grids (index = team) followed by the separation grid. */
+  grids: Array<{ cell: number; cols: number; start: SharedArrayBuffer; items: SharedArrayBuffer }>;
+  teamCount: number;
 }
 
 /** Moves the unit arrays into SharedArrayBuffers (in place, contents kept) and returns the buffers by field name. */
@@ -57,7 +86,7 @@ export function shareUnitArrays(units: Units): Record<string, SharedArrayBuffer>
  */
 export class MovePool {
   readonly ctrl = new Int32Array(new SharedArrayBuffer(C_LEN * 4));
-  readonly fctrl = new Float64Array(new SharedArrayBuffer(4 * 8));
+  readonly fctrl = new Float64Array(new SharedArrayBuffer(F_LEN * 8));
   readonly counts = new Int32Array(new SharedArrayBuffer(4 * 4));
   /** A helper failed (or did not answer in time): the sim thread does all the chunks itself from now on. */
   broken = false;
@@ -70,10 +99,12 @@ export class MovePool {
     readonly expected: number,
     /** Hands the setup message to the page, which forwards it to the helpers. */
     post: (init: HelperInit) => void,
+    grids: Array<{ cell: number; cols: number; start: SharedArrayBuffer; items: SharedArrayBuffer }>,
+    teamCount: number,
     readonly log: (msg: string) => void = (m) => console.warn('[move pool]', m),
   ) {
     const bufs = shareUnitArrays(units);
-    post({ type: 'init', units: bufs, cap: units.cap, config, rageA, ctrl: this.ctrl.buffer as SharedArrayBuffer, fctrl: this.fctrl.buffer as SharedArrayBuffer, counts: this.counts.buffer as SharedArrayBuffer });
+    post({ type: 'init', units: bufs, cap: units.cap, config, rageA, ctrl: this.ctrl.buffer as SharedArrayBuffer, fctrl: this.fctrl.buffer as SharedArrayBuffer, counts: this.counts.buffer as SharedArrayBuffer, grids, teamCount });
   }
 
   /** Helpers that are set up and waiting. */
@@ -81,17 +112,28 @@ export class MovePool {
     return Atomics.load(this.ctrl, C_READY);
   }
 
-  /** Runs the chunks of the movement phase on all available threads; `runChunk` is the sim thread's own mover. */
-  run(count: number, dt: number, stepNo: number, brakeK: number, losEvery: number, runChunk: (from: number, to: number) => void): void {
+  /** Publishes the per-step inputs of the kernels (call once per step, before the phases). */
+  setStep(p: StepParams): void {
+    const c = this.ctrl;
+    Atomics.store(c, C_STEP, p.step);
+    Atomics.store(c, C_LOS, p.losEvery);
+    Atomics.store(c, C_MASK, p.aliveMask);
+    Atomics.store(c, C_SEPPH, p.sepPhase);
+    this.fctrl[F_DT] = p.dt;
+    this.fctrl[F_BRAKE] = p.brakeK;
+    this.fctrl[F_GAIN] = p.gain;
+    this.fctrl[F_MAXSTEP] = p.maxStep;
+    this.fctrl[F_DECAY] = p.decay;
+  }
+
+  /** Runs the chunks of one phase (kernel `phase`) on all available threads; `runChunk` is the sim thread's own kernel. */
+  run(phase: number, count: number, runChunk: (from: number, to: number) => void): void {
     const c = this.ctrl;
     const size = chunkSize(count);
     const chunks = Math.ceil(count / size);
     const active = this.broken ? 0 : Atomics.load(c, C_READY);
     Atomics.store(c, C_COUNT, count);
-    Atomics.store(c, C_STEP, stepNo);
-    Atomics.store(c, C_LOS, losEvery);
-    this.fctrl[F_DT] = dt;
-    this.fctrl[F_BRAKE] = brakeK;
+    Atomics.store(c, C_PHASE, phase);
     Atomics.store(c, C_NEXT, 0);
     Atomics.store(c, C_DONE, 0);
     Atomics.store(c, C_ACTIVE, active);

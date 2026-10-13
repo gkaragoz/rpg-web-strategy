@@ -46,3 +46,11 @@ Unit movement (route over bridges, A* path following, heading smoothing, slope s
 - Proof: `node scripts/bench-sim.mjs --units 10000 --dt 0.0333333333 --threads 0|3` gives the same `hash` (real `worker_threads` helpers); `movechunks.test.ts` checks chunk-order independence; a LAN match with host `?threads=3` and guest `?threads=0` ended with identical damage/kills tables after 4:16 of battle and no resync.
 - Speed (node, map 256): 10 000 units 18.1 → 12.8 ms/step, 30 000 units 39.7 → 32.2 ms/step with 3 helpers. The rest of the step (decisions, target picking, grid, separation) is still serial.
 
+## Target picking and separation in parallel (v1.19.0)
+Two more phases run on the helper threads, with the same rule (a chunk is independent of every other chunk):
+- **Target picking** (`src/sim/picker.ts`): before the unit loop, every unit that is about to retarget gets its choice computed from start-of-step data (positions, hit points, attacker/healer counts, team grids, terrain) into `pickBest[i]`; the unit loop only applies it (`Battle.pickNow/applyPick`, in unit order) and recomputes inline if the choice died in the meantime. The per-candidate call of the shared RNG became a stateless `pairRand(i, j, step)`.
+- **Separation** (`src/sim/separator.ts`): `scan` (each unit sums the push of all its neighbours onto itself, only its own push velocity is written) and `apply` (each unit moves by its own push velocity), two phases with a barrier. The tanks' push of other units stays serial. The grids (team grids and the separation grid) live in shared memory for the helpers.
+- `movePool.ts` now dispatches several kernels (`PH_MOVE/PICK/SEP_SCAN/SEP_APPLY`) with per-step inputs written once per step (`setStep`).
+- Proof: `bench-sim --threads 0|2|3` gives identical hashes for 10 000 units (2 teams, 30 Hz) and for 12 000 units on 6 teams (20 Hz); `movechunks.test.ts` shuffles the chunk order of all phases; the balance tournament (`npm run balance:quick`) shows 0 problems without re-calibration.
+- Speed (node, map 256, 3 helpers): 30 000 units 37.3 → 25.6 ms/step (1.46×, 1.57× against the single-threaded step of v1.17); 10 000 units 17.6 → 12.3 ms/step. What is still serial: the decision loop (timers, attacks, kiting), grid building, the tanks' push, status and projectile updates.
+
