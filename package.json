@@ -17,6 +17,8 @@
     "check": "tsc --noEmit && node scripts/check-repo.mjs && vitest run",
     "check:fast": "tsc --noEmit && node scripts/check-repo.mjs && vitest run --exclude \"**/{fuzz,rosterfuzz,comedy,mapSpec,onlinesetup,economy,troops,determinism,snapsize,crowd}.test.ts\"",
     "lint:repo": "node scripts/check-repo.mjs",
+    "balance": "node scripts/balance.mjs",
+    "balance:quick": "node scripts/balance.mjs --quick",
     "test:fast": "vitest run --exclude \"**/{fuzz,rosterfuzz,comedy,mapSpec,onlinesetup,economy,troops,determinism,snapsize,crowd}.test.ts\"",
     "test:net": "vitest run net lan chunk onlinesetup",
     "test:sim": "vitest run skills troops edge terrain determinism crowd comedy armies economy mapSpec",
