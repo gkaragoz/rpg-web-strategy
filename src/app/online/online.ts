@@ -10,7 +10,7 @@ import { NetError, WsGuestTransport, WsHostTransport, lanUrl } from '../../net/w
 import type { Atlas } from '../../render/atlas';
 import type { TeamColors } from '../../render/unitView';
 import type { MapSpec } from '../../sim/mapSpec';
-import { LEGACY_COUNT, setUnitLevel } from '../../sim/units';
+import { KIND_OF_TROOP, LEGACY_COUNT, STATS, setUnitLevel } from '../../sim/units';
 import { STATS_DEFAULT_SHOWN, type StatsPanel } from '../../ui/stats';
 import type { BattleOptions, BattleScene } from '../battle';
 import { makeTeamColor } from '../state';
@@ -459,6 +459,8 @@ export class OnlineApp {
     // Katilimci ortasinda girenlerin atlasi tum turleri icermeli.
     const kinds = new Set<number>(Array.from({ length: LEGACY_COUNT }, (_, i) => i));
     for (let i = 0; i < start.layout.length; i += 4) kinds.add(start.layout[i + 1]);
+    // Bone Caller savasta iskelet cagirir (uyuyan iskeletler baslangicta sim'de vardir): dokusu atlas'ta olmali.
+    for (const k of [...kinds]) if (STATS[k]?.troop === 'bone-caller') kinds.add(KIND_OF_TROOP.skeleton);
     env.bake(this.colors, this.biome, kinds);
     this.placement?.destroy();
     this.placement = null;
