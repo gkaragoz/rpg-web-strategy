@@ -47,6 +47,7 @@ export interface SimBackend {
   readonly projectiles: ProjView;
   readonly events: SimEvent[];
   readonly alivePerTeam: number[];
+  readonly meter: MeterView;
   winner: number;
   time: number;
   /** Called every render frame: advances the sim inline, binds the latest snapshot with a worker. */
@@ -58,6 +59,12 @@ export interface SimBackend {
   stats(): SimStats;
   /** Terminates the worker / releases resources. */
   dispose(): void;
+}
+
+/** Damage meter view: damage per team x kind (index team * KIND_COUNT + kind) and kills per team. */
+export interface MeterView {
+  dmg: ArrayLike<number>;
+  kills: ArrayLike<number>;
 }
 
 export type SimView = Pick<SimBackend, 'units' | 'projectiles' | 'mapSize'>;

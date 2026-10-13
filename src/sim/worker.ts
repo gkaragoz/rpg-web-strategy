@@ -17,6 +17,7 @@ import {
   I_EPOCH,
   I_LATEST,
   I_PCOUNT,
+  METER_DMG_LEN,
   PROF_KEYS,
   SNAP_SLOTS,
   bindShared,
@@ -76,6 +77,9 @@ function publish(): void {
   s.status.set(u.status.subarray(0, n));
   s.lift.set(u.lift.subarray(0, n));
   s.hgAdv.set(u.hgAdv.subarray(0, n));
+  const mt = battle.meter;
+  for (let k = 0; k < mt.dmg.length; k++) sh.meter[k] = mt.dmg[k];
+  for (let k = 0; k < mt.kills.length; k++) sh.meter[METER_DMG_LEN + k] = mt.kills[k];
 
   const p = battle.projectiles;
   let pn = 0;

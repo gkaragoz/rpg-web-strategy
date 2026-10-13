@@ -144,6 +144,7 @@ applyOptions();
 for (const ev of ['pointerdown', 'keydown'] as const) window.addEventListener(ev, () => audio.unlock());
 
 const battle = new BattleScene({
+  icon: (kind, team) => renderIcon(kind, team),
   app,
   world,
   camera,

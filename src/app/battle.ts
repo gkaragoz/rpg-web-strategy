@@ -1,4 +1,5 @@
 import { drawProjectile, projStyle } from '../render/projectileStyle';
+import { DpsMeter, fmtDamage, fmtTime } from './dpsMeter';
 import { Graphics, type Application } from 'pixi.js';
 import type { Camera } from '../camera';
 import { isoX, isoY } from '../iso';
@@ -13,7 +14,7 @@ import type { SimBackend } from '../sim/backend';
 import { terrainFor, type BattleConfig } from '../sim/battle';
 import { SIM_DT } from '../sim/constants';
 import { InlineSim } from '../sim/inlineSim';
-import { STATS } from '../sim/units';
+import { KIND_COUNT, STATS, unitDisplayName } from '../sim/units';
 import { WorkerSim } from '../sim/workerSim';
 import type { StatsPanel } from '../ui/stats';
 import { t } from '../i18n';
@@ -75,6 +76,8 @@ export interface BattleDeps {
   toggleComedyVisual: () => boolean;
   isComedyPhysics: () => boolean;
   toggleComedyPhysics: () => void;
+  /** Still image of a unit in a team's colours (damage meter thumbnails). */
+  icon: (kind: number, team: number) => HTMLCanvasElement;
 }
 
 /** Battle scene: sim (worker) + drawing (detailed or mass) + HUD + benchmark measurement. */
@@ -92,6 +95,7 @@ export class BattleScene {
   private segs: HTMLButtonElement[] = [];
   private tip: HTMLElement | null = null;
   private docDown: ((e: PointerEvent) => void) | null = null;
+  private meterUi: DpsMeter | null = null;
   private speed = 1;
   private paused = false;
   private resetting = false;
@@ -258,6 +262,7 @@ export class BattleScene {
     this.docDown = null;
     this.segs = [];
     this.hoverTeam = this.pinnedTeam = -1;
+    this.meterUi = null;
     this.d.hudRoot.innerHTML = '';
     this.d.hudRoot.hidden = true;
     this.d.banner.style.display = 'none';
@@ -333,6 +338,15 @@ export class BattleScene {
     q('#hud-edit').addEventListener('click', () => this.opts.onEdit());
     this.renderSpeed();
     this.buildTeamBar();
+    this.meterUi?.destroy();
+    this.meterUi = null;
+    if (!this.opts.bench) {
+      this.meterUi = new DpsMeter(
+        root,
+        { icon: (k, ti) => this.d.icon(k, ti), teamName: (ti) => this.teamName(ti), colors: this.opts.colors.map((c) => hex(c.main)) },
+        this.opts.colors.length,
+      );
+    }
     this.updateHud(true);
   }
 
@@ -459,6 +473,7 @@ export class BattleScene {
         seg.setAttribute('aria-label', `${this.teamName(ti)}: ${t('battle.team.tip', this.teamStats[ti])}`);
       });
       if (this.focusTeam >= 0 && !this.tip?.hidden) this.showTip(this.focusTeam);
+      this.meterUi?.update(this.sim);
     }
     const w = this.sim.winner;
     const res = document.getElementById('hud-result');
@@ -466,23 +481,55 @@ export class BattleScene {
       this.resultShown = true;
       const color = w >= 0 ? hex(this.opts.colors[w].main) : '#e6edf6';
       res.hidden = false;
-      const secs = Math.round(this.sim.time);
-      const dur = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-      const losses = this.opts.colors
-        .map((cc, ti) => `<span style="color:${hex(cc.main)}">T${ti + 1}: ${Math.max(0, this.initialAlive[ti] - this.sim.alivePerTeam[ti])}/${this.initialAlive[ti]}</span>`)
-        .join(' · ');
+      const dur = fmtTime(this.sim.time);
       const on = this.opts.online;
-      const winName = w >= 0 ? (on?.teamNames[w] ?? t('battle.team.name', { n: w + 1 })) : '';
-      if (on) {
-        res.innerHTML = `<div><h2 style="color:${color}">${w >= 0 ? t('battle.result.wins', { name: winName }) : t('battle.result.draw')}</h2><p>${t('battle.result.stats', { dur, losses })}</p><div class="btns">${on.onRematch ? `<button type="button" id="res-restart" class="primary">${t('battle.result.rematch')}</button>` : `<span class="note">${t('battle.result.hostNote')}</span>`}<button type="button" id="res-edit">${on.isHost ? t('battle.leave.host') : t('battle.leave.guest')}</button></div></div>`;
-        document.getElementById('res-restart')?.addEventListener('click', () => on.onRematch?.());
-        document.getElementById('res-edit')!.addEventListener('click', () => on.onLeave());
-      } else {
-        res.innerHTML = `<div><h2 style="color:${color}">${w >= 0 ? t('battle.result.wins', { name: t('battle.team.name', { n: w + 1 }) }) : t('battle.result.draw')}</h2><p>${t('battle.result.stats', { dur, losses })}</p><div class="btns"><button type="button" id="res-restart">${t('battle.result.replay')}</button><button type="button" id="res-edit" class="primary">${t('battle.edit')}</button></div></div>`;
-        document.getElementById('res-restart')!.addEventListener('click', () => void this.restart());
-        document.getElementById('res-edit')!.addEventListener('click', () => this.opts.onEdit());
-      }
+      const title = w >= 0 ? t('battle.result.wins', { name: this.teamName(w) }) : t('battle.result.draw');
+      const btns = on
+        ? `${on.onRematch ? `<button type="button" id="res-restart" class="primary">${t('battle.result.rematch')}</button>` : `<span class="note">${t('battle.result.hostNote')}</span>`}<button type="button" id="res-edit">${on.isHost ? t('battle.leave.host') : t('battle.leave.guest')}</button>`
+        : `<button type="button" id="res-restart">${t('battle.result.replay')}</button><button type="button" id="res-edit" class="primary">${t('battle.edit')}</button>`;
+      res.innerHTML = `<div class="res-card" role="dialog" aria-label="${t('battle.result.over', { dur })}"><p class="res-sub">${t('battle.result.over', { dur })}</p><h2 style="color:${color}">${title}</h2>${this.scoreboard(w)}<div class="btns">${btns}</div></div>`;
+      document.getElementById('res-restart')?.addEventListener('click', () => (on ? on.onRematch?.() : void this.restart()));
+      document.getElementById('res-edit')!.addEventListener('click', () => (on ? on.onLeave() : this.opts.onEdit()));
+      (document.getElementById('res-restart') ?? document.getElementById('res-edit'))?.focus();
     }
+  }
+
+  /** Final scoreboard: one row per team (winner first), with survivors, health left, damage, kills and the MVP unit type. */
+  private scoreboard(winner: number): string {
+    const u = this.sim.units;
+    const hp = new Array(6).fill(0);
+    for (let i = 0; i < u.count; i++) if (u.alive[i]) hp[u.team[i]] += u.hp[i];
+    const rows = this.opts.colors.map((c, ti) => {
+      let dmg = 0;
+      let best = -1;
+      let bestDmg = 0;
+      for (let k = 0; k < KIND_COUNT; k++) {
+        const v = this.sim.meter.dmg[ti * KIND_COUNT + k];
+        dmg += v;
+        if (v > bestDmg) {
+          bestDmg = v;
+          best = k;
+        }
+      }
+      return { ti, color: hex(c.main), alive: this.sim.alivePerTeam[ti], start: this.initialAlive[ti], pct: Math.round(Math.min(1, hp[ti] / Math.max(1, this.initialHp[ti])) * 100), dmg, kills: this.sim.meter.kills[ti], best, bestDmg };
+    });
+    rows.sort((x, y) => Number(y.ti === winner) - Number(x.ti === winner) || y.alive - x.alive || y.dmg - x.dmg);
+    const body = rows
+      .map((r) => {
+        let thumb = '';
+        if (r.best >= 0) {
+          try {
+            thumb = `<img class="dps-th" alt="" src="${this.d.icon(r.best, r.ti).toDataURL('image/png')}" />`;
+          } catch {
+            thumb = '';
+          }
+        }
+        const mvp = r.best >= 0 ? `<span class="res-mvp">${thumb}<span>${unitDisplayName(r.best)}<small>${fmtDamage(r.bestDmg)}</small></span></span>` : '–';
+        return `<tr class="${r.ti === winner ? 'win' : ''}"><td><span class="res-dot" style="background:${r.color}"></span>${this.teamName(r.ti).replace(/[&<>]/g, '')}${r.ti === winner ? ` <em>${t('battle.result.winner')}</em>` : ''}</td><td>${r.alive} / ${r.start}</td><td>${r.pct}%</td><td>${fmtDamage(r.dmg)}</td><td>${Math.round(r.kills)}</td><td>${mvp}</td></tr>`;
+      })
+      .join('');
+    const th = (k: string): string => `<th>${t(`battle.result.col.${k}`)}</th>`;
+    return `<div class="res-scroll"><table class="res-tbl"><thead><tr>${th('team')}${th('alive')}${th('health')}${th('damage')}${th('kills')}${th('mvp')}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
 
   /** Comedy view toggle (button / K). Online it is host-only and the host's choice goes to everybody. */
@@ -564,6 +611,7 @@ export class BattleScene {
       await this.sim.reset(this.seed);
       if (token !== this.enterId) return; // the battle was left while the worker was resetting
       this.resetBenchStats();
+      this.meterUi?.reset();
       this.resultShown = false;
       const res = document.getElementById('hud-result');
       if (res) res.hidden = true;

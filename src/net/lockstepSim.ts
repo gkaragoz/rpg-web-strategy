@@ -37,6 +37,9 @@ export class LockstepSim implements SimBackend {
   get projectiles() {
     return this.battle.projectiles;
   }
+  get meter() {
+    return this.battle.meter;
+  }
   get events(): SimEvent[] {
     return this.battle.events;
   }

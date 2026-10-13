@@ -1,4 +1,4 @@
-import type { FrameInfo, ProjView, SimBackend, SimStats, UnitsView } from './backend';
+import type { FrameInfo, MeterView, ProjView, SimBackend, SimStats, UnitsView } from './backend';
 import { DBG_KEYS, mapSizeFor, projectileCapacity, unitCapacity, type BattleConfig, type SimEvent } from './battle';
 import { SIM_DT } from './constants';
 import {
@@ -15,6 +15,7 @@ import {
   I_COUNT,
   I_LATEST,
   I_PCOUNT,
+  METER_DMG_LEN,
   PROF_KEYS,
   SNAP_SLOTS,
   allocShared,
@@ -33,6 +34,7 @@ export class WorkerSim implements SimBackend {
   time = 0;
   readonly units: UnitsView;
   readonly projectiles: ProjView;
+  readonly meter: MeterView;
   private readonly worker: Worker;
   private readonly sh: Shared;
   private pendingReset: ((count: number) => void) | null = null;
@@ -46,6 +48,7 @@ export class WorkerSim implements SimBackend {
     this.worker = worker;
     this.sh = sh;
     this.mapSize = mapSizeFor(config);
+    this.meter = { dmg: sh.meter.subarray(0, METER_DMG_LEN), kills: sh.meter.subarray(METER_DMG_LEN) };
     const s0 = sh.slots[0];
     this.units = {
       count,

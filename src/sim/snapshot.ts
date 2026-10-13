@@ -9,6 +9,8 @@ export interface BattleSnapshot {
     links: Array<[number, number[]]>;
     pools: Array<[number, number[]]>;
     paths: Array<[number, { pts: number[]; k: number; gx: number; gy: number; t: number }]>;
+    /** Damage meter (display only): damage per team x kind and kills per team. */
+    meter?: { dmg: number[]; kills: number[] };
   };
 }
 

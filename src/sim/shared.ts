@@ -1,4 +1,5 @@
 /** Layout of the SharedArrayBuffer shared between the worker and the main thread. */
+import { KIND_COUNT, MAX_TEAMS } from './units';
 export const SNAP_SLOTS = 4;
 
 export interface SnapSlot {
@@ -24,7 +25,13 @@ export interface SnapSlot {
   pTag: Uint8Array;
 }
 
+/** Damage meter block: damage per team x kind, then kills per team (float32, display only). */
+export const METER_DMG_LEN = MAX_TEAMS * KIND_COUNT;
+export const METER_LEN = METER_DMG_LEN + MAX_TEAMS;
+
 export interface Shared {
+  /** Latest damage meter (not ring-buffered: a torn read only shows a slightly stale number). */
+  meter: Float32Array;
   /** [0]=last published step, [1]=unit count, [2]=reset counter, [3..3+SLOTS)=arrow count per slot. */
   ctrlI: Int32Array;
   /** See the F_* indices. */
@@ -72,6 +79,7 @@ function build(sab: SharedArrayBuffer | null, cap: number, pcap: number): { shar
 
   const ctrlI = alloc(Int32Array as unknown as Ctor<Int32Array>, 4, 16);
   const ctrlF = alloc(Float64Array as unknown as Ctor<Float64Array>, 8, F_LEN);
+  const meter = f32(METER_LEN);
   const kind = u8(cap);
   const team = u8(cap);
   const maxHp = f32(cap);
@@ -101,7 +109,7 @@ function build(sab: SharedArrayBuffer | null, cap: number, pcap: number): { shar
       pTag: u8(pcap),
     });
   }
-  return { shared: { ctrlI, ctrlF, kind, team, maxHp, pActive, slots }, size: off };
+  return { shared: { ctrlI, ctrlF, meter, kind, team, maxHp, pActive, slots }, size: off };
 }
 
 export function allocShared(cap: number, pcap: number): SharedArrayBuffer {

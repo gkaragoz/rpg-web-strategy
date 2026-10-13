@@ -1,7 +1,7 @@
 import { Grid } from './grid';
 import { Terrain, T_BLOCKED, T_WATER } from './terrain';
 import type { MapSpec } from './mapSpec';
-import { PROJ_TAG, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides } from './units';
+import { PROJ_TAG, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides, KIND_COUNT } from './units';
 import { PF_PIERCE, PF_SKILL, Projectiles } from './projectiles';
 import { SKILL_ELEMENT, skillParams, type SkillParams } from './data/skills';
 import { CC_IMMUNE, SPLASH_TARGETS, TYPE_MULT, highGroundDamage, highGroundRange, slopeSpeed, splashFactor } from './data/combat';
@@ -147,6 +147,11 @@ export class Battle {
   };
   /** Total damage/heal/death counters (for progress measurement and tests). */
   readonly counters = { damage: 0, heal: 0, kills: 0 };
+  /**
+   * Damage meter (display only, never read by the simulation): damage dealt per team x unit kind
+   * (index team * KIND_COUNT + kind) and kills per team. Included in snapshots, not in the hash.
+   */
+  readonly meter = { dmg: new Float64Array(MAX_TEAMS * KIND_COUNT), kills: new Float64Array(MAX_TEAMS) };
   private lastDamageSeen = 0;
   private lastDamageT = 0;
   private noDamagerSince = -1;
@@ -217,6 +222,8 @@ export class Battle {
     this.stepNo = 0;
     this.lastDeathTime = 0;
     this.counters.damage = this.counters.heal = this.counters.kills = 0;
+    this.meter.dmg.fill(0);
+    this.meter.kills.fill(0);
     this.lastDamageSeen = this.lastDamageT = 0;
     this.noDamagerSince = -1;
     for (const k of DBG_KEYS) this.dbg[k] = 0;
@@ -1252,6 +1259,7 @@ export class Battle {
         links: [...this.links.entries()].map(([k, v]) => [k, v.slice()]),
         pools: [...this.pools.entries()].map(([k, v]) => [k, v.slice()]),
         paths: [...this.paths.entries()].map(([k, v]) => [k, { pts: v.pts.slice(), k: v.k, gx: v.gx, gy: v.gy, t: v.t }]),
+        meter: { dmg: Array.from(this.meter.dmg), kills: Array.from(this.meter.kills) },
       },
     };
   }
@@ -1277,6 +1285,12 @@ export class Battle {
     this.counters.damage = sc.damage;
     this.counters.heal = sc.heal;
     this.counters.kills = sc.kills;
+    this.meter.dmg.fill(0);
+    this.meter.kills.fill(0);
+    if (s.extra.meter) {
+      this.meter.dmg.set(s.extra.meter.dmg.slice(0, this.meter.dmg.length));
+      this.meter.kills.set(s.extra.meter.kills.slice(0, this.meter.kills.length));
+    }
     for (const k of Object.keys(this.dbg)) (this.dbg as Record<string, number>)[k] = sc[k] ?? 0;
     this.zones.length = 0;
     for (const z of s.extra.zones) this.zones.push({ ...(z as Zone) });
@@ -1952,6 +1966,7 @@ export class Battle {
     if (u.shieldT[j] > 0) amount *= u.shieldK[j];
     const dealt = Math.min(amount, Math.max(0, u.hp[j]));
     this.counters.damage += dealt;
+    if (src >= 0) this.meter.dmg[u.team[src] * KIND_COUNT + u.kind[src]] += dealt;
     if (!quiet) {
       if (this.emitEvents) this.pushEvent({ type: 'hit', x: u.x[j], y: u.y[j], unit: j, value: amount, kind: u.kind[j] });
       u.flash[j] = 0.12;
@@ -1992,6 +2007,7 @@ export class Battle {
     u.hp[j] = 0;
     this.lastDeathTime = this.time;
     this.counters.kills++;
+    if (src >= 0 && src !== j) this.meter.kills[u.team[src]]++;
     u.alive[j] = 0;
     u.deathT[j] = 0;
     u.target[j] = -1;
