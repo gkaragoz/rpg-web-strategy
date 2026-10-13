@@ -1865,3 +1865,8 @@ button.on {
     display: none; /* flag + chevron only on phones; the list still shows country and language */
   }
 }
+/* Dialog header rows must not shrink when the body is tall (the map filter chips were clipped). */
+.map-chips,
+.ug-bar {
+  flex: none;
+}
