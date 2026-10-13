@@ -225,7 +225,7 @@ FUZZ_N=600 FUZZ_START=300 npm test        # wider random sweep
 HUNT=1 FUZZ_N=300 npx vitest run src/sim/__tests__/fuzz.test.ts   # collect failures into test-results/fuzz-report.txt
 DEBUG_SCN=9 DEBUG_AT=20,30 npx vitest run src/sim/__tests__/debug.test.ts  # unit dump of one scenario
 ROSTER_N=400 npx vitest run src/sim/__tests__/rosterfuzz.test.ts  # random sweep with roster units
-BALANCE=1 npx vitest run src/sim/__tests__/balance.test.ts  # round-robin win rates (test-results/balance.txt)
+npm run balance:quick  # headless gold-equal tournament, win rates in .balance/quick.txt
 ```
 
 `skills.test.ts` checks that skills really work (summoning, resurrection, explosions, slow, taunt, fear, linked fate...), `troops.test.ts`

@@ -37,7 +37,7 @@ export function skillParams(id: SkillId): SkillParams {
     case 'shield':
       return P({ every: 5, radius: 3, dur: 4, a: 0.45, count: 3 });
     case 'burnOil':
-      return P({ dmg: 30, radius: 3, dur: 3.2 });
+      return P({ dmg: 18, radius: 3, dur: 3.2 });
     case 'explode':
       // Single-unit burst; the x2.5 factor compensates for the old grouped-squad explosion tuning.
       return P({ dmg: 46 * 2.5, radius: 3, dur: 3, a: 24 * 2.5 });
@@ -49,7 +49,7 @@ export function skillParams(id: SkillId): SkillParams {
       return P({ dmg: 7, radius: 5 });
     case 'stun':
       // Used on every hit instead of the plain attack: the stun stays shorter than the attack interval (no permanent lock).
-      return P({ dmg: 30, dur: 0.3, length: 8, half: 1.5 });
+      return P({ dmg: 24, dur: 0.3, length: 8, half: 1.5 });
     case 'fireball':
       return P({ every: 2, dmg: 7, radius: 5, count: 4 });
     case 'lifesteal':

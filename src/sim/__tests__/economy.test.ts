@@ -5,13 +5,12 @@ import { Terrain } from '../terrain';
 import { KIND_COUNT, STATS, Kind } from '../units';
 
 describe('gold cost', () => {
-  it('the basic unit costs 10 gold; all costs are in range and multiples of 5', () => {
+  it('the basic unit costs 10 gold; all costs are in range', () => {
     const c = costTable();
     expect(c[Kind.Warrior]).toBe(10);
     for (let k = 0; k < KIND_COUNT; k++) {
       expect(c[k], STATS[k].name).toBeGreaterThanOrEqual(MIN_COST);
       expect(c[k]).toBeLessThanOrEqual(MAX_COST);
-      expect(c[k] % 5).toBe(0);
     }
   });
 

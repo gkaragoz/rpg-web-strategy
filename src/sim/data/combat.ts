@@ -72,3 +72,19 @@ export const TYPE_MULT = new Float32Array([1.3, 1.0, 0.7, 0.9, 1.1, 1.3, 0.7, 0.
 export function typeMultiplier(dmg: number, arm: number): number {
   return TYPE_MULT[dmg * 4 + arm];
 }
+
+// ---- Area damage ----
+
+/** Basic-attack splash: damage falls off linearly with the distance from the impact point (SPLASH_EDGE at the radius). */
+export const SPLASH_EDGE = 0.5;
+/** Basic-attack splash hits at most this many enemies, so a tight blob is not wiped out by one volley. */
+export const SPLASH_TARGETS = 14;
+
+export function splashFactor(dist: number, radius: number): number {
+  return 1 - (1 - SPLASH_EDGE) * Math.min(1, dist / Math.max(0.01, radius));
+}
+
+// ---- Crowd control ----
+
+/** Seconds a unit is immune to new stuns/fear after one ends (stops mass stun-locks from many casters). */
+export const CC_IMMUNE = 1.2;

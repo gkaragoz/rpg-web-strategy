@@ -4,7 +4,7 @@ import type { MapSpec } from './mapSpec';
 import { PROJ_TAG, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides } from './units';
 import { PF_PIERCE, PF_SKILL, Projectiles } from './projectiles';
 import { SKILL_ELEMENT, skillParams, type SkillParams } from './data/skills';
-import { TYPE_MULT, highGroundDamage, highGroundRange, slopeSpeed } from './data/combat';
+import { CC_IMMUNE, SPLASH_TARGETS, TYPE_MULT, highGroundDamage, highGroundRange, slopeSpeed, splashFactor } from './data/combat';
 
 /** Damage type / armor class per kind (indices into TYPE_MULT). */
 const DMG_OF = Uint8Array.from(STATS, (s) => s.dmgType);
@@ -504,6 +504,7 @@ export class Battle {
     if (u.sideT[i] > 0) u.sideT[i] -= dt;
     if (u.banT[i] > 0) u.banT[i] -= dt;
     if (u.leashOffT[i] > 0) u.leashOffT[i] -= dt;
+    if (u.ccImmT[i] > 0) u.ccImmT[i] -= dt;
 
     // A unit that is being knocked back or stunned cannot act this step.
     if (u.kbVx[i] !== 0 || u.kbVy[i] !== 0) this.applyKnockback(i, dt);
@@ -1413,14 +1414,16 @@ export class Battle {
 
   private applyStun(j: number, dur: number): void {
     const u = this.units;
-    if (u.invulnT[j] > 0 || !u.alive[j]) return;
+    if (u.invulnT[j] > 0 || !u.alive[j] || u.ccImmT[j] > 0) return;
     u.stunT[j] = Math.max(u.stunT[j], dur);
+    u.ccImmT[j] = dur + CC_IMMUNE;
   }
 
   private applyFear(j: number, dur: number, fx: number, fy: number): void {
     const u = this.units;
-    if (u.invulnT[j] > 0 || !u.alive[j]) return;
+    if (u.invulnT[j] > 0 || !u.alive[j] || u.ccImmT[j] > 0) return;
     u.fearT[j] = Math.max(u.fearT[j], dur);
+    u.ccImmT[j] = dur + CC_IMMUNE;
     u.fearX[j] = fx;
     u.fearY[j] = fy;
   }
@@ -1649,8 +1652,8 @@ export class Battle {
       return;
     }
     if (s.shape === 1 && s.splash > 0) {
-      this.gather(this.enemyList[u.team[i]], u.x[t], u.y[t], s.splash, out, 48);
-      for (let k = 0; k < out.length; k++) dealt += this.damage(out[k], power, i, true);
+      this.gather(this.enemyList[u.team[i]], u.x[t], u.y[t], s.splash, out, SPLASH_TARGETS);
+      for (let k = 0; k < out.length; k++) dealt += this.damage(out[k], power * splashFactor(Math.hypot(u.x[out[k]] - u.x[t], u.y[out[k]] - u.y[t]), s.splash), i, true);
       this.burst(u.x[t], u.y[t], s.splash, null);
     } else if (s.shape === 2 && s.splash > 0) {
       this.gatherLine(this.enemyList[u.team[i]], u.x[i], u.y[i], nx, ny, s.splash * 1.7, s.splash * 0.5 + 0.3, out);
@@ -1826,7 +1829,7 @@ export class Battle {
     const enemies = this.enemyList[team];
     out.length = 0;
     if (spl > 0) {
-      this.gather(enemies, x, y, spl, out, 64);
+      this.gather(enemies, x, y, spl, out, SPLASH_TARGETS);
       if (out.length > 0 && this.emitEvents && spl >= 2.5) this.burst(x, y, spl, skill);
     } else {
       const g0 = this.grids[0];
@@ -1893,7 +1896,8 @@ export class Battle {
     const first = out[0];
     for (let k = 0; k < out.length; k++) {
       const j = out[k];
-      this.damage(j, k === 0 || spl > 0 ? amount : amount * 0.6, src, false);
+      const fall = spl > 0 && !(skill && (fl & PF_SKILL) !== 0) ? splashFactor(Math.hypot(u.x[j] - x, u.y[j] - y), spl) : 1;
+      this.damage(j, (k === 0 || spl > 0 ? amount : amount * 0.6) * fall, src, false);
       if (!u.alive[j]) continue;
       if (slowSkill) this.applySlow(j, slowSkill.dur || 2, slowSkill.a, slowSkill.b);
       if (stun > 0 && (skill !== 'chill' || (fl & PF_SKILL) !== 0)) this.applyStun(j, stun);

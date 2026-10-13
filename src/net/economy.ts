@@ -2,8 +2,14 @@ import type { Terrain } from '../sim/terrain';
 import { T_GRASS, T_PATH } from '../sim/terrain';
 import { KIND_COUNT, STATS } from '../sim/units';
 import { TROOP_BY_ID } from '../sim/data/troops';
+import { COST_ADJ } from '../sim/data/costs';
 
-/** Warrior (classic) = 10 gold; the others scale with power: proportional to sqrt(effective HP x damage per second). */
+/** Key of a kind in the cost calibration table: roster id, or the lower-case classic name. */
+export function costKey(kind: number): string {
+  return STATS[kind].troop ?? STATS[kind].name.toLowerCase().replace(/ /g, '-');
+}
+
+/** Warrior (classic) = 10 gold; the others scale with power (proportional to sqrt(effective HP x damage per second)) times a simulation-calibrated factor (data/costs.ts). */
 const WARRIOR = Math.sqrt((160 / 1) * (16 / 0.9));
 export const MIN_COST = 5;
 export const MAX_COST = 600;
@@ -18,7 +24,8 @@ export function buyable(kind: number): boolean {
  * Gold cost of a unit (based on the current STATS).
  * Effective HP (including armor) x power per second, with range/area/skill multipliers; rounded to the nearest 5.
  */
-export function unitGold(kind: number): number {
+/** Cost before rounding and clamping. */
+export function rawCost(kind: number): number {
   const s = STATS[kind];
   const ehp = s.hp / Math.max(0.15, 1 - s.armor);
   const dps = s.power / Math.max(0.3, s.cooldown);
@@ -31,8 +38,11 @@ export function unitGold(kind: number): number {
   if (s.scale > 1.5) mult *= 1.25; // giant body: holds the front line
   if (s.skill) mult *= 1.12;
   const strength = Math.sqrt(ehp * dps) * mult;
-  const raw = (10 * strength) / WARRIOR;
-  return Math.min(MAX_COST, Math.max(MIN_COST, Math.round(raw / 5) * 5));
+  return ((10 * strength) / WARRIOR) * (COST_ADJ[costKey(kind)] ?? 1);
+}
+
+export function unitGold(kind: number): number {
+  return Math.min(MAX_COST, Math.max(MIN_COST, Math.round(rawCost(kind))));
 }
 
 /** Cost table of all kinds. */

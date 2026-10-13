@@ -2,7 +2,7 @@ import { Battle, type BattleConfig } from '../battle';
 import { DEFAULT_MAP, type MapSpec } from '../mapSpec';
 import { TROOP_BY_ID } from '../data/troops';
 import { unitGold } from '../../net/economy';
-import { KIND_COUNT, STATS } from '../units';
+import { KIND_COUNT, Kind, STATS, isHealer } from '../units';
 
 /** Headless balance tooling: gold-equal single-type armies fight in the real (deterministic) simulation. */
 
@@ -15,6 +15,8 @@ export interface Scenario {
 
 export const SCENARIOS: Record<string, Scenario> = {
   open: { id: 'open', map: DEFAULT_MAP, env: false, mapSize: 56 },
+  hills: { id: 'hills', map: { ...DEFAULT_MAP, river: 'none', forest: 'sparse', relief: 'hills' }, env: true, mapSize: 56 },
+  ridge: { id: 'ridge', map: { ...DEFAULT_MAP, river: 'none', forest: 'sparse', relief: 'ridge' }, env: true, mapSize: 56 },
   forest: { id: 'forest', map: { ...DEFAULT_MAP, river: 'none', forest: 'sparse' }, env: true, mapSize: 56 },
 };
 
@@ -55,12 +57,28 @@ export function armySize(kind: number, gold: number, cap: number): number {
   return Math.max(1, Math.min(cap, Math.floor(gold / Math.max(1, unitGold(kind)))));
 }
 
-/** Rectangular block of `n` units whose front edge is at `frontX` (team 0 faces +x, team 1 faces -x). */
-function block(team: number, kind: number, n: number, frontX: number, cy: number, out: number[]): void {
+/** Share of the budget a healer army spends on healers; the rest buys a Warrior line to protect them. */
+export const HEALER_SHARE = 0.35;
+
+/**
+ * The units of an army bought with `gold` for this kind, front line first. Most kinds fight alone; healers deal
+ * (almost) no damage, so they are tested as healers behind a Warrior line.
+ */
+export function armyOf(kind: number, gold: number, cap: number): number[] {
+  if (!isHealer(kind)) return Array.from({ length: armySize(kind, gold, cap) }, () => kind);
+  const nH = Math.max(1, Math.min(cap, Math.floor((gold * HEALER_SHARE) / Math.max(1, unitGold(kind)))));
+  const nW = Math.max(1, Math.min(cap, Math.floor((gold * (1 - HEALER_SHARE)) / Math.max(1, unitGold(Kind.Warrior)))));
+  return [...Array.from({ length: nW }, () => Kind.Warrior), ...Array.from({ length: nH }, () => kind)];
+}
+
+/** Rectangular block of units (front line first) whose front edge is at `frontX` (team 0 faces +x, team 1 faces -x). */
+function block(team: number, kinds: number[], frontX: number, cy: number, out: number[]): void {
+  const n = kinds.length;
   const cols = Math.max(1, Math.ceil(Math.sqrt(n / 1.6)));
   const rows = Math.ceil(n / cols);
   const sp = 1.2;
   for (let i = 0; i < n; i++) {
+    const kind = kinds[i];
     const c = Math.floor(i / rows);
     const r = i % rows;
     const x = team === 0 ? frontX - c * sp : frontX + c * sp;
@@ -69,13 +87,13 @@ function block(team: number, kind: number, n: number, frontX: number, cy: number
   }
 }
 
-export function makeConfig(job: Job, nA: number, nB: number): BattleConfig {
+export function makeConfig(job: Job, armyA: number[], armyB: number[]): BattleConfig {
   const sc = SCENARIOS[job.scenario];
   const layout: number[] = [];
   const mid = sc.mapSize / 2;
   const half = 5.5;
-  block(0, job.a, nA, mid - half, mid, layout);
-  block(1, job.b, nB, mid + half, mid, layout);
+  block(0, armyA, mid - half, mid, layout);
+  block(1, armyB, mid + half, mid, layout);
   return { mode: 'custom', perTeam: 0, teamCount: 2, mapSize: sc.mapSize, env: sc.env, kite: true, terrainSeed: 3, map: sc.map, layout: new Float32Array(layout) };
 }
 
@@ -83,9 +101,11 @@ const MAX_SECONDS = 200;
 
 /** One fight: army a (team 0) against army b (team 1), both bought with the same gold. */
 export function runFight(job: Job): FightResult {
-  const nA = armySize(job.a, job.gold, job.cap);
-  const nB = armySize(job.b, job.gold, job.cap);
-  const bt = new Battle(job.seed, makeConfig(job, nA, nB));
+  const armyA = armyOf(job.a, job.gold, job.cap);
+  const armyB = armyOf(job.b, job.gold, job.cap);
+  const nA = armyA.length;
+  const nB = armyB.length;
+  const bt = new Battle(job.seed, makeConfig(job, armyA, armyB));
   const steps = 30 * MAX_SECONDS;
   let s = 0;
   for (; s < steps && bt.winner === -1; s++) bt.step(1 / 30);

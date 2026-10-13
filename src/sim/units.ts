@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { TROOPS, type MoveClass, type SkillId, type TroopDef } from './data/troops';
 import { ARM, DMG } from './data/combat';
+import { STAT_ADJ } from './data/costs';
 
 export const MAX_TEAMS = 6;
 /** The first 5 kinds (classic) have fixed ids. The rest are roster units (in TROOPS order). */
@@ -76,10 +77,10 @@ function troopStats(t: TroopDef): KindStats {
   return {
     name: t.name,
     role: heal ? Role.Healer : t.ranged ? Role.Ranged : Role.Melee,
-    hp: Math.round(hp / HP_DIV),
+    hp: Math.round((hp / HP_DIV) * (STAT_ADJ[t.id] ?? 1)),
     speed: MOVE_SPEED[t.move],
     range: t.reach,
-    power: Math.max(1, Math.round(atk / ATK_DIV)),
+    power: Math.max(1, Math.round((atk / ATK_DIV) * (STAT_ADJ[t.id] ?? 1))),
     cooldown: Math.round(Math.min(5, Math.max(0.4, 1 / Math.max(0.2, t.atkSpd))) * 100) / 100,
     swing: t.ranged ? (t.magical ? 0.5 : 0.4) : 0.35,
     hitAt: t.ranged ? (t.magical ? 0.3 : 0.25) : 0.2,
@@ -161,6 +162,14 @@ export const TUNABLE: Array<{ key: StatKey; label: string; hint: string; min: nu
 
 /** Default values (for the UI "reset"); used by the settings dialog. */
 export const DEFAULT_STATS: KindStats[] = STATS.map((s) => ({ ...s }));
+
+/** Recomputes the roster stats after STAT_ADJ changed (calibration tool and tests only). */
+export function refreshStats(): void {
+  TROOPS.forEach((t, i) => {
+    Object.assign(STATS[LEGACY_COUNT + i], troopStats(t));
+    Object.assign(DEFAULT_STATS[LEGACY_COUNT + i], troopStats(t));
+  });
+}
 
 /** Applies user overrides to STATS; missing fields fall back to defaults. Called before the sim starts. */
 export function applyStats(overrides: StatOverrides | undefined): void {
@@ -262,6 +271,8 @@ export class Units {
   kbVx: Float32Array;
   kbVy: Float32Array;
   stunT: Float32Array;
+  /** Crowd-control immunity timer: after a stun or fear a unit cannot be stunned/feared again until it runs out. */
+  ccImmT: Float32Array;
   /** Banned target and remaining time (progress watchdog). */
   banTarget: Int32Array;
   banT: Float32Array;
@@ -360,6 +371,7 @@ export class Units {
     this.kbVx = new Float32Array(cap);
     this.kbVy = new Float32Array(cap);
     this.stunT = new Float32Array(cap);
+    this.ccImmT = new Float32Array(cap);
     this.banTarget = new Int32Array(cap).fill(-1);
     this.banT = new Float32Array(cap);
     this.chaseT = new Float32Array(cap);
@@ -444,6 +456,7 @@ export class Units {
     this.sideDir[i] = 1;
     this.kbVx[i] = this.kbVy[i] = 0;
     this.stunT[i] = 0;
+    this.ccImmT[i] = 0;
     this.banTarget[i] = -1;
     this.banT[i] = this.chaseT[i] = this.holdT[i] = this.leashOffT[i] = 0;
     this.chaseBest[i] = Infinity;

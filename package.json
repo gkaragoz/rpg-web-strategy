@@ -19,6 +19,7 @@
     "lint:repo": "node scripts/check-repo.mjs",
     "balance": "node scripts/balance.mjs",
     "balance:quick": "node scripts/balance.mjs --quick",
+    "balance:calibrate": "node scripts/balance.mjs --quick --calibrate 8 --write",
     "test:fast": "vitest run --exclude \"**/{fuzz,rosterfuzz,comedy,mapSpec,onlinesetup,economy,troops,determinism,snapsize,crowd}.test.ts\"",
     "test:net": "vitest run net lan chunk onlinesetup",
     "test:sim": "vitest run skills troops edge terrain determinism crowd comedy armies economy mapSpec",

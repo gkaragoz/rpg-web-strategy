@@ -645,7 +645,7 @@ export const TROOPS: TroopDef[] = [
     aoe: 4,
     skill: 'curseZone',
     text: L('Desert curse: enemies in the zone take damage over time and slow down.', 'Çöl laneti: bölgedeki düşmanlar süreli hasar alır ve yavaşlar.'),
-    tweak: [1.0, 0.9, 6],
+    tweak: [1.15, 1.1, 6],
   }),
   T({
     id: 'granite-colossus',
