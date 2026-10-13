@@ -1,3 +1,4 @@
+import { Reassembler, splitMsg } from './chunk';
 import type { Msg } from './protocol';
 import { noop, type Transport } from './transport';
 
@@ -79,6 +80,9 @@ export class WsHostTransport implements Transport {
   onPeerLeave: (peer: string) => void = noop;
   onClose: (reason: string) => void = noop;
 
+  private readonly asm = new Map<string, Reassembler>();
+  private chunkId = 1;
+
   private constructor(private readonly ws: WebSocket) {
     ws.onmessage = (ev) => {
       let m: { from?: string; msg?: Msg; join?: string; leave?: string };
@@ -88,8 +92,15 @@ export class WsHostTransport implements Transport {
         return;
       }
       if (m.join) this.onPeerJoin(m.join);
-      else if (m.leave) this.onPeerLeave(m.leave);
-      else if (m.from && m.msg) this.onMessage(m.from, m.msg);
+      else if (m.leave) {
+        this.asm.delete(m.leave);
+        this.onPeerLeave(m.leave);
+      } else if (m.from && m.msg) {
+        let r = this.asm.get(m.from);
+        if (!r) this.asm.set(m.from, (r = new Reassembler()));
+        const full = r.push(m.msg);
+        if (full) this.onMessage(m.from, full);
+      }
     };
     ws.onclose = () => this.onClose('Sunucu baglantisi koptu');
   }
@@ -100,10 +111,10 @@ export class WsHostTransport implements Transport {
   }
 
   send(to: string, msg: Msg): void {
-    this.ws.send(JSON.stringify({ to, msg }));
+    for (const p of splitMsg(msg, this.chunkId++)) this.ws.send(JSON.stringify({ to, msg: p }));
   }
   broadcast(msg: Msg, except?: string): void {
-    this.ws.send(JSON.stringify({ to: '*', except, msg }));
+    for (const p of splitMsg(msg, this.chunkId++)) this.ws.send(JSON.stringify({ to: '*', except, msg: p }));
   }
   disconnect(peer: string): void {
     this.ws.send(JSON.stringify({ disconnect: peer }));
@@ -125,6 +136,9 @@ export class WsGuestTransport implements Transport {
   onPeerLeave: (peer: string) => void = noop;
   onClose: (reason: string) => void = noop;
 
+  private readonly asm = new Reassembler();
+  private chunkId = 1;
+
   private constructor(
     private readonly ws: WebSocket,
     readonly id: string,
@@ -137,7 +151,10 @@ export class WsGuestTransport implements Transport {
         return;
       }
       if (m.close) this.onClose(m.close);
-      else if (m.msg) this.onMessage('host', m.msg);
+      else if (m.msg) {
+        const full = this.asm.push(m.msg);
+        if (full) this.onMessage('host', full);
+      }
     };
     ws.onclose = () => this.onClose('Baglanti koptu');
   }
@@ -148,7 +165,7 @@ export class WsGuestTransport implements Transport {
   }
 
   send(_to: string, msg: Msg): void {
-    this.ws.send(JSON.stringify({ msg }));
+    for (const p of splitMsg(msg, this.chunkId++)) this.ws.send(JSON.stringify({ msg: p }));
   }
   broadcast(): void {
     /* yalniz host */

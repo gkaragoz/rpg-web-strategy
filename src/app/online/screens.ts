@@ -6,7 +6,6 @@ import type { Rarity } from '../../sim/data/troops';
 import { MapPicker, drawMinimap } from '../mapPicker';
 import { PALETTES, defaultState, type AppState } from '../state';
 import { hex } from '../state';
-import { loadTurn, saveTurn } from '../../net/peerTransport';
 import { playerColor } from './cursors';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -32,7 +31,6 @@ export class MenuScreen {
   private readonly el: HTMLElement;
   private color: number;
   private busy = false;
-  private saveTurnForm: () => void = () => {};
 
   constructor(
     root: HTMLElement,
@@ -53,12 +51,6 @@ export class MenuScreen {
   <div class="on-error" id="m-error" role="alert" hidden></div>
   <div class="on-status" id="m-status" aria-live="polite" hidden></div>
   ${init.last ? `<div class="on-rejoin"><span>Son lobi: <b>${esc(init.last)}</b></span> <button type="button" class="primary" id="m-rejoin">Yeniden bağlan</button></div>` : ''}
-  <details class="on-adv"><summary>Gelişmiş: TURN sunucusu (farklı ağlarda bağlanamıyorsan)</summary>
-    <p class="note">Farklı ağlardaki iki cihaz doğrudan bağlanamazsa bir TURN rölesi gerekir (ücretsiz katmanı olan Metered, Cloudflare vb.). Host’ta ayarlamak çoğu zaman yeter.</p>
-    <label>Adres(ler) <input id="m-turn-url" placeholder="turn:sunucu:3478, turns:sunucu:443?transport=tcp" autocomplete="off" /></label>
-    <label>Kullanıcı <input id="m-turn-user" autocomplete="off" /></label>
-    <label>Parola <input id="m-turn-cred" type="password" autocomplete="off" /></label>
-  </details>
   <div class="on-cards">
     <section class="on-card">
       <h3>Lobi kur</h3>
@@ -83,16 +75,6 @@ export class MenuScreen {
 </div>`;
     root.appendChild(this.el);
     const q = <T extends HTMLElement>(s: string): T => this.el.querySelector(s) as T;
-    const turn = loadTurn();
-    if (turn) {
-      q<HTMLInputElement>('#m-turn-url').value = turn.urls;
-      q<HTMLInputElement>('#m-turn-user').value = turn.username;
-      q<HTMLInputElement>('#m-turn-cred').value = turn.credential;
-      (this.el.querySelector('.on-adv') as HTMLDetailsElement).open = true;
-    }
-    const saveTurnForm = (): void =>
-      saveTurn({ urls: q<HTMLInputElement>('#m-turn-url').value, username: q<HTMLInputElement>('#m-turn-user').value, credential: q<HTMLInputElement>('#m-turn-cred').value });
-    this.saveTurnForm = saveTurnForm;
     this.paintColors();
     let tp: 'lan' | 'net' = netAvailable ? 'net' : 'lan';
     const paintTp = (): void => {
@@ -118,7 +100,6 @@ export class MenuScreen {
     });
     q('#m-host').addEventListener('click', () => {
       if (this.busy) return;
-      this.saveTurnForm();
       const p = prof();
       this.h.onHost(p.name, p.color, tp);
     });
@@ -126,7 +107,6 @@ export class MenuScreen {
       if (this.busy) return;
       const code = q<HTMLInputElement>('#m-code').value.trim().toUpperCase();
       if (!code) return this.setError('Lobi kodunu yaz.');
-      this.saveTurnForm();
       const p = prof();
       this.h.onJoin(p.name, p.color, code, q<HTMLInputElement>('#m-pass').value, false);
     });
@@ -134,7 +114,6 @@ export class MenuScreen {
       if (this.busy) return;
       const code = q<HTMLInputElement>('#m-scode').value.trim().toUpperCase();
       if (!code) return this.setError('Lobi kodunu yaz.');
-      this.saveTurnForm();
       const p = prof();
       this.h.onJoin(p.name, p.color, code, '', true);
     });

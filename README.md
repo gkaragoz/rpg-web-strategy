@@ -92,15 +92,13 @@ Stüdyodaki **Çevrimiçi** düğmesi: ad + renk seç, sonra **Lobi kur**, **Kod
   Birim galerisi gibi bir panel açıksa imleç etiketi `Ad (Birim seçiyor)` olur. `Enter` ile oyun içi sohbet.
 - **Seyirci** oyun ortasında girebilir; kopan oyuncu sayfayı yenileyip menüdeki **Yeniden bağlan** ile (≈1 dk içinde) aynı takıma döner.
 
-**İnternet (varsayılan):** bir **WebSocket rölesi** üzerinden (`relay/`, ücretsiz Cloudflare Worker + Durable Object): iki cihaz farklı ağlarda/NAT arkasında olsa da bağlanır, TURN gerekmez. Röleye ulaşılamazsa doğrudan **WebRTC** (PeerJS) denenir. Lobide hangi yolun kullanıldığı kodun yanında yazar. Rölenin kendi adresini kullanmak için `relay/` içinde `npx wrangler deploy` çalıştırıp çıkan adresi `src/app/online/online.ts` içindeki `RELAY_URL`'e yaz.
+**İnternet (varsayılan):** bir **WebSocket rölesi** üzerinden (`relay/`, ücretsiz Cloudflare Worker + Durable Object): iki cihaz farklı ağlarda/NAT arkasında olsa da bağlanır, TURN gerekmez. Röleye ulaşılamazsa doğrudan **WebRTC** (PeerJS) denenir. Lobide hangi yolun kullanıldığı kodun yanında yazar. Rölenin sonradan güncellenmesi için `relay/` içinde `npx wrangler login` (tarayıcıda izin verirsin) + `npx wrangler deploy` gerekir; çalışan röle için giriş gerekmez. Rölenin kendi adresini kullanmak için `relay/` içinde `npx wrangler deploy` çalıştırıp çıkan adresi `src/app/online/online.ts` içindeki `RELAY_URL`'e yaz.
 Host oyunu yönetir; oyun mantığı herkeste aynı deterministik simülasyonla koşar, ağdan yalnız komutlar geçer (sapma olursa kontrol toplamı yakalar, host durum görüntüsü yollar).
 **LAN:** kurulum sihirbazının `oyna-lan` başlatıcısı (ya da `node server.mjs app --open --lan`; geliştirmede `npm run dev` zaten `/ws` sunar) host'un bilgisayarında sunucuyu
 LAN'a açar; arkadaşlar yazdırılan `http://<host-ip>:5174` adresini açıp koda katılır. Menüde bağlantı türünü *LAN* seç.
 
 Sorun giderme: *Sinyal sunucusuna ulaşılamadı* → ağ/güvenlik duvarı PeerJS sinyal sunucusunu (`0.peerjs.com`) engelliyor, LAN'ı dene.
-*Host bulundu ama doğrudan bağlantı kurulamadı* (ya da uzun bekleyip zaman aşımı) → iki cihaz **farklı ağlarda** ve NAT'lar doğrudan bağlantıya izin vermiyor (mobil operatör CGNAT'ı, kurumsal ağ).
-Bu durumda bir **TURN rölesi** gerekir: PeerJS'in ve Open Relay'in ücretsiz genel TURN sunucuları artık çalışmıyor. Ücretsiz katmanı olan bir hizmetten (Metered, Cloudflare Calls vb.)
-TURN adresi/kullanıcı/parola al ve menüde **Gelişmiş: TURN sunucusu** alanına gir (tarayıcıda saklanır; host'ta girmek çoğu zaman yeter). `?relay=1` URL parametresi yalnız röle kullanmaya zorlar (TURN'ü sınamak için).
+*Host bulundu ama doğrudan bağlantı kurulamadı* (yalnız röle ulaşılamazken WebRTC'ye düşüldüğünde) → iki cihaz farklı ağlarda ve NAT'lar doğrudan bağlantıya izin vermiyor; ücretsiz TURN sunucusu yok. Birincil yol olan **röle** bu durumda kullanılır; röle de erişilemiyorsa (ağ `workers.dev` adresini engelliyor) LAN'ı dene.
 *LAN sunucusuna bağlanılamadı* → oyunu `--lan` ile başlatmadın ya da Pages'ten LAN seçtin (Pages https olduğundan `ws://` kuramaz).
 
 ## Birimler

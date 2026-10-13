@@ -10,45 +10,16 @@ const OPEN_TIMEOUT_MS = 15000;
 /** Host ile dogrudan (STUN/TURN uzerinden) baglanti kurma suresi: mobil ag + role icin uzun tutulur. */
 const CONNECT_TIMEOUT_MS = 35000;
 
-/** Kullanici TURN ayari (menu > Gelismis); yoksa yalniz STUN. peerjs.com ve Open Relay TURN'leri artik calismiyor. */
-export const TURN_KEY = 'rpgweb.turn';
-export interface TurnConfig {
-  urls: string;
-  username: string;
-  credential: string;
-}
-export function loadTurn(): TurnConfig | null {
-  try {
-    const t = JSON.parse(localStorage.getItem(TURN_KEY) ?? 'null') as TurnConfig | null;
-    return t && typeof t.urls === 'string' && t.urls.trim() ? t : null;
-  } catch {
-    return null;
-  }
-}
-export function saveTurn(t: TurnConfig | null): void {
-  try {
-    if (t && t.urls.trim()) localStorage.setItem(TURN_KEY, JSON.stringify(t));
-    else localStorage.removeItem(TURN_KEY);
-  } catch {
-    /* depolama kapali */
-  }
-}
-function iceServers(): RTCIceServer[] {
-  const list: RTCIceServer[] = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' },
-  ];
-  const t = loadTurn();
-  if (t) list.push({ urls: t.urls.split(/[\s,]+/).filter(Boolean), username: t.username, credential: t.credential });
-  return list;
-}
-
-/** ?relay=1: yalniz TURN rolesi (farkli aglardaki bagi taklit eder; tani amacli). */
-const forceRelay = (): boolean => typeof location !== 'undefined' && new URLSearchParams(location.search).get('relay') === '1';
-const peerOpts = (): { config: RTCConfiguration } => ({ config: { iceServers: iceServers(), iceCandidatePoolSize: 2, iceTransportPolicy: forceRelay() ? 'relay' : 'all' } });
+/** Yalniz STUN: internet icin birincil yol WebSocket roleisidir (relay/); WebRTC yedek yoldur. */
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:global.stun.twilio.com:3478' },
+];
 
 export const peerId = (code: string): string => PREFIX + code.toUpperCase();
+
+const peerOpts = ():{ config: RTCConfiguration } => ({ config: { iceServers: ICE_SERVERS, iceCandidatePoolSize: 2 } });
 
 function openPeer(id?: string): Promise<Peer> {
   return new Promise((resolve, reject) => {
