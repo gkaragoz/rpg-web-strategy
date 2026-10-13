@@ -385,7 +385,7 @@ function startOnline(joinCode?: string): void {
     setComedyVisual: (on) => {
       comedy.visual = on ?? comedyVisualOn();
     },
-    onExit: () => {
+    onExit: (reopenMenu) => {
       online = null;
       iconColors = null;
       rebakeAtlas();
@@ -398,6 +398,7 @@ function startOnline(joinCode?: string): void {
       studio.show();
       editor.enter();
       if (location.hash.startsWith('#join=')) history.replaceState(null, '', location.pathname + location.search);
+      if (reopenMenu) startOnline();
     },
   });
   app2.openMenu(joinCode);

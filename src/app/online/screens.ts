@@ -187,7 +187,7 @@ export class LobbyScreen {
   private readonly mapState: AppState;
   private lastSettings = '';
   private lastPlayers = '';
-  private chatCount = 0;
+  private chatSeen = 0;
 
   constructor(
     root: HTMLElement,
@@ -470,13 +470,15 @@ export class LobbyScreen {
   private paintChat(): void {
     const m = this.session.model;
     const log = this.q('#l-log');
-    while (this.chatCount < m.chat.length) {
-      const c = m.chat[this.chatCount++];
+    for (const c of m.chat) {
+      if (c.n <= this.chatSeen) continue;
+      this.chatSeen = c.n;
       const p = m.state?.players.find((x) => x.id === c.id);
       const d = document.createElement('div');
       d.className = 'on-line';
       d.innerHTML = `<b style="color:${hex(playerColor(p?.color ?? 0))}">${esc(c.name)}</b> ${esc(c.text)}`;
       log.appendChild(d);
+      while (log.children.length > 200) log.firstElementChild?.remove();
       log.scrollTop = log.scrollHeight;
     }
   }

@@ -3,7 +3,7 @@ import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
 
 /** Protokol surumu: uyusmayan istemci lobiye giremez. */
-export const PROTOCOL = 1;
+export const PROTOCOL = 2;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;

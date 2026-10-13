@@ -22,6 +22,8 @@ export interface PresenceInfo {
 }
 
 export interface ChatLine {
+  /** Artan sira numarasi: liste kayinca (200 sinir) tuketicilerin takibi bozulmasin. */
+  n: number;
   id: string;
   name: string;
   text: string;
@@ -38,6 +40,7 @@ export class OnlineModel {
   placed = new Map<number, PlacedItem>();
   presence = new Map<string, PresenceInfo>();
   chat: ChatLine[] = [];
+  private chatN = 0;
   result: { winner: number; alive: number[] } | null = null;
   /** Host'tan gelen son hiz/duraklat bilgisi. */
   speed = 1;
@@ -92,7 +95,7 @@ export class OnlineModel {
         this.lastFail = { cids: msg.cids, reason: msg.reason };
         break;
       case 'chat':
-        this.chat.push({ id: msg.id, name: msg.name, text: msg.text, ts: msg.ts });
+        this.chat.push({ n: ++this.chatN, id: msg.id, name: msg.name, text: msg.text, ts: msg.ts });
         if (this.chat.length > 200) this.chat.shift();
         break;
       case 'presence':
@@ -122,7 +125,7 @@ export class OnlineModel {
         this.closedReason = msg.reason;
         break;
       case 'closed':
-        this.closedReason = 'Lobi kapandi';
+        this.closedReason = this.closedReason ?? 'Lobi kapandi';
         break;
     }
     // Ayrilan oyuncularin imleci silinir.
@@ -186,7 +189,8 @@ export class GuestSession implements Session {
   ) {
     tp.onMessage = (_from, msg) => this.model.apply(msg as ServerMsg);
     tp.onClose = (reason) => {
-      this.model.closedReason = this.model.closedReason ?? reason;
+      const text = reason === 'closed' ? 'Lobi kapandi' : reason === 'kicked' ? 'Host tarafindan atildin' : reason;
+      this.model.closedReason = this.model.closedReason ?? text;
       this.model.apply({ t: 'closed' });
     };
     this.send({ t: 'join', name: opts.name, color: opts.color, pass: opts.pass ? passHash(opts.pass) : undefined, spectator: opts.spectator, version: PROTOCOL, token: opts.token });

@@ -95,6 +95,10 @@ export class HostLobby {
   private readonly hashes = new Map<number, number>();
   private pendingPresence = new Map<string, ServerMsg>();
   private closed = false;
+  private ghostSeq = 1;
+  private readonly lastResync = new Map<string, number>();
+  /** Gonderen basina mesaj hiz siniri (jeton kovasi): kotu niyetli/hatali istemci host'u bogamasin. */
+  private readonly rate = new Map<string, { tokens: number; at: number }>();
 
   constructor(
     private readonly tp: Transport,
@@ -206,10 +210,33 @@ export class HostLobby {
   }
 
   handle(from: string, msg: ClientMsg): void {
-    if (this.closed) return;
+    if (this.closed || !msg || typeof msg !== 'object') return;
+    try {
+      this.dispatch(from, msg);
+    } catch (e) {
+      // Bozuk/beklenmeyen mesaj lobiyi dusurmesin.
+      console.warn('[host] mesaj islenemedi', msg.t, e);
+    }
+  }
+
+  /** Presence haric mesajlar icin saniyede ~40 mesaj (patlama 80). */
+  private allow(from: string): boolean {
+    if (from === this.hostId) return true;
+    const t = this.now();
+    let r = this.rate.get(from);
+    if (!r) this.rate.set(from, (r = { tokens: 80, at: t }));
+    r.tokens = Math.min(80, r.tokens + ((t - r.at) / 1000) * 40);
+    r.at = t;
+    if (r.tokens < 1) return false;
+    r.tokens -= 1;
+    return true;
+  }
+
+  private dispatch(from: string, msg: ClientMsg): void {
     if (msg.t === 'join') return this.onJoin(from, msg);
     const p = this.player(from);
     if (!p) return;
+    if (msg.t !== 'presence' && !this.allow(from)) return;
     const isHost = from === this.hostId;
     switch (msg.t) {
       case 'profile':
@@ -229,13 +256,13 @@ export class HostLobby {
         this.onPresence(from, msg);
         break;
       case 'place':
-        this.onPlace(p, msg.items);
+        if (Array.isArray(msg.items)) this.onPlace(p, msg.items);
         break;
       case 'unplace':
-        this.onUnplace(p, msg.ids);
+        if (Array.isArray(msg.ids)) this.onUnplace(p, msg.ids);
         break;
       case 'check':
-        this.onCheck(from, msg.step, msg.hash);
+        if (Number.isFinite(msg.step) && Number.isFinite(msg.hash)) this.onCheck(from, msg.step, msg.hash);
         break;
       case 'settings':
         if (isHost) this.onSettings(msg.settings, msg.password);
@@ -272,17 +299,22 @@ export class HostLobby {
 
   private onJoin(from: string, msg: Extract<ClientMsg, { t: 'join' }>): void {
     if (msg.version !== PROTOCOL) return this.reject(from, 'version');
+    // Ayni baglantidan ikinci join (cift tiklama / yeniden gonderim): yok say.
+    if (this.player(from)) return;
     if (msg.token && this.kickedTokens.has(msg.token)) return this.reject(from, 'kicked');
     if (this.passHashed !== null && (msg.pass ?? '') !== this.passHashed) return this.reject(from, 'password');
-    // Geri baglanma: bagli degil bir oyuncunun jetonu.
+    // Geri baglanma: jeton eslesen oyuncu. Eski baglanti henuz kopmus gorunmuyorsa (yari acik baglanti) devralinir.
     if (msg.token) {
       for (const [oldId, slot] of this.slots) {
         const p = this.player(oldId);
-        if (slot.token === msg.token && p && !p.connected && oldId !== this.hostId) {
+        if (slot.token === msg.token && p && oldId !== this.hostId) {
+          const stale = p.connected;
           this.slots.delete(oldId);
-          p.id = from;
+          this.pendingPresence.delete(oldId);
+          p.id = from; // once kimlik degisir: eski baglantinin kopma olayi artik bu oyuncuyu bulamaz
+          if (stale) this.tp.disconnect(oldId);
           p.connected = true;
-          if (this.phase === 'placing') p.ready = slot.readyBefore ?? false;
+          if (this.phase === 'placing') p.ready = stale ? p.ready : (slot.readyBefore ?? false);
           this.slots.set(from, { ...slot, disconnectedAt: 0 });
           this.welcome(from, slot.token);
           this.pushState();
@@ -383,16 +415,21 @@ export class HostLobby {
   private removePlayer(id: string, disconnect: boolean): void {
     const p = this.player(id);
     if (!p) return;
-    this.players = this.players.filter((x) => x.id !== id);
     this.slots.delete(id);
     this.pendingPresence.delete(id);
+    this.rate.delete(id);
     if (disconnect) this.tp.disconnect(id);
-    this.reteam();
-    if (this.phase === 'lobby') this.pushState();
-    else {
-      // Oyun suruyor: oyuncu kaldirilirsa birimleri yetim kalir; seyirci degilse takimi bos birakilmaz.
-      this.pushState();
+    if (this.phase === 'lobby' || p.role === 'spectator') {
+      this.players = this.players.filter((x) => x.id !== id);
+      this.reteam();
+    } else {
+      // Oyun surerken oyuncu ayrilirsa takim numaralari DEGISMEZ (bolgeler, birimler ve init.teamPlayers
+      // takim indeksine baglidir): oyuncu baglantisiz hayalet olarak kalir, birimleri savasir, lobiye donuste silinir.
+      p.connected = false;
+      p.ready = true;
+      p.id = `x${this.ghostSeq++}:${p.id}`;
     }
+    this.pushState();
   }
 
   private peerLeft(peer: string): void {
@@ -606,6 +643,10 @@ export class HostLobby {
     if (this.phase !== 'battle') return;
     const mine = this.hashes.get(step);
     if (mine === undefined || mine === hash) return;
+    // Surekli sapan istemci (farkli tarayici motoru vb.) agi buyuk goruntulerle bogmasin: en cok 4 sn'de bir.
+    const t = this.now();
+    if (t - (this.lastResync.get(from) ?? -Infinity) < 4000) return;
+    this.lastResync.set(from, t);
     if (this.simProvider) {
       const s = this.simProvider.snapshot();
       this.sendTo(from, { t: 'resync', step: s.step, data: s.data });

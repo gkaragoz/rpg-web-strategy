@@ -68,13 +68,25 @@ export class LockstepRunner {
     }
     const speed = host ? this.speed : this.model.speed;
     const paused = host ? this.paused : this.model.paused;
-    if (paused) return 0;
+    if (paused) {
+      // Host duraklatinca (ya da sekmesi arka plana alinca) misafirler tahmini adimla one gecmesin:
+      // duraklatma durumu periyodik yayinlanir.
+      if (host) {
+        const t = this.now();
+        if (t - this.tickAt >= 250) {
+          this.tickAt = t;
+          host.broadcastTick(this.sim.stepCount, this.speed, true);
+        }
+      }
+      return 0;
+    }
     this.acc += Math.min(dt, 0.1) * speed;
     let n = Math.min(MAX_STEPS_PER_FRAME, Math.floor(this.acc / SIM_DT));
     this.acc -= Math.floor(this.acc / SIM_DT) * SIM_DT;
     if (!host && this.model.hostStep >= 0) {
       // Host adim tahmini: son tick + gecen sure.
-      const est = this.model.hostStep + Math.round(((this.now() - this.model.hostStepAt) / 1000) * 30 * speed);
+      // Tahmin en cok 1.5 sn ilerler: host sessizlesirse (arka plan sekmesi, kopuk ag) misafir sonsuza dek kosmasin.
+      const est = this.model.hostStep + Math.round((Math.min(1500, this.now() - this.model.hostStepAt) / 1000) * 30 * speed);
       const lag = est - this.sim.stepCount;
       if (lag > LAG_TOLERANCE) n = Math.min(MAX_STEPS_PER_FRAME, Math.max(n, lag - 1));
       else if (lag < -LAG_TOLERANCE) n = 0;

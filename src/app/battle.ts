@@ -266,7 +266,7 @@ export class BattleScene {
     if (this.opts.online) {
       // Cevrimici: yalniz Ses, Komedi gorunumu, Tam ekran ve Ayril kalir.
       for (const id of ['#hud-restart', '#hud-debug', '#hud-cp']) q(id).hidden = true;
-      q('#hud-edit').textContent = 'Lobiye dön';
+      q('#hud-edit').textContent = this.opts.online.isHost ? 'Lobiyi kapat' : 'Lobiden ayrıl';
       q('#hud-edit').addEventListener('click', () => this.opts.online!.onLeave());
     }
     const cv = q('#hud-cv');
@@ -348,7 +348,7 @@ export class BattleScene {
       const on = this.opts.online;
       const winName = w >= 0 ? (on?.teamNames[w] ?? `Takım ${w + 1}`) : '';
       if (on) {
-        res.innerHTML = `<div><h2 style="color:${color}">${w >= 0 ? `${winName} kazandı` : 'Berabere'}</h2><p>Süre ${dur} · Kayıp ${losses}</p><div class="btns">${on.onRematch ? '<button type="button" id="res-restart" class="primary">Rövanş (yeni tur)</button>' : '<span class="note">Host yeni tur başlatabilir.</span>'}<button type="button" id="res-edit">Lobiye dön</button></div></div>`;
+        res.innerHTML = `<div><h2 style="color:${color}">${w >= 0 ? `${winName} kazandı` : 'Berabere'}</h2><p>Süre ${dur} · Kayıp ${losses}</p><div class="btns">${on.onRematch ? '<button type="button" id="res-restart" class="primary">Rövanş (yeni tur)</button>' : '<span class="note">Host yeni tur başlatınca lobiye dönersin.</span>'}<button type="button" id="res-edit">${on.isHost ? 'Lobiyi kapat' : 'Lobiden ayrıl'}</button></div></div>`;
         document.getElementById('res-restart')?.addEventListener('click', () => on.onRematch?.());
         document.getElementById('res-edit')!.addEventListener('click', () => on.onLeave());
       } else {

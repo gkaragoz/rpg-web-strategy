@@ -24,7 +24,7 @@ export class ChatOverlay {
     root.appendChild(this.el);
     this.log = this.el.querySelector('.on-ig-log') as HTMLElement;
     this.input = this.el.querySelector('.on-ig-in') as HTMLInputElement;
-    this.seen = session.model.chat.length;
+    this.seen = session.model.chat.at(-1)?.n ?? 0;
     const btn = this.el.querySelector('.on-ig-btn') as HTMLButtonElement;
     // Dokunmatik: Enter tusu yok; dugme girisi acar (blur kapanmasin diye pointerdown'da engelle).
     btn.addEventListener('pointerdown', (e) => e.preventDefault());
@@ -68,8 +68,9 @@ export class ChatOverlay {
   /** Yeni sohbet mesajlarini ekler. */
   update(): void {
     const m = this.session.model;
-    while (this.seen < m.chat.length) {
-      const c = m.chat[this.seen++];
+    for (const c of m.chat) {
+      if (c.n <= this.seen) continue;
+      this.seen = c.n;
       const p = m.state?.players.find((x) => x.id === c.id);
       const d = document.createElement('div');
       d.className = 'on-ig-line';

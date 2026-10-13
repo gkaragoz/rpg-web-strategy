@@ -70,7 +70,7 @@ export interface OnlineEnv {
   icon(kind: number, team: number): HTMLCanvasElement;
   battleDefaults(): Pick<BattleOptions, 'fx' | 'numbers'>;
   /** Cevrimici moddan stüdyoya don. */
-  onExit(): void;
+  onExit(reopenMenu?: boolean): void;
   setComedyVisual(on: boolean | null): void;
 }
 
@@ -185,7 +185,13 @@ export class OnlineApp {
       if (!tp) return this.fail('Lobi kodu üretilemedi, tekrar dene.');
       const lobby = new HostLobby(tp, name, color, { code });
       this.kind = kind;
-      this.attach(new HostSession(lobby));
+      const hs = new HostSession(lobby);
+      // Rolenin/sinyal sunucusunun host baglantisi koparsa lobi olmustur: kullaniciya bildir.
+      tp.onClose = (reason) => {
+        hs.model.closedReason = reason;
+        hs.model.apply({ t: 'closed' });
+      };
+      this.attach(hs);
     } catch (e) {
       this.fail(
         e instanceof NetError && e.code === 'failed'
@@ -270,6 +276,15 @@ export class OnlineApp {
 
   private attach(s: Session): void {
     this.busy = false;
+    if (this.dead) {
+      // Menu baglanti kurulurken kapatildi: gec gelen oturumu birak.
+      try {
+        s.leave();
+      } catch {
+        /* zaten kapali */
+      }
+      return;
+    }
     this.session = s;
     this.menu?.destroy();
     this.menu = null;
@@ -283,8 +298,10 @@ export class OnlineApp {
     const m = this.session?.model;
     if (!m) return;
     if (msg.t === 'closed' || msg.t === 'kicked') {
-      this.toast(msg.t === 'kicked' ? `Lobiden atıldın: ${msg.reason}` : m.closedReason ?? 'Lobi kapandı');
-      this.exit();
+      // Ag kopmasi (host kapatmadi, atilmadin): jeton saklanir ve menu "Yeniden baglan" ile acilir.
+      const dropped = msg.t === 'closed' && !this.session?.isHost && /koptu/i.test(m.closedReason ?? '');
+      this.toast(msg.t === 'kicked' ? `Lobiden atıldın: ${msg.reason}` : dropped ? 'Bağlantı koptu. Menüden yeniden bağlanabilirsin.' : m.closedReason ?? 'Lobi kapandı');
+      this.exit(dropped);
       return;
     }
     // Misafir: yeniden baglanma kaydinin zamani canli tutulur (kopus anindan itibaren sayilir).
@@ -301,15 +318,29 @@ export class OnlineApp {
 
   /** Oturum evresine gore dogru ekrani kurar. */
   private sync(): void {
+    if (this.wanted() === null) return;
+    // Gecisler sirayla calissin (asenkron savas kurulumu); hedef calisma aninda yeniden okunur.
+    this.transition = this.transition.then(() => this.reconcile()).catch((e) => console.error(e));
+  }
+
+  /** Oturum durumunun istedigi ekran; henuz kurulamiyorsa (init/start gelmedi) ya da zaten oradaysa null. */
+  private wanted(): Screen | null {
     const m = this.session?.model;
     const st = m?.state;
-    if (!m || !st) return;
+    if (!m || !st) return null;
     const want: Screen = st.phase === 'lobby' ? 'lobby' : st.phase === 'placing' ? 'placing' : 'battle';
-    if (want === 'placing' && !st.init) return;
-    if (want === 'battle' && !m.start) return;
-    if (want === this.screen && (want !== 'battle' || this.inBattle)) return;
-    // Gecisler sirayla calissin (asenkron savas kurulumu).
-    this.transition = this.transition.then(() => this.go(want)).catch((e) => console.error(e));
+    if (want === 'placing' && !st.init) return null;
+    if (want === 'battle' && !m.start) return null;
+    if (want === this.screen && (want !== 'battle' || this.inBattle)) return null;
+    return want;
+  }
+
+  private async reconcile(): Promise<void> {
+    for (let i = 0; i < 4 && !this.dead; i++) {
+      const want = this.wanted();
+      if (!want) return;
+      await this.go(want);
+    }
   }
 
   private async go(want: Screen): Promise<void> {
@@ -360,7 +391,8 @@ export class OnlineApp {
 
   private teamColorsFor(init: GameInit): TeamColors[] {
     const st = this.session!.model.state!;
-    return init.teamPlayers.map((id) => makeTeamColor(playerColor(st.players.find((p) => p.id === id)?.color ?? 0)));
+    // Takim indeksine gore (oyuncu kimligi oyun sirasinda hayalete donusup degisebilir).
+    return init.teamPlayers.map((_, i) => makeTeamColor(playerColor(st.players.find((p) => p.role === 'player' && p.team === i)?.color ?? 0)));
   }
 
   private mapConfig(init: GameInit) {
@@ -425,7 +457,7 @@ export class OnlineApp {
     const cfg = battleConfig(start);
     const host = s instanceof HostSession ? s.lobby : undefined;
     this.sim = new LockstepSim(cfg, start.simSeed, m, { host, send: (msg) => s.send(msg) });
-    const names = init.teamPlayers.map((id) => m.state?.players.find((p) => p.id === id)?.name ?? '');
+    const names = init.teamPlayers.map((_, i) => m.state?.players.find((p) => p.role === 'player' && p.team === i)?.name ?? '');
     env.setComedyVisual(init.comedyVisual);
     const d = env.battleDefaults();
     await env.battle.enter({
@@ -449,6 +481,11 @@ export class OnlineApp {
         onRematch: s.isHost ? () => s.send({ t: 'rematch' }) : undefined,
       },
     });
+    if (this.dead) {
+      // Savas kurulurken cevrimici moddan cikildi: yarim kalan savasi kapat.
+      env.battle.exit();
+      return;
+    }
     env.stats.setShown(STATS_DEFAULT_SHOWN);
     this.inBattle = true;
     this.cursors?.setView({ app: env.app, world: env.world, terrain: () => env.world.terrain, size: () => env.world.mapSize });
@@ -468,11 +505,12 @@ export class OnlineApp {
   frame(now: number, frameMs: number): void {
     const dt = frameMs > 500 ? 0 : Math.min(frameMs / 1000, 0.1);
     if (this.inBattle) this.env.battle.frame(now, frameMs);
-    else {
+    else if (this.screen === 'placing') {
       this.env.camera.update(dt);
       this.env.camera.apply(this.env.world.root, this.env.app.screen.width, this.env.app.screen.height);
       this.env.app.render();
     }
+    // Menu/lobi ekranlari haritayi kaplar: gereksiz cizim yapma (pil/isi, ozellikle telefonda).
     this.cursors?.update(dt);
   }
 
@@ -487,10 +525,10 @@ export class OnlineApp {
   }
 
   /** Cevrimici moddan cik: oturumu kapat, ekranlari kaldir, stüdyoya don. */
-  exit(): void {
+  exit(keepRejoin = false): void {
     if (this.dead) return;
     this.dead = true;
-    saveLast(null);
+    if (!keepRejoin) saveLast(null);
     try {
       this.session?.leave();
     } catch {
@@ -506,6 +544,6 @@ export class OnlineApp {
     this.root.remove();
     this.env.setIconColors(null);
     this.env.setComedyVisual(null);
-    this.env.onExit();
+    this.env.onExit(keepRejoin);
   }
 }
