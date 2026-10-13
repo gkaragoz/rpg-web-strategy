@@ -51,6 +51,7 @@ export class MenuScreen {
   <div class="on-error" id="m-error" role="alert" hidden></div>
   <div class="on-status" id="m-status" aria-live="polite" hidden></div>
   ${init.last ? `<div class="on-rejoin"><span>Son lobi: <b>${esc(init.last)}</b></span> <button type="button" class="primary" id="m-rejoin">Yeniden bağlan</button></div>` : ''}
+  <p class="legal">© gkaragoz and Contributors · <a href="https://github.com/gkaragoz/rpg-web-strategy/blob/master/LICENSE" target="_blank" rel="noopener">Lisans</a></p>
   <div class="on-cards">
     <section class="on-card">
       <h3>Lobi kur</h3>

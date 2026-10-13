@@ -1,7 +1,32 @@
 # RPG Web — Savaş Stüdyosu
 
+[![Lisans: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/lisans-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
+[![Ticari kullanım: yasak](https://img.shields.io/badge/ticari%20kullan%C4%B1m-yasak-red)](LICENSING.md)
+[![Release](https://github.com/gkaragoz/rpg-web-strategy/actions/workflows/release.yml/badge.svg)](https://github.com/gkaragoz/rpg-web-strategy/actions/workflows/release.yml)
+[![Katkı: CLA gerekli](https://img.shields.io/badge/kat%C4%B1k-CLA%20gerekli-orange)](CONTRIBUTING.md)
+
 Tarayıcıda çalışan izometrik, otomatik savaş oyunu. PixiJS v8 + Vite + TypeScript. Simülasyon bir Web Worker'da
-çalışır; 20.000 askerlik (10k vs 10k) savaş ~160 FPS'te akar.
+çalışır; 20.000 askerlik (10k vs 10k) savaş ~160 FPS'te akar. Çevrimiçi mod (LAN / internet, en çok 6 oyuncu), mobil
+dokunmatik desteği, 49 birim ve rastgele haritalar içerir.
+
+## Lisans
+
+Bu proje **kaynağı açık ama ticari kullanıma kapalıdır** (*source-available*). Kaynak kod
+**[PolyForm Noncommercial License 1.0.0](LICENSE)** ve ek şartlar altındadır:
+
+- ✅ Oynayabilir, kaynağı okuyabilir, **ticari olmayan** amaçla (kişisel, hobi, eğitim, araştırma, kâr amacı gütmeyen
+  kuruluşlar) değiştirip paylaşabilirsin.
+- ❌ Projeyi veya türevlerini **satamaz**, reklam/abonelik/oyun içi satın alma ile **gelir elde edemez**, ücretli ürün ya
+  da hizmete (ücretli sunucu barındırma dahil) **dahil edemezsin**. Ticari kullanım için proje sahibinden yazılı izin gerekir.
+- 📝 Her kopyada ve değiştirilmiş sürümde lisans ve **"© gkaragoz and Contributors"** bildirimi korunmalı, değiştirilmiş
+  sürüm kendi kökenini yanlış göstermemeli ("RPG Web / Savaş Stüdyosu" adını resmi proje gibi kullanamaz).
+- 🤝 İsteyen herkes **resmi projeye katkı** gönderebilir ([CONTRIBUTING.md](CONTRIBUTING.md)); katkılar [CLA](CLA.md) ile
+  proje sahibine lisanslanır.
+- Roster kaynaklı birim verisi (`src/sim/data/troops.ts`) **source terms**'dır, üçüncü taraf kütüphaneler kendi lisanslarındadır:
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Ayrıntılı özet: [LICENSING.md](LICENSING.md).
+
+> AGPL gibi açık kaynak lisansları ticari kopyalamayı engelleyemediği için bu lisans seçildi; proje OSI tanımıyla "açık kaynak" değildir.
+
 
 ## Oyna / Kur
 
@@ -158,3 +183,14 @@ BALANCE=1 LEVEL=6 npx vitest run src/sim/__tests__/balance.test.ts  # round-robi
 
 `src/sim/testing/stall.ts` takılma dedektörü (boşta kovalayıcı, vuramayan, salınım, ilerlemesizlik, ulaşılamaz hedef)
 ve değişmezleri (yürünemez karo, NaN, harita dışı) içerir. Bilinen sınır: ~%0.3 senaryoda nadir kapalı-köşe takılması.
+
+## Katkıda bulunma
+
+Hata düzeltmeleri, denge/oynanış iyileştirmeleri, çeviriler, testler ve dokümantasyon memnuniyetle karşılanır.
+Önce [CONTRIBUTING.md](CONTRIBUTING.md)'yi ve [CLA.md](CLA.md)'yi oku; büyük değişiklikler için önce bir issue aç.
+PR öncesi `npm run check` temiz olmalı ve PR şablonundaki **CLA kutusu** işaretlenmelidir.
+
+## Telif
+
+© 2026 gkaragoz and Contributors. Tüm hakları saklıdır; kullanım koşulları [LICENSE](LICENSE) dosyasındadır.
+"the reference game" ilgili hak sahiplerinin ticari markasıdır; bu proje onlarla bağlantılı veya onaylı değildir.

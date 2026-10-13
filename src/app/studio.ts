@@ -127,6 +127,7 @@ export class Studio {
     <button id="bench" type="button" class="wide">Benchmark çalıştır</button>
     <p class="note">Takım başına 10k = toplam 20.000 asker, yerleştirme yok.</p>
   </section>
+  <footer class="legal">© gkaragoz and Contributors · <a href="https://github.com/gkaragoz/rpg-web-strategy/blob/master/LICENSE" target="_blank" rel="noopener">Lisans: ticari kullanım yasak</a> · <a href="https://github.com/gkaragoz/rpg-web-strategy" target="_blank" rel="noopener">GitHub</a></footer>
 </aside>
 
 <aside class="panel right" id="panel-right" aria-label="Takımlar">
