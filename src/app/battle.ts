@@ -487,7 +487,13 @@ export class BattleScene {
       const btns = on
         ? `${on.onRematch ? `<button type="button" id="res-restart" class="primary">${t('battle.result.rematch')}</button>` : `<span class="note">${t('battle.result.hostNote')}</span>`}<button type="button" id="res-edit">${on.isHost ? t('battle.leave.host') : t('battle.leave.guest')}</button>`
         : `<button type="button" id="res-restart">${t('battle.result.replay')}</button><button type="button" id="res-edit" class="primary">${t('battle.edit')}</button>`;
-      res.innerHTML = `<div class="res-card" role="dialog" aria-label="${t('battle.result.over', { dur })}"><p class="res-sub">${t('battle.result.over', { dur })}</p><h2 style="color:${color}">${title}</h2>${this.scoreboard(w)}<div class="btns">${btns}</div></div>`;
+      res.innerHTML = `<div class="res-card" role="dialog" aria-label="${t('battle.result.over', { dur })}"><p class="res-sub">${t('battle.result.over', { dur })}</p><h2 style="color:${color}">${title}</h2>${this.scoreboard(w)}${this.details(w)}<div class="btns"><button type="button" id="res-details" aria-expanded="false">${t('battle.result.details')}</button>${btns}</div></div>`;
+      document.getElementById('res-details')!.addEventListener('click', (e) => {
+        const box = res.querySelector('.res-detail') as HTMLElement;
+        box.hidden = !box.hidden;
+        (e.currentTarget as HTMLElement).setAttribute('aria-expanded', String(!box.hidden));
+        (e.currentTarget as HTMLElement).classList.toggle('on', !box.hidden);
+      });
       document.getElementById('res-restart')?.addEventListener('click', () => (on ? on.onRematch?.() : void this.restart()));
       document.getElementById('res-edit')!.addEventListener('click', () => (on ? on.onLeave() : this.opts.onEdit()));
       (document.getElementById('res-restart') ?? document.getElementById('res-edit'))?.focus();
@@ -530,6 +536,41 @@ export class BattleScene {
       .join('');
     const th = (k: string): string => `<th>${t(`battle.result.col.${k}`)}</th>`;
     return `<div class="res-scroll"><table class="res-tbl"><thead><tr>${th('team')}${th('alive')}${th('health')}${th('damage')}${th('kills')}${th('mvp')}</tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+
+  /** Per-team breakdown by unit type (hidden until the Details button is pressed). */
+  private details(winner: number): string {
+    const u = this.sim.units;
+    const alive = new Int32Array(6 * KIND_COUNT);
+    for (let i = 0; i < u.count; i++) if (u.alive[i]) alive[u.team[i] * KIND_COUNT + u.kind[i]]++;
+    const order = this.opts.colors.map((_, ti) => ti).sort((x, y) => Number(y === winner) - Number(x === winner));
+    const cols = order
+      .map((ti) => {
+        const kinds: number[] = [];
+        let sum = 0;
+        for (let k = 0; k < KIND_COUNT; k++) {
+          const v = this.sim.meter.dmg[ti * KIND_COUNT + k];
+          sum += v;
+          if (v > 0 || alive[ti * KIND_COUNT + k] > 0) kinds.push(k);
+        }
+        kinds.sort((a, c) => this.sim.meter.dmg[ti * KIND_COUNT + c] - this.sim.meter.dmg[ti * KIND_COUNT + a]);
+        const rows = kinds
+          .map((k, i) => {
+            const v = this.sim.meter.dmg[ti * KIND_COUNT + k];
+            let src = '';
+            try {
+              src = this.d.icon(k, ti).toDataURL('image/png');
+            } catch {
+              src = '';
+            }
+            const a = alive[ti * KIND_COUNT + k];
+            return `<li class="${a ? '' : 'dead'}"><span class="dps-rk">${i + 1}</span><img class="dps-th" alt="" src="${src}" /><span class="dps-nm"><b>${unitDisplayName(k)}</b><small>${t('battle.result.left', { n: a })}</small></span><span class="dps-v"><b>${fmtDamage(v)}</b><em>${sum > 0 ? Math.round((v / sum) * 100) : 0}%</em></span></li>`;
+          })
+          .join('');
+        return `<div class="res-col"><h3><span class="res-dot" style="background:${hex(this.opts.colors[ti].main)}"></span>${this.teamName(ti).replace(/[&<>]/g, '')}</h3><ul>${rows}</ul></div>`;
+      })
+      .join('');
+    return `<div class="res-detail" hidden>${cols}</div>`;
   }
 
   /** Comedy view toggle (button / K). Online it is host-only and the host's choice goes to everybody. */
