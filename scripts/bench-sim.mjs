@@ -1,10 +1,11 @@
 // Headless simulation benchmark: ms per step (and per phase) for big armies. No graphics.
-//   node scripts/bench-sim.mjs [--units 3000,10000,30000] [--teams 2] [--size 256] [--steps 200] [--name label]
+//   node scripts/bench-sim.mjs [--units 3000,10000,30000] [--teams 2] [--size 256] [--steps 200] [--name label] [--dt 0.0333] [--threads 3]
 // Prints a table and writes .bench/<name>.json. The `hash` column is identical for identical code and inputs.
 import { build } from 'vite';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -18,6 +19,7 @@ const size = Number(opt('size', 256));
 const steps = Number(opt('steps', 200));
 const name = opt('name', 'latest');
 const dtOverride = Number(opt('dt', 0));
+const threads = Number(opt('threads', 0));
 
 const outDir = path.join(root, '.bench', '.build');
 await build({
@@ -30,11 +32,15 @@ await build({
 const lib = await import(pathToFileURL(path.join(outDir, 'bench.mjs')).href);
 
 const rows = [];
+const bundle = path.join(outDir, 'bench.mjs');
 for (const total of totals) {
-  const r = lib.runBench(Math.round(total / teams), teams, size, steps, dtOverride);
+  const helpers = Array.from({ length: threads }, () => new Worker(path.join(root, 'scripts', 'bench-helper.mjs'), { workerData: { bundle } }));
+  const post = (init) => helpers.forEach((h) => h.postMessage(init));
+  const r = lib.runBench(Math.round(total / teams), teams, size, steps, dtOverride, threads, post);
+  await Promise.all(helpers.map((h) => h.terminate()));
   rows.push(r);
   const ph = Object.entries(r.phases).map(([k, v]) => `${k} ${v}`).join('  ');
-  console.log(`${String(r.units).padStart(6)} units  dt 1/${Math.round(1 / r.dt)}  map ${r.size}  ${r.msPerStep.toFixed(2).padStart(7)} ms/step  (max ${r.maxStepMs} ms)  ${ph}  hash ${r.hash}`);
+  console.log(`${String(r.units).padStart(6)} units  dt 1/${Math.round(1 / r.dt)}  helpers ${r.helpers}  map ${r.size}  ${r.msPerStep.toFixed(2).padStart(7)} ms/step  (max ${r.maxStepMs} ms)  ${ph}  hash ${r.hash}`);
   if (args.includes('--dbg')) console.log('        dbg', JSON.stringify(r.dbg));
 }
 mkdirSync(path.join(root, '.bench'), { recursive: true });

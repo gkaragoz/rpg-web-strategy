@@ -8,7 +8,8 @@ export interface BattleSnapshot {
     zones: unknown[];
     links: Array<[number, number[]]>;
     pools: Array<[number, number[]]>;
-    paths: Array<[number, { pts: number[]; k: number; gx: number; gy: number; t: number }]>;
+    /** Old snapshots carried the per-unit paths here; paths now live in the unit arrays. */
+    paths?: Array<[number, { pts: number[]; k: number; gx: number; gy: number; t: number }]>;
     /** Damage meter (display only): damage per team x kind and kills per team. */
     meter?: { dmg: number[]; kills: number[] };
   };
@@ -23,7 +24,8 @@ export function isTyped(v: unknown): v is Typed {
 /** Copies the first n elements of the object's typed-array fields. */
 export function copyTyped(obj: object, n: number): Record<string, ArrayBufferView> {
   const out: Record<string, ArrayBufferView> = {};
-  for (const [k, v] of Object.entries(obj)) if (isTyped(v)) out[k] = (v as Typed).slice(0, n);
+  const strides = (obj as { strides?: Record<string, number> }).strides ?? {};
+  for (const [k, v] of Object.entries(obj)) if (isTyped(v)) out[k] = (v as Typed).slice(0, n * (strides[k] ?? 1));
   return out;
 }
 

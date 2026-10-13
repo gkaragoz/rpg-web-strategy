@@ -1,3 +1,4 @@
+import { PATH_MAX } from './constants';
 import { t } from '../i18n';
 import { TROOPS, type MoveClass, type SkillId, type TroopDef } from './data/troops';
 import { ARM, DMG } from './data/combat';
@@ -334,10 +335,36 @@ export class Units {
   airH: Float32Array;
   lift: Float32Array;
   airImm: Float32Array;
+  /** A* path of a unit: number of waypoints, next waypoint, goal it was made for, age, and PATH_MAX x,y waypoint pairs per unit. */
+  pathN: Uint8Array;
+  pathK: Uint8Array;
+  pathGx: Float32Array;
+  pathGy: Float32Array;
+  pathT: Float32Array;
+  pathPts: Float32Array;
+  /** Queued move of this step (see Mover): goal, speed, flags (MV_*), and the "target unreachable" mark set while moving. */
+  mvGx: Float32Array;
+  mvGy: Float32Array;
+  mvSpeed: Float32Array;
+  mvFlags: Uint8Array;
+  mvFail: Uint8Array;
+  /** Elements per unit of arrays longer than one slot per unit (snapshots copy `count * stride`). */
+  readonly strides: Record<string, number> = { pathPts: PATH_MAX * 2 };
 
   constructor(cap: number) {
     this.cap = cap;
     this.alive = new Uint8Array(cap);
+    this.pathN = new Uint8Array(cap);
+    this.pathK = new Uint8Array(cap);
+    this.pathGx = new Float32Array(cap);
+    this.pathGy = new Float32Array(cap);
+    this.pathT = new Float32Array(cap);
+    this.pathPts = new Float32Array(cap * PATH_MAX * 2);
+    this.mvGx = new Float32Array(cap);
+    this.mvGy = new Float32Array(cap);
+    this.mvSpeed = new Float32Array(cap);
+    this.mvFlags = new Uint8Array(cap);
+    this.mvFail = new Uint8Array(cap);
     this.team = new Uint8Array(cap);
     this.kind = new Uint8Array(cap);
     this.x = new Float32Array(cap);
@@ -456,6 +483,9 @@ export class Units {
     this.threatDx[i] = this.threatDy[i] = 0;
     this.route[i] = -1;
     this.routePhase[i] = 0;
+    this.pathN[i] = 0;
+    this.mvFlags[i] = 0;
+    this.mvFail[i] = 0;
     this.stuckT[i] = this.sideT[i] = 0;
     this.sideDir[i] = 1;
     this.kbVx[i] = this.kbVy[i] = 0;

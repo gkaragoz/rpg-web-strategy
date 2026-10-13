@@ -1,6 +1,6 @@
 import type { FrameInfo, MeterView, ProjView, SimBackend, SimStats, UnitsView } from './backend';
 import { DBG_KEYS, mapSizeFor, projectileCapacity, unitCapacity, type BattleConfig, type SimEvent } from './battle';
-import { simDtFor } from './constants';
+import { THREADS_MIN_UNITS, armySize, simDtFor } from './constants';
 import {
   F_ALIVE_BASE,
   F_DBG,
@@ -24,6 +24,21 @@ import {
 } from './shared';
 import type { WorkerCommand, WorkerEvent } from './worker';
 
+/**
+ * Helper threads for the movement phase of big battles: `?threads=N` forces a number (0 = off), otherwise a share of the
+ * cores. Results never depend on this number, so every player of an online match may use a different one.
+ */
+export function helperThreads(): number {
+  try {
+    const q = new URLSearchParams(location.search).get('threads');
+    if (q !== null) return Math.max(0, Math.min(7, parseInt(q, 10) || 0));
+  } catch {
+    /* no location (tests) */
+  }
+  const hc = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2;
+  return hc >= 8 ? 3 : hc >= 6 ? 2 : hc >= 4 ? 1 : 0;
+}
+
 /** Runs the sim in a Web Worker; reads the state from a SharedArrayBuffer ring buffer. */
 export class WorkerSim implements SimBackend {
   readonly kind = 'worker' as const;
@@ -45,6 +60,7 @@ export class WorkerSim implements SimBackend {
     worker: Worker,
     sh: Shared,
     count: number,
+    protected readonly helpers: Worker[] = [],
   ) {
     this.worker = worker;
     this.sh = sh;
@@ -87,6 +103,8 @@ export class WorkerSim implements SimBackend {
     worker.onmessage = (e: MessageEvent<WorkerEvent>) => {
       const m = e.data;
       if (m.type === 'events') this.events.push(...m.events);
+      else if (m.type === 'log') console.warn('[sim worker]', m.msg);
+      else if (m.type === 'helpers') for (const h of helpers) h.postMessage(m.init);
       else if (m.type === 'hash' || m.type === 'snapshot') this.onExtra(m);
       else if (m.type === 'reset') {
         // Events the worker sent before this reset belong to the old battle.
@@ -102,20 +120,26 @@ export class WorkerSim implements SimBackend {
   protected onExtra(_m: WorkerEvent): void {}
 
   static async create(config: BattleConfig, seed: number): Promise<WorkerSim> {
-    const { worker, sh, count } = await WorkerSim.spawn(config, seed);
-    return new WorkerSim(config, worker, sh, count);
+    const { worker, sh, count, helpers } = await WorkerSim.spawn(config, seed);
+    return new WorkerSim(config, worker, sh, count, helpers);
   }
 
   /** Starts the worker (self-timed solo loop, or lockstep mode when `lockCheckEvery` is given) and waits until it is ready. */
-  protected static async spawn(config: BattleConfig, seed: number, lockCheckEvery = 0): Promise<{ worker: Worker; sh: Shared; count: number }> {
+  protected static async spawn(config: BattleConfig, seed: number, lockCheckEvery = 0): Promise<{ worker: Worker; sh: Shared; count: number; helpers: Worker[] }> {
     const sab = allocShared(unitCapacity(config), projectileCapacity(config));
     const sh = bindShared(sab, unitCapacity(config), projectileCapacity(config));
     const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+    // Movement helpers are created here (a worker blocked in Atomics.wait cannot start nested workers); the sim worker
+    // sends their setup message through us once its battle exists.
+    const n = armySize(config) >= THREADS_MIN_UNITS && typeof SharedArrayBuffer !== 'undefined' ? helperThreads() : 0;
+    const helpers: Worker[] = Array.from({ length: n }, () => new Worker(new URL('./moverWorker.ts', import.meta.url), { type: 'module' }));
     let count: number;
     try {
       count = await new Promise<number>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('sim worker did not start')), 15000);
         worker.onmessage = (e: MessageEvent<WorkerEvent>) => {
+          if (e.data.type === 'log') console.warn('[sim worker]', e.data.msg);
+          if (e.data.type === 'helpers') for (const h of helpers) h.postMessage(e.data.init);
           if (e.data.type === 'ready') {
             clearTimeout(timer);
             resolve(e.data.count);
@@ -125,14 +149,16 @@ export class WorkerSim implements SimBackend {
           clearTimeout(timer);
           reject(new Error(`sim worker error: ${e.message}`));
         };
-        worker.postMessage((lockCheckEvery > 0 ? { type: 'initLock', sab, config, seed, checkEvery: lockCheckEvery } : { type: 'init', sab, config, seed }) satisfies WorkerCommand);
+        const threads = n;
+        worker.postMessage((lockCheckEvery > 0 ? { type: 'initLock', sab, config, seed, checkEvery: lockCheckEvery, threads } : { type: 'init', sab, config, seed, threads }) satisfies WorkerCommand);
       });
     } catch (err) {
       worker.terminate(); // never leave a half-started worker running
+      for (const h of helpers) h.terminate();
       throw err;
     }
     worker.onerror = (e) => console.error('[sim worker]', e.message);
-    return { worker, sh, count };
+    return { worker, sh, count, helpers };
   }
 
   frame(_dt?: number): FrameInfo {
@@ -206,6 +232,7 @@ export class WorkerSim implements SimBackend {
     this.pendingReset?.(0);
     this.pendingReset = null;
     this.worker.terminate();
+    for (const h of this.helpers) h.terminate();
   }
 
   stats(): SimStats {

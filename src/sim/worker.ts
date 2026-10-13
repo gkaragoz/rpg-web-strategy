@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { Battle, DBG_KEYS, type BattleConfig, type SimEvent, projectileCapacity, unitCapacity } from './battle';
 import { SIM_DT, simDtFor } from './constants';
+import type { HelperInit } from './movePool';
 import { packSnapshot, unpackSnapshot, unwire, wireGzip } from './snapshot';
 import {
   F_ALIVE_BASE,
@@ -26,13 +27,13 @@ import {
 } from './shared';
 
 export type WorkerCommand =
-  | { type: 'init'; sab: SharedArrayBuffer; config: BattleConfig; seed: number }
+  | { type: 'init'; sab: SharedArrayBuffer; config: BattleConfig; seed: number; threads?: number }
   | { type: 'reset'; seed: number }
   | { type: 'speed'; speed: number }
   | { type: 'pause'; paused: boolean }
   | { type: 'resetStats' }
   /** Online lockstep: no self-timed loop; the main thread says how many steps to run. */
-  | { type: 'initLock'; sab: SharedArrayBuffer; config: BattleConfig; seed: number; checkEvery: number }
+  | { type: 'initLock'; sab: SharedArrayBuffer; config: BattleConfig; seed: number; checkEvery: number; threads?: number }
   | { type: 'steps'; n: number }
   | { type: 'snapshot'; id: number }
   | { type: 'restore'; data: Uint8Array };
@@ -42,7 +43,9 @@ export type WorkerEvent =
   | { type: 'reset'; count: number }
   | { type: 'events'; events: SimEvent[] }
   | { type: 'hash'; step: number; hash: number }
-  | { type: 'snapshot'; id: number; step: number; data: Uint8Array };
+  | { type: 'snapshot'; id: number; step: number; data: Uint8Array }
+  | { type: 'log'; msg: string }
+  | { type: 'helpers'; init: HelperInit };
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -61,6 +64,20 @@ let checkEvery = 60;
 let stepDt = SIM_DT;
 
 const epochNow = () => performance.timeOrigin + performance.now();
+
+function startThreads(n: number | undefined): void {
+  if (!n || n < 1 || typeof SharedArrayBuffer === 'undefined') return;
+  try {
+    // The helpers are Web Workers owned by the page; it forwards this setup message to them.
+    battle.useThreads(
+      n,
+      (init) => ctx.postMessage({ type: 'helpers', init } satisfies WorkerEvent),
+      (msg) => ctx.postMessage({ type: 'log', msg } satisfies WorkerEvent),
+    );
+  } catch (e) {
+    ctx.postMessage({ type: 'log', msg: `helper threads unavailable, simulating on one thread: ${String(e)}` } satisfies WorkerEvent);
+  }
+}
 
 function publishStatic(): void {
   const u = battle.units;
@@ -181,6 +198,7 @@ function handle(m: WorkerCommand): void | Promise<void> {
       config = m.config;
       stepDt = simDtFor(config);
       battle = new Battle(m.seed, config);
+      startThreads(m.threads);
       sh = bindShared(m.sab, unitCapacity(config), projectileCapacity(config));
       sh.pActive.fill(1);
       publishStatic();
@@ -195,6 +213,7 @@ function handle(m: WorkerCommand): void | Promise<void> {
       checkEvery = m.checkEvery;
       stepDt = simDtFor(config);
       battle = new Battle(m.seed, config);
+      startThreads(m.threads);
       sh = bindShared(m.sab, unitCapacity(config), projectileCapacity(config));
       sh.pActive.fill(1);
       publishStatic();

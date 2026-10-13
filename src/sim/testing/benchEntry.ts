@@ -1,4 +1,5 @@
 import { teamZones } from '../../net/economy';
+import type { HelperInit } from '../movePool';
 import { Battle, type BattleConfig } from '../battle';
 import { DEFAULT_MAP } from '../mapSpec';
 import { Terrain } from '../terrain';
@@ -6,6 +7,7 @@ import { KIND_COUNT } from '../units';
 
 export interface BenchResult {
   dt: number;
+  helpers: number;
   units: number;
   size: number;
   teams: number;
@@ -18,6 +20,8 @@ export interface BenchResult {
 }
 
 /** Builds a custom battle with `perTeam` soldiers per team, packed into the team zones (deterministic). */
+export { runHelper } from '../moverWorker';
+
 export function benchBattle(perTeam: number, teams: number, size: number, seed = 3): { battle: Battle; units: number } {
   const t = new Terrain(size, { seed, spec: DEFAULT_MAP, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
   const zones = teamZones(size, teams, t);
@@ -40,10 +44,18 @@ export function benchBattle(perTeam: number, teams: number, size: number, seed =
 }
 
 /** Runs `steps` simulation steps and reports the cost per step and per phase (Battle.prof). */
-export function runBench(perTeam: number, teams: number, size: number, steps: number, dtOverride = 0): BenchResult {
+export function runBench(perTeam: number, teams: number, size: number, steps: number, dtOverride = 0, helpers = 0, post: ((init: HelperInit) => void) | null = null): BenchResult {
   const { battle, units } = benchBattle(perTeam, teams, size);
+  if (helpers > 0 && post) battle.useThreads(helpers, post);
   const dt = dtOverride > 0 ? dtOverride : battle.dt;
-  for (let i = 0; i < 20; i++) battle.step(dt); // warm-up
+  for (let i = 0; i < 20; i++) battle.step(dt); // warm-up (helper threads need a moment to start)
+  if (helpers > 0) {
+    const until = Date.now() + 10000;
+    while (battle.helperThreads < helpers && Date.now() < until) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+      battle.step(dt);
+    }
+  }
   const prof = battle.prof as unknown as Record<string, number>;
   for (const k of Object.keys(prof)) prof[k] = 0;
   let max = 0;
@@ -56,5 +68,5 @@ export function runBench(perTeam: number, teams: number, size: number, steps: nu
   const total = performance.now() - t0;
   const phases: Record<string, number> = {};
   for (const k of Object.keys(prof)) if (k !== 'steps') phases[k] = Math.round((prof[k] / steps) * 100) / 100;
-  return { dt, units, size, teams, msPerStep: Math.round((total / steps) * 100) / 100, maxStepMs: Math.round(max * 10) / 10, phases, alive: battle.alivePerTeam.slice(0, teams), dbg: { ...(battle.dbg as unknown as Record<string, number>) }, hash: battle.hash() };
+  return { dt, helpers: battle.helperThreads, units, size, teams, msPerStep: Math.round((total / steps) * 100) / 100, maxStepMs: Math.round(max * 10) / 10, phases, alive: battle.alivePerTeam.slice(0, teams), dbg: { ...(battle.dbg as unknown as Record<string, number>) }, hash: battle.hash() };
 }

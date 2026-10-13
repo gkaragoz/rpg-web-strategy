@@ -2,10 +2,12 @@ import { Grid } from './grid';
 import { Terrain, T_BLOCKED, T_WATER } from './terrain';
 import type { MapSpec } from './mapSpec';
 import { simDtFor } from './constants';
+import { MovePool, type HelperInit } from './movePool';
+import { Mover, MV_FACE, MV_INTENT, MV_ROUTE, CNT_PATHS, CNT_PATH_FAILS, CNT_STUCK, chunkSize } from './mover';
 import { PROJ_TAG, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides, KIND_COUNT } from './units';
 import { PF_PIERCE, PF_SKILL, Projectiles } from './projectiles';
 import { SKILL_ELEMENT, skillParams, type SkillParams } from './data/skills';
-import { CC_IMMUNE, SPLASH_TARGETS, TYPE_MULT, highGroundDamage, highGroundRange, slopeSpeed, splashFactor } from './data/combat';
+import { CC_IMMUNE, SPLASH_TARGETS, TYPE_MULT, highGroundDamage, highGroundRange, splashFactor } from './data/combat';
 
 /** Damage type / armor class per kind (indices into TYPE_MULT). */
 const DMG_OF = Uint8Array.from(STATS, (s) => s.dmgType);
@@ -170,8 +172,10 @@ export class Battle {
   private losEvery = 20;
   private scanEveryK = KITE.scanEvery;
   /** A* paths for stuck units (unit -> waypoints) and the per-frame path computation budget. */
-  private readonly paths = new Map<number, { pts: number[]; k: number; gx: number; gy: number; t: number }>();
-  private pathBudget = 0;
+  private mover: Mover;
+  private pool: MovePool | null = null;
+  /** Test hook: permutation of the movement chunks to execute (see runMoves). */
+  chunkOrder: ((chunks: number) => number[]) | null = null;
   private lastDeathTime = 0;
   private readonly centroidX: number[] = new Array(MAX_TEAMS).fill(0);
   private readonly centroidY: number[] = new Array(MAX_TEAMS).fill(0);
@@ -192,10 +196,6 @@ export class Battle {
   private readonly grids: Grid[];
   private readonly sepGrid: Grid;
   private sepTick = 0;
-  private rx = 0;
-  private ry = 0;
-  private readonly tmpA = { x: 0, y: 0 };
-  private readonly tmpB = { x: 0, y: 0 };
 
   constructor(seed = 1, config: BattleConfig = { mode: 'demo', perTeam: 10 }) {
     this.config = config;
@@ -204,6 +204,7 @@ export class Battle {
     this.mapSize = mapSizeFor(config);
     this.terrain = terrainFor(config);
     this.units = new Units(total);
+    this.mover = new Mover(this.units, this.terrain, this.mapSize, skillParams('rage').a);
     this.projectiles = new Projectiles(projectileCapacity(config));
     this.teamCount = Math.min(MAX_TEAMS, Math.max(2, config.teamCount ?? 2));
     this.comedy = config.comedy === true;
@@ -211,6 +212,29 @@ export class Battle {
     this.grids = Array.from({ length: this.teamCount }, () => new Grid(this.mapSize, GRID_CELL, total));
     this.sepGrid = new Grid(this.mapSize, SEP_CELL, total);
     this.reset(seed);
+  }
+
+  /**
+   * Runs the movement phase on extra threads (the units' arrays move into shared memory). Results do not depend on the
+   * number of threads. `post` hands the setup message to whoever owns the helper workers (the page); they join as soon as
+   * they are ready and until then this thread does all the work.
+   */
+  useThreads(helpers: number, post: (init: HelperInit) => void, log?: (msg: string) => void): void {
+    if (this.pool || helpers < 1 || typeof SharedArrayBuffer === 'undefined') return;
+    const pool = new MovePool(this.units, this.config, skillParams('rage').a, helpers, post, log);
+    this.pool = pool;
+    this.mover = new Mover(this.units, this.terrain, this.mapSize, skillParams('rage').a, pool.counts);
+  }
+
+  /** Threads used by the movement phase besides the sim thread. */
+  get helperThreads(): number {
+    return this.pool?.size ?? 0;
+  }
+
+  /** Tells the helper threads to exit (their owner terminates the workers). */
+  dispose(): void {
+    this.pool?.stop();
+    this.pool = null;
   }
 
   /** In bench mode, death/heal events are not produced (the renderer does not use them). */
@@ -235,7 +259,6 @@ export class Battle {
     this.noDamagerSince = -1;
     for (const k of DBG_KEYS) this.dbg[k] = 0;
     this.dbg.bans = this.dbg.leashBreaks = this.dbg.paths = this.dbg.pathFails = 0;
-    this.paths.clear();
     this.zones.length = 0;
     this.links.clear();
     this.pools.clear();
@@ -324,7 +347,6 @@ export class Battle {
     const u = this.units;
     this.time += dt;
     this.stepNo++;
-    this.pathBudget = 24;
     const tk = dt * 30;
     if (tk !== this.tk) {
       this.tk = tk;
@@ -424,6 +446,7 @@ export class Battle {
         const i = rev ? cnt - 1 - k : k;
         if (u.alive[i]) this.updateUnit(i, dt);
       }
+      this.runMoves(dt);
       tn = performance.now();
       pf.units += tn - tp;
       tp = tn;
@@ -546,7 +569,7 @@ export class Battle {
       const fx = u.x[i] - u.fearX[i];
       const fy = u.y[i] - u.fearY[i];
       const fl = Math.sqrt(fx * fx + fy * fy) || 1;
-      this.moveToward(i, u.x[i] + (fx / fl) * 6, u.y[i] + (fy / fl) * 6, s.speed * 1.15, dt, true, false);
+      this.queueMove(i, u.x[i] + (fx / fl) * 6, u.y[i] + (fy / fl) * 6, s.speed * 1.15, true, false);
       return;
     }
     if (skill === 'mock' || skill === 'taunt' || skill === 'stoneWill') this.periodic(i, dt, skill);
@@ -578,7 +601,7 @@ export class Battle {
 
     const t = u.target[i];
     if (t < 0) {
-      if (isHealer(kind)) this.followArmy(i, dt);
+      if (isHealer(kind)) this.followArmy(i);
       else this.marchToEnemy(i, dt);
       return;
     }
@@ -617,7 +640,7 @@ export class Battle {
           gx = u.x[t];
           gy = u.y[t];
         }
-        this.moveToward(i, gx, gy, s.speed, dt);
+        this.queueMove(i, gx, gy, s.speed);
         return;
       }
     } else if (!inRange) {
@@ -630,14 +653,14 @@ export class Battle {
           const len = Math.sqrt(ax * ax + ay * ay) || 1;
           ax /= len;
           ay /= len;
-          this.moveToward(i, u.x[t] + ax * 3, u.y[t] + ay * 3, s.speed, dt);
+          this.queueMove(i, u.x[t] + ax * 3, u.y[t] + ay * 3, s.speed);
         } else {
-          this.moveToward(i, u.x[t], u.y[t], s.speed, dt);
+          this.queueMove(i, u.x[t], u.y[t], s.speed);
         }
       } else if (this.leashHold(i, dt)) {
         this.faceTo(i, dx, dy);
       } else {
-        this.moveToward(i, u.x[t], u.y[t], s.speed, dt);
+        this.queueMove(i, u.x[t], u.y[t], s.speed);
       }
       return;
     }
@@ -774,7 +797,7 @@ export class Battle {
     }
     const sp = STATS[u.kind[i]].speed * (archer ? KITE.archerSprint : KITE.priestSprint);
     const step = sp * dt;
-    const mv = this.moveToward(i, u.x[i] + dx * 3, u.y[i] + dy * 3, sp, dt, false, false);
+    const mv = this.mover.move(i, u.x[i] + dx * 3, u.y[i] + dy * 3, sp, dt, false, false);
     this.faceTo(i, -u.threatDx[i], -u.threatDy[i]);
     this.dbg.kiteSteps++;
     u.stamina[i] = Math.max(0, u.stamina[i] - (archer ? KITE.staminaDrain : KITE.priestStaminaDrain) * dt);
@@ -953,10 +976,10 @@ export class Battle {
     const en = this.nearestEnemy[u.team[i]];
     if (en < 0) return;
     if (!isMelee(u.kind[i]) && this.leashHold(i, dt)) return;
-    this.moveToward(i, this.centroidX[en], this.centroidY[en], STATS[u.kind[i]].speed, dt);
+    this.queueMove(i, this.centroidX[en], this.centroidY[en], STATS[u.kind[i]].speed);
   }
 
-  private followArmy(i: number, dt: number): void {
+  private followArmy(i: number): void {
     const u = this.units;
     const tm = u.team[i];
     const en = this.nearestEnemy[tm];
@@ -971,7 +994,7 @@ export class Battle {
     const gy = this.centroidY[tm] + ay * 2.5;
     const gdx = gx - u.x[i];
     const gdy = gy - u.y[i];
-    if (gdx * gdx + gdy * gdy > 2.25) this.moveToward(i, gx, gy, STATS[u.kind[i]].speed, dt);
+    if (gdx * gdx + gdy * gdy > 2.25) this.queueMove(i, gx, gy, STATS[u.kind[i]].speed);
   }
 
   private resolveHit(i: number): void {
@@ -1158,7 +1181,8 @@ export class Battle {
     u.kbVx[j] = u.kbVy[j] = 0;
     u.stunT[j] = 0;
     u.sepX[j] = u.sepY[j] = 0;
-    this.paths.delete(j);
+    u.pathN[j] = 0;
+    u.mvFlags[j] = 0;
     if (this.emitEvents) this.pushEvent({ type: 'burst', x: u.x[j], y: u.y[j], unit: -1, value: 0.8, element: 8 });
   }
 
@@ -1278,7 +1302,6 @@ export class Battle {
         zones: this.zones.map((z) => ({ ...z })),
         links: [...this.links.entries()].map(([k, v]) => [k, v.slice()]),
         pools: [...this.pools.entries()].map(([k, v]) => [k, v.slice()]),
-        paths: [...this.paths.entries()].map(([k, v]) => [k, { pts: v.pts.slice(), k: v.k, gx: v.gx, gy: v.gy, t: v.t }]),
         meter: { dmg: Array.from(this.meter.dmg), kills: Array.from(this.meter.kills) },
       },
     };
@@ -1318,8 +1341,6 @@ export class Battle {
     for (const [k, v] of s.extra.links) this.links.set(k, v.slice());
     this.pools.clear();
     for (const [k, v] of s.extra.pools) this.pools.set(k, v.slice());
-    this.paths.clear();
-    for (const [k, v] of s.extra.paths) this.paths.set(k, { pts: v.pts.slice(), k: v.k, gx: v.gx, gy: v.gy, t: v.t });
     this.events.length = 0;
     this.countAlive();
   }
@@ -1371,13 +1392,6 @@ export class Battle {
     if (u.weakT[i] > 0) m *= u.weakK[i];
     if ((u.flags[i] & F_RAGE) !== 0) m *= 1 + this.sp('rage').a;
     if (u.stacks[i] > 0) m *= 1 + u.stacks[i] * this.sp('spearBuild').a;
-    return m;
-  }
-
-  private moveMul(i: number): number {
-    const u = this.units;
-    let m = u.slowT[i] > 0 ? u.slowK[i] : 1;
-    if ((u.flags[i] & F_RAGE) !== 0) m *= 1 + this.sp('rage').a * 0.5;
     return m;
   }
 
@@ -2045,309 +2059,55 @@ export class Battle {
   }
 
   /**
-   * Walk toward the target. With terrain: crosses a bridge if the target is across the river (useRoute), slides
-   * along the axis if it would enter a non-walkable tile, and tries to escape with a sidestep if it cannot advance.
-   * Returns the distance actually covered.
+   * Queues a move of unit i toward (gx, gy) for the movement phase at the end of the step (see `runMoves`): units decide
+   * first, then every unit moves, so a decision never depends on the order in which units are processed.
    */
-  private moveToward(i: number, gx: number, gy: number, speed: number, dt: number, faceMove = true, useRoute = true): number {
-    if (this.units.slowT[i] > 0 || this.units.flags[i] !== 0) speed *= this.moveMul(i);
+  private queueMove(i: number, gx: number, gy: number, speed: number, faceMove = true, useRoute = true): void {
     const u = this.units;
-    const t = this.terrain;
-    if (t && useRoute) {
-      this.applyRoute(i, gx, gy);
-      gx = this.rx;
-      gy = this.ry;
-      this.followPath(i, gx, gy, dt);
-      gx = this.rx;
-      gy = this.ry;
-    }
-    const dx = gx - u.x[i];
-    const dy = gy - u.y[i];
-    const d = Math.sqrt(dx * dx + dy * dy);
-    if (d < 1e-4) return 0;
-    let ux = dx / d;
-    let uy = dy / d;
-    if (u.sideT[i] > 0) {
-      const sd = u.sideDir[i];
-      const sx = -uy * sd;
-      const sy = ux * sd;
-      ux = ux * 0.35 + sx * 0.9;
-      uy = uy * 0.35 + sy * 0.9;
-      const m = Math.sqrt(ux * ux + uy * uy) || 1;
-      ux /= m;
-      uy /= m;
-    }
-    // Smooth heading: turn the heading gently toward the target for steady progress; brake on a reversal.
-    const hl = Math.abs(u.hx[i]) + Math.abs(u.hy[i]);
-    if (hl < 0.01) {
-      u.hx[i] = ux;
-      u.hy[i] = uy;
-    } else {
-      const dot = u.hx[i] * ux + u.hy[i] * uy;
-      if (dot < -0.3) u.spd[i] *= this.brakeK;
-      const k = Math.min(1, MOTION.turn * dt);
-      let hx = u.hx[i] + (ux - u.hx[i]) * k;
-      let hy = u.hy[i] + (uy - u.hy[i]) * k;
-      const hm = Math.sqrt(hx * hx + hy * hy) || 1;
-      hx /= hm;
-      hy /= hm;
-      u.hx[i] = hx;
-      u.hy[i] = hy;
-    }
-    // Accelerate: a standing unit gets going quickly but not instantly; the target speed is never exceeded.
-    u.spd[i] = Math.min(speed, u.spd[i] + MOTION.accel * dt);
-    // Safety: if the computed speed is very low, still advance (so stuck detection can work).
-    const eff = Math.max(u.spd[i], speed * 0.25);
-    ux = u.hx[i];
-    uy = u.hy[i];
-    let step = Math.min(eff * dt, d);
-    const ox = u.x[i];
-    const oy = u.y[i];
-    // Slopes: uphill slows down with the steepness of the climb, downhill is slightly faster (see slopeSpeed).
-    if (t && t.hasRelief) {
-      const grade = (t.heightAt(ox + ux * 0.45, oy + uy * 0.45) - t.heightAt(ox, oy)) / 0.45;
-      step *= slopeSpeed(grade, STATS[u.kind[i]].scale > 1.5);
-    }
-    // Positions are stored as Float32: the walkability test must use the rounded value.
-    const lim = this.mapSize - 0.5;
-    let nx = Math.fround(Math.min(lim, Math.max(0.5, ox + ux * step)));
-    let ny = Math.fround(Math.min(lim, Math.max(0.5, oy + uy * step)));
-    if (t && !t.stepOk(ox, oy, nx, ny)) {
-      // In front of an obstacle, slide along the edge at FULL speed (so the unit can progress even if the target direction is perpendicular to the obstacle).
-      const canX = t.walkable(Math.fround(ox + (ux >= 0 ? step : -step)), oy);
-      const canY = t.walkable(ox, Math.fround(oy + (uy >= 0 ? step : -step)));
-      const dirX = Math.abs(ux) > 1e-3 ? (ux > 0 ? 1 : -1) : u.sideDir[i];
-      const dirY = Math.abs(uy) > 1e-3 ? (uy > 0 ? 1 : -1) : u.sideDir[i];
-      let slideX = canX && (!canY || Math.abs(ux) >= Math.abs(uy));
-      let slideY = canY && !slideX;
-      if (!slideX && !slideY) {
-        // Both axes are blocked in the direct direction: try the opposite direction (beside the obstacle).
-        if (t.walkable(Math.fround(ox + dirX * -step), oy) && Math.abs(ux) > 1e-3) {
-          nx = Math.fround(ox - dirX * step);
-          ny = oy;
-        } else {
-          nx = ox;
-          ny = oy;
-        }
-        slideX = slideY = false;
-      }
-      if (slideX) {
-        nx = Math.fround(Math.min(lim, Math.max(0.5, ox + dirX * step)));
-        ny = oy;
-        if (!t.walkable(nx, ny)) nx = ox;
-      } else if (slideY) {
-        nx = ox;
-        ny = Math.fround(Math.min(lim, Math.max(0.5, oy + dirY * step)));
-        if (!t.walkable(nx, ny)) ny = oy;
-      }
-      // The slide branch in the opposite direction must be validated too.
-      if (!t.walkable(nx, ny)) {
-        nx = ox;
-        ny = oy;
-      }
-    }
-    u.x[i] = nx;
-    u.y[i] = ny;
-    const mdx = nx - ox;
-    const mdy = ny - oy;
-    const mv = Math.sqrt(mdx * mdx + mdy * mdy);
-    u.vx[i] = mdx / dt;
-    u.vy[i] = mdy / dt;
-    if (mv > 1e-4) u.moving[i] = 1;
-
-    // Net displacement window: count as stuck if the unit advanced less than 0.3 tiles in 0.8 s (including back-and-forth wiggling).
-    u.winT[i] += dt;
-    if (u.winT[i] >= 0.8) {
-      const wx = u.x[i] - u.winX[i];
-      const wy = u.y[i] - u.winY[i];
-      if (wx * wx + wy * wy < 0.09 && d > 1.2) {
-        u.stuckT[i] = Math.max(u.stuckT[i], 0.6);
-        this.dbg.stuck++;
-      }
-      u.winX[i] = u.x[i];
-      u.winY[i] = u.y[i];
-      u.winT[i] = 0;
-    }
-    // Real progress toward the target (dragging along an edge does not count as progress).
-    const progress = mdx * ux + mdy * uy;
-    if (step > 0.02 && progress < step * 0.25) {
-      u.stuckT[i] += dt;
-      if (u.stuckT[i] > 0.5 && d > 1) {
-        u.sideT[i] = 0.6;
-        u.sideDir[i] = this.rng() < 0.5 ? -1 : 1;
-        u.stuckT[i] = 0;
-        this.dbg.stuck++;
-      }
-    } else if (u.stuckT[i] > 0) {
-      u.stuckT[i] = Math.max(0, u.stuckT[i] - dt);
-    }
-    if (faceMove) this.faceTo(i, dx, dy);
-    return mv;
+    u.mvGx[i] = gx;
+    u.mvGy[i] = gy;
+    u.mvSpeed[i] = speed;
+    u.mvFlags[i] = MV_INTENT | (faceMove ? MV_FACE : 0) | (useRoute ? MV_ROUTE : 0);
   }
 
-  /**
-   * A* path for a stuck unit: if a path exists, (rx, ry) = the next waypoint. If there is none, the target
-   * is considered unreachable and banned.
-   */
-  private followPath(i: number, gx: number, gy: number, dt: number): void {
+  /** Movement phase: executes all queued moves (chunk by chunk) and applies what they found out about other units. */
+  private runMoves(dt: number): void {
     const u = this.units;
-    const t = this.terrain!;
-    this.rx = gx;
-    this.ry = gy;
-    let p = this.paths.get(i);
-    if (p) {
-      p.t += dt;
-      const gd = (gx - p.gx) ** 2 + (gy - p.gy) ** 2;
-      if (gd > 9 || p.t > 12) {
-        this.paths.delete(i);
-        p = undefined;
+    const n = u.count;
+    const mover = this.mover;
+    mover.stepNo = this.stepNo;
+    mover.brakeK = this.brakeK;
+    mover.losEvery = this.losEvery;
+    if (this.pool) this.pool.run(n, dt, this.stepNo, this.brakeK, this.losEvery, (from, to) => mover.runChunk(from, to, dt));
+    else {
+      const size = chunkSize(n);
+      const chunks = Math.ceil(n / size);
+      // Test hook: the order in which chunks are executed must not change the result (helper threads take them in any order).
+      const order = this.chunkOrder ? this.chunkOrder(chunks) : null;
+      for (let k = 0; k < chunks; k++) {
+        const c = order ? order[k] : k;
+        mover.runChunk(c * size, Math.min(n, (c + 1) * size), dt);
       }
     }
-    // Every ~0.6 s (staggered per unit) a line-of-sight check: if the target/waypoint is not visible, request a path,
-    // if it is visible, drop the current path.
-    let blocked = false;
-    if ((i + this.stepNo) % this.losEvery === 0) {
-      const dx0 = gx - u.x[i];
-      const dy0 = gy - u.y[i];
-      const far = dx0 * dx0 + dy0 * dy0 > 6;
-      const clear = !far || t.lineWalkable(u.x[i], u.y[i], gx, gy);
-      if (p && clear) {
-        this.paths.delete(i);
-        p = undefined;
-      }
-      blocked = far && !clear;
+    const c = mover.counts;
+    this.dbg.stuck += c[CNT_STUCK];
+    this.dbg.paths += c[CNT_PATHS];
+    this.dbg.pathFails += c[CNT_PATH_FAILS];
+    c.fill(0);
+    // A target that cannot be reached is banned for its pursuer (in unit order: deterministic).
+    for (let i = 0; i < n; i++) {
+      if (!u.mvFail[i]) continue;
+      u.mvFail[i] = 0;
+      const tg = u.target[i];
+      if (tg < 0) continue;
+      u.banTarget[i] = tg;
+      u.banT[i] = BAN_TIME;
+      if (isHealer(u.kind[i])) {
+        if (u.healers[tg] > 0) u.healers[tg]--;
+      } else if (u.attackers[tg] > 0) u.attackers[tg]--;
+      u.target[i] = -1;
+      u.retarget[i] = 0;
     }
-    // If the next waypoint of the active path is not visible from the current position (dragged/pushed), rebuild the path.
-    let dropped = false;
-    if (p) {
-      const k = Math.min(p.k, p.pts.length / 2 - 1);
-      if (!t.lineWalkable(u.x[i], u.y[i], p.pts[k * 2], p.pts[k * 2 + 1])) {
-        this.paths.delete(i);
-        p = undefined;
-        dropped = true;
-      }
-    }
-    if (!p && (u.stuckT[i] > 0.3 || blocked || dropped) && this.pathBudget > 0) {
-      this.pathBudget--;
-      const pts = t.findPath(u.x[i], u.y[i], gx, gy);
-      if (pts && pts.length > 0) {
-        p = { pts, k: 0, gx, gy, t: 0 };
-        this.paths.set(i, p);
-        this.dbg.paths++;
-        u.sideT[i] = 0;
-      } else if (!pts) {
-        this.dbg.pathFails++;
-        const tg = u.target[i];
-        if (tg >= 0) {
-          u.banTarget[i] = tg;
-          u.banT[i] = BAN_TIME;
-          if (isHealer(u.kind[i])) {
-            if (u.healers[tg] > 0) u.healers[tg]--;
-          } else if (u.attackers[tg] > 0) u.attackers[tg]--;
-          u.target[i] = -1;
-          u.retarget[i] = 0;
-        }
-        u.stuckT[i] = 0;
-      }
-    }
-    if (!p) return;
-    const m = p.pts.length / 2;
-    while (p.k < m) {
-      const wx = p.pts[p.k * 2] - u.x[i];
-      const wy = p.pts[p.k * 2 + 1] - u.y[i];
-      if (wx * wx + wy * wy > 0.12) break;
-      p.k++;
-    }
-    // If the next waypoint is directly visible from the unit's current position, skip the waypoint.
-    if (p.k + 1 < m && t.lineWalkable(u.x[i], u.y[i], p.pts[(p.k + 1) * 2], p.pts[(p.k + 1) * 2 + 1])) p.k++;
-    if (p.k >= m) {
-      this.paths.delete(i);
-      return;
-    }
-    this.rx = p.pts[p.k * 2];
-    this.ry = p.pts[p.k * 2 + 1];
-    u.sideT[i] = 0;
-  }
-
-  /** River crossing: if the target is on the opposite bank, (rx, ry) = bridge entrance/exit, otherwise the target itself. */
-  private applyRoute(i: number, gx: number, gy: number): void {
-    const u = this.units;
-    const t = this.terrain!;
-    this.rx = gx;
-    this.ry = gy;
-    const su = t.sideAt(u.x[i], u.y[i]);
-    const sg = t.sideAt(gx, gy);
-    let b = u.route[i];
-    const lat = (((i * 37) % 100) / 100 - 0.5) * 1.8;
-
-    // If it left the bridge corridor (pushed to the shore, target changed), reset the phase: return to the entrance.
-    if (b >= 0 && u.routePhase[i] === 1) {
-      const br = t.bridges[b];
-      const s = t.toS(u.x[i], u.y[i]);
-      const d = t.toD(u.x[i], u.y[i]);
-      if (Math.abs(s - br.s) > br.halfW + 0.4 || Math.abs(d - br.o) > br.halfLen + 1.2) u.routePhase[i] = 0;
-    }
-
-    if (su === sg) {
-      if (b >= 0 && u.routePhase[i] === 1) {
-        // Past the midpoint: leave via the bridge up to the far end.
-        const e = this.tmpA;
-        t.bridgeEnd(t.bridges[b], su, lat, e);
-        const ex = e.x - u.x[i];
-        const ey = e.y - u.y[i];
-        if (ex * ex + ey * ey > 1) {
-          this.rx = e.x;
-          this.ry = e.y;
-          return;
-        }
-      }
-      u.route[i] = -1;
-      u.routePhase[i] = 0;
-      return;
-    }
-
-    if (b < 0) {
-      b = this.chooseBridge(su, u.x[i], u.y[i], gx, gy);
-      if (b < 0) return;
-      u.route[i] = b;
-      u.routePhase[i] = 0;
-    }
-    const br = t.bridges[b];
-    if (u.routePhase[i] === 0) {
-      const e = this.tmpA;
-      t.bridgeEnd(br, su, lat, e);
-      const ex = e.x - u.x[i];
-      const ey = e.y - u.y[i];
-      if (ex * ex + ey * ey > 0.8) {
-        this.rx = e.x;
-        this.ry = e.y;
-        return;
-      }
-      u.routePhase[i] = 1;
-    }
-    const x = this.tmpA;
-    t.bridgeEnd(br, -su, lat, x);
-    this.rx = x.x;
-    this.ry = x.y;
-  }
-
-  private chooseBridge(su: number, x: number, y: number, gx: number, gy: number): number {
-    const t = this.terrain!;
-    let best = -1;
-    let bestCost = Infinity;
-    const a = this.tmpA;
-    const c = this.tmpB;
-    for (let k = 0; k < t.bridges.length; k++) {
-      const br = t.bridges[k];
-      t.bridgeEnd(br, su, 0, a);
-      t.bridgeEnd(br, -su, 0, c);
-      const cost = Math.hypot(a.x - x, a.y - y) + br.w + 5 + Math.hypot(c.x - gx, c.y - gy);
-      if (cost < bestCost) {
-        bestCost = cost;
-        best = k;
-      }
-    }
-    return best;
   }
 
   private faceTo(i: number, dx: number, dy: number): void {

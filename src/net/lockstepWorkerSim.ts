@@ -23,12 +23,12 @@ export class LockstepWorkerSim extends WorkerSim {
   private frameAlpha = 1;
 
   static async createLockstep(config: BattleConfig, seed: number, model: OnlineModel, opts: { host?: HostLobby; send?: (m: ClientMsg) => void }): Promise<LockstepWorkerSim> {
-    const { worker, sh, count } = await WorkerSim.spawn(config, seed, CHECK_EVERY);
-    return new LockstepWorkerSim(config, worker, sh, count, model, opts);
+    const { worker, sh, count, helpers } = await WorkerSim.spawn(config, seed, CHECK_EVERY);
+    return new LockstepWorkerSim(config, worker, sh, count, helpers, model, opts);
   }
 
-  private constructor(config: BattleConfig, worker: Worker, sh: Shared, count: number, model: OnlineModel, opts: { host?: HostLobby; send?: (m: ClientMsg) => void }) {
-    super(config, worker, sh, count);
+  private constructor(config: BattleConfig, worker: Worker, sh: Shared, count: number, helpers: Worker[], model: OnlineModel, opts: { host?: HostLobby; send?: (m: ClientMsg) => void }) {
+    super(config, worker, sh, count, helpers);
     this.runner = new LockstepRunner(this.adapter(), model, opts);
   }
 
