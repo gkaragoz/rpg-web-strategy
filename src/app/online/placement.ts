@@ -45,8 +45,17 @@ export class Placement {
   private readonly remote = new Map<number, Sprite>();
   private readonly pending = new Map<number, PlacedUnit>();
   private readonly cancelled = new Set<number>();
+  /** cids whose unit was erased and re-added (undo) before the host answered: the late answer must only undo that stale copy. */
+  private readonly stale = new Set<number>();
+  /** Units removed locally (by host id), so a refused removal can restore the very same objects and drop their undo entries. */
+  private readonly removedById = new Map<number, PlacedUnit>();
   private nextCid = 1;
   private locked = false;
+  /** READY the player asked for and the host has not echoed yet (the lock follows this, not stale state messages). */
+  private readyWanted: boolean | null = null;
+  private readyTimer: ReturnType<typeof setTimeout> | null = null;
+  /** READY waits until every placement was confirmed, so a deferred removal cannot arrive after the host is ready. */
+  private readyDeferred = false;
   private readonly gallery: UnitGallery | null;
   private readonly keys: (e: KeyboardEvent) => void;
   private lastLeft = -2;
@@ -74,6 +83,9 @@ export class Placement {
       units: [],
       fresh: false,
     };
+    // Rejoin during placement: our own units and READY state are already known to the host.
+    this.locked = !!model.me?.ready;
+    if (this.myTeam >= 0) for (const it of model.placed.values()) if (it.team === this.myTeam) this.state.units.push({ team: it.team, kind: it.kind, x: it.x, y: it.y, id: it.id });
     this.drawZones();
     env.world.fxLayer.addChild(this.overlay);
 
@@ -104,6 +116,7 @@ export class Placement {
         removed: (units) => this.sendRemoved(units),
       };
       this.editor.enter();
+      if (this.state.units.length) this.ensureKinds();
       this.gallery = new UnitGallery({
         state: this.state,
         icon: env.icon,
@@ -159,6 +172,12 @@ export class Placement {
 
   private sendAdded(units: PlacedUnit[]): void {
     const items = units.map((u) => {
+      if (u.cid !== undefined && this.pending.get(u.cid) === u) {
+        // Erased and restored before the host answered: the first request is now a stale duplicate.
+        this.pending.delete(u.cid);
+        this.cancelled.delete(u.cid);
+        this.stale.add(u.cid);
+      }
       u.id = undefined;
       u.cid = this.nextCid++;
       this.pending.set(u.cid, u);
@@ -170,8 +189,10 @@ export class Placement {
   private sendRemoved(units: PlacedUnit[]): void {
     const ids: number[] = [];
     for (const u of units) {
-      if (u.id !== undefined) ids.push(u.id);
-      else if (u.cid !== undefined) this.cancelled.add(u.cid); // not confirmed yet: removed once the confirmation arrives
+      if (u.id !== undefined) {
+        ids.push(u.id);
+        this.removedById.set(u.id, u);
+      } else if (u.cid !== undefined) this.cancelled.add(u.cid); // not confirmed yet: removed once the confirmation arrives
     }
     if (ids.length) this.session.send({ t: 'unplace', ids });
   }
@@ -184,6 +205,7 @@ export class Placement {
         for (const it of msg.items) this.onPlaced(it, msg.owner === me);
         this.ensureKinds();
         this.syncRemote();
+        this.flushReady();
         break;
       case 'unplaced':
         for (const id of msg.ids) {
@@ -201,6 +223,7 @@ export class Placement {
       case 'placeFail': {
         const bad: PlacedUnit[] = [];
         for (const cid of msg.cids) {
+          if (this.stale.delete(cid)) continue;
           const u = this.pending.get(cid);
           if (u) {
             bad.push(u);
@@ -209,18 +232,23 @@ export class Placement {
         }
         if (bad.length && this.editor) this.editor.removeSilently(bad);
         this.env.toast(t(`online.reason.${msg.reason}`));
+        this.flushReady();
         break;
       }
       case 'unplaceFail': {
         // The host kept these units (we were ready): restore them locally so what we see is what will fight.
         let back = 0;
+        const old: PlacedUnit[] = [];
         for (const id of msg.ids) {
           const it = this.session.model.placed.get(id);
           if (!it || it.team !== this.myTeam || !this.editor || this.state.units.some((x) => x.id === id)) continue;
+          const was = this.removedById.get(id);
+          if (was) old.push(was);
           this.state.units.push({ team: it.team, kind: it.kind, x: it.x, y: it.y, id: it.id });
           back++;
         }
         if (back) {
+          this.editor?.forget(old); // their undo entries would re-add duplicates
           this.ensureKinds();
           this.editor?.refreshSprites();
           this.refreshUi();
@@ -228,9 +256,13 @@ export class Placement {
         this.env.toast(t('online.place.locked'));
         break;
       }
-      case 'state':
-        this.locked = !!this.session.model.me?.ready;
+      case 'state': {
+        const ready = !!this.session.model.me?.ready;
+        if (this.readyWanted !== null && this.readyWanted === ready) this.readyWanted = null;
+        this.locked = this.readyWanted ?? ready;
         this.refreshUi();
+        break;
+      }
         break;
     }
   }
@@ -360,13 +392,31 @@ export class Placement {
     q('#pg-clear').addEventListener('click', () => this.editor!.clear());
     q('#pg-ready').addEventListener('click', () => {
       const me = this.session.model.me;
-      if (me) {
-        // Lock immediately when becoming ready (the confirmation comes with the next state message).
-        this.locked = !me.ready;
-        this.session.send({ t: 'ready', ready: !me.ready });
-        this.refreshUi();
-      }
+      if (me) this.toggleReady(!(this.readyWanted ?? me.ready));
     });
+  }
+
+  /** READY on/off: locks the editor at once, defers the message until all placements are confirmed, and survives stale state messages. */
+  private toggleReady(next: boolean): void {
+    this.readyWanted = next;
+    this.locked = next;
+    this.readyDeferred = false;
+    if (this.readyTimer) clearTimeout(this.readyTimer);
+    // If the host never echoes (dropped message), fall back to what it says.
+    this.readyTimer = setTimeout(() => {
+      this.readyWanted = null;
+      this.locked = !!this.session.model.me?.ready;
+      this.refreshUi();
+    }, 4000);
+    if (next && this.pending.size > 0) this.readyDeferred = true;
+    else this.session.send({ t: 'ready', ready: next });
+    this.refreshUi();
+  }
+
+  private flushReady(): void {
+    if (!this.readyDeferred || this.pending.size > 0) return;
+    this.readyDeferred = false;
+    this.session.send({ t: 'ready', ready: true });
   }
 
   private refreshUi(): void {
@@ -437,6 +487,7 @@ export class Placement {
   destroy(): void {
     window.removeEventListener('keydown', this.keys);
     if (this.timer) clearInterval(this.timer);
+    if (this.readyTimer) clearTimeout(this.readyTimer);
     this.editor?.exit();
     this.top.remove();
     this.sheet?.destroy();

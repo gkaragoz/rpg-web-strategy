@@ -236,7 +236,12 @@ export class HostLobby {
     if (msg.t === 'join') return this.onJoin(from, msg);
     const p = this.player(from);
     if (!p) return;
-    if (msg.t !== 'presence' && !this.allow(from)) return;
+    if (msg.t !== 'presence' && !this.allow(from)) {
+      // Rate limited: placement edits must never vanish silently (the client already changed its own view).
+      if (msg.t === 'place' && Array.isArray(msg.items)) this.sendTo(p.id, { t: 'placeFail', cids: msg.items.map((i) => i?.cid).filter((c) => Number.isInteger(c)), reason: 'busy' });
+      else if (msg.t === 'unplace' && Array.isArray(msg.ids)) this.sendUnplaceFail(p.id, msg.ids);
+      return;
+    }
     const isHost = from === this.hostId;
     switch (msg.t) {
       case 'profile':
@@ -380,6 +385,7 @@ export class HostLobby {
   private onSettings(patch: Partial<LobbySettings>, password: string | null | undefined): void {
     if (this.phase !== 'lobby') return;
     const s = this.settings;
+    const before = JSON.stringify(s) + String(this.passHashed);
     if (patch.mapMode === 'random' || patch.mapMode === 'fixed') s.mapMode = patch.mapMode;
     if (patch.map) s.map = sanitizeSpec(patch.map);
     if (typeof patch.mapSeed === 'number' && Number.isFinite(patch.mapSeed)) s.mapSeed = Math.max(1, Math.floor(patch.mapSeed)) % 1000000;
@@ -391,8 +397,8 @@ export class HostLobby {
     if (typeof patch.comedyVisual === 'boolean') s.comedyVisual = patch.comedyVisual;
     if (Array.isArray(patch.banned)) s.banned = patch.banned.filter((r) => ['common', 'rare', 'epic', 'legendary'].includes(r));
     if (password !== undefined) this.passHashed = password ? passHash(password) : null;
-    // When a setting changes, clear everyone's ready flag (except the host): players must see the new rules.
-    for (const p of this.players) if (p.id !== this.hostId) p.ready = false;
+    // When a setting really changes, clear everyone's ready flag (except the host): players must see the new rules.
+    if (JSON.stringify(s) + String(this.passHashed) !== before) for (const p of this.players) if (p.id !== this.hostId) p.ready = false;
     this.pushState();
   }
 
@@ -570,10 +576,16 @@ export class HostLobby {
     this.dirtyState = true;
   }
 
+  /** Tells the client that a removal was refused (in chunks, so nothing is truncated). */
+  private sendUnplaceFail(to: string, ids: unknown[]): void {
+    const ok = ids.filter((id): id is number => Number.isInteger(id));
+    for (let i = 0; i < ok.length; i += 400) this.sendTo(to, { t: 'unplaceFail', ids: ok.slice(i, i + 400) });
+  }
+
   private onUnplace(p: PlayerInfo, ids: number[]): void {
     if (this.phase !== 'placing' || p.role !== 'player' || p.ready) {
       // Never ignore silently: the client already removed the sprites and must put them back.
-      if (p.role === 'player') this.sendTo(p.id, { t: 'unplaceFail', ids: ids.filter((id) => Number.isInteger(id)).slice(0, 400) });
+      if (p.role === 'player') this.sendUnplaceFail(p.id, ids);
       return;
     }
     const set = new Set(ids);

@@ -250,6 +250,11 @@ export class Editor {
 
   /** Applies the brush during a paint stroke (with spacing control). */
   private apply(x: number, y: number, teamOnly: boolean): void {
+    // A stroke that was already running when the lock came on (READY) must stop, not keep erasing locally.
+    if (this.constraint?.canEdit && !this.constraint.canEdit()) {
+      this.stroke = null;
+      return;
+    }
     const br = BRUSHES[this.d.state.brush];
     const spacing = br.count === 1 ? 0.9 : br.radius * 0.7;
     if ((x - this.lastStamp.x) ** 2 + (y - this.lastStamp.y) ** 2 < spacing * spacing && this.lastStamp.x > -900) return;
@@ -544,9 +549,18 @@ export class Editor {
     const set = new Set(units);
     this.d.state.units = this.d.state.units.filter((u) => !set.has(u));
     for (const u of units) this.dropSprite(u);
+    // Units the host refused while a stroke is still being drawn must not end up in that stroke's undo op.
+    if (this.stroke) this.stroke.units = this.stroke.units.filter((u) => !set.has(u));
     this.undoStack = this.undoStack.filter((op) => !op.units.some((u) => set.has(u)));
     this.redoStack = [];
     this.d.onChange();
+  }
+
+  /** Drops undo/redo entries that mention these units (they were restored from the host as new objects). */
+  forget(units: PlacedUnit[]): void {
+    const set = new Set(units);
+    this.undoStack = this.undoStack.filter((op) => !op.units.some((u) => set.has(u)));
+    this.redoStack = this.redoStack.filter((op) => !op.units.some((u) => set.has(u)));
   }
 
   private addMany(added: PlacedUnit[]): void {

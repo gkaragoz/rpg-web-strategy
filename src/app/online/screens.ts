@@ -256,6 +256,11 @@ export class LobbyScreen {
       b.addEventListener('click', () => this.patch({ gold: Number((b as HTMLElement).dataset.g) })),
     );
     q<HTMLInputElement>('#l-gold-n').addEventListener('change', (e) => this.patch({ gold: Number((e.target as HTMLInputElement).value) }));
+    // Show what the host really uses once the field is left (out-of-range values are clamped by the host).
+    q<HTMLInputElement>('#l-gold-n').addEventListener('blur', () => {
+      const st = this.session.model.state;
+      if (st) q<HTMLInputElement>('#l-gold-n').value = String(st.settings.gold);
+    });
     q<HTMLSelectElement>('#l-time').innerHTML = TIMES.map((v) => `<option value="${v}">${t(`online.time.${v}`)}</option>`).join('');
     q<HTMLSelectElement>('#l-time').addEventListener('change', (e) => this.patch({ placeSecs: Number((e.target as HTMLSelectElement).value) }));
     q<HTMLSelectElement>('#l-size').innerHTML = SIZES.map((v) => `<option value="${v}">${t(`online.size.${v}`)}</option>`).join('');

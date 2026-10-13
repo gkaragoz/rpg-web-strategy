@@ -258,6 +258,28 @@ describe('placement', () => {
     expect(a.model.placed.size).toBe(0);
   });
 
+  it('a rate-limited removal is answered with unplaceFail instead of being dropped', () => {
+    const { r, a } = placing(true);
+    let fails = 0;
+    a.model.listeners.push((m) => {
+      if (m.t === 'unplaceFail') fails += m.ids.length;
+    });
+    for (let i = 0; i < 200; i++) a.send({ t: 'unplace', ids: [1000 + i] });
+    expect(fails).toBeGreaterThan(100);
+    expect(r.hs.model.state!.phase).toBe('placing');
+  });
+
+  it('a settings message that changes nothing keeps the guests ready', () => {
+    const r = rig(5);
+    const a = join(r, 'A');
+    a.send({ t: 'ready', ready: true });
+    expect(r.hs.model.state!.players.find((p) => p.name === 'A')!.ready).toBe(true);
+    r.hs.send({ t: 'settings', settings: {} });
+    expect(r.hs.model.state!.players.find((p) => p.name === 'A')!.ready).toBe(true);
+    r.hs.send({ t: 'settings', settings: { gold: 4321 } });
+    expect(r.hs.model.state!.players.find((p) => p.name === 'A')!.ready).toBe(false);
+  });
+
   it('placement locks when ready; everyone ready -> battle starts, same layout for everyone', () => {
     const { r, a, b } = placing(true);
     const ma = spots(r, a.model.me!.team, 2);
