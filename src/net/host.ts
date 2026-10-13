@@ -98,6 +98,8 @@ export class HostLobby {
   private closed = false;
   private ghostSeq = 1;
   private readonly lastResync = new Map<string, number>();
+  private readonly resyncCount = new Map<string, number>();
+  private readonly resyncBusy = new Set<string>();
   /** Per-sender message rate limit (token bucket) so a malicious or buggy client cannot flood the host. */
   private readonly rate = new Map<string, { tokens: number; at: number }>();
 
@@ -305,15 +307,16 @@ export class HostLobby {
   }
 
   /** Sends the current battle state to one peer (a worker-backed sim answers asynchronously). */
-  private sendSnapshot(to: string): void {
+  private sendSnapshot(to: string, done?: () => void): void {
     const r = this.simProvider?.snapshot();
-    if (!r) return;
+    if (!r) return done?.();
     const battle = this.battleStart;
     // A worker answers later: by then the room may have gone back to placement/lobby, and the snapshot belongs to a dead battle.
     const send = (s: { step: number; data: string }): void => {
       if (this.battleStart === battle && (this.phase === 'battle' || this.phase === 'result')) this.sendTo(to, { t: 'resync', step: s.step, data: s.data });
+      done?.();
     };
-    if (r instanceof Promise) void r.then(send);
+    if (r instanceof Promise) void r.then(send, () => done?.());
     else send(r);
   }
 
@@ -598,6 +601,9 @@ export class HostLobby {
   private beginBattle(): void {
     if (!this.init) return;
     const sorted = this.units.all().sort((a, b) => a.id - b.id);
+    this.resyncCount.clear();
+    this.resyncBusy.clear();
+    this.lastResync.clear();
     this.battleStart = { init: this.init, simSeed: 1 + Math.floor(this.rnd() * 1000000), layout: packLayout(sorted) };
     this.phase = 'battle';
     this.hashes.clear();
@@ -652,12 +658,17 @@ export class HostLobby {
     if (this.phase !== 'battle') return;
     const mine = this.hashes.get(step);
     if (mine === undefined || mine === hash) return;
-    // A client that keeps diverging (different browser engine etc.) must not flood the network with large snapshots: at most once per 4 s.
+    // A client that keeps diverging (different browser engine etc.) must not flood the network with large snapshots:
+    // one at a time, the gap doubles with every resync (4 s, 8 s, ... 64 s) and after RESYNC_MAX of them the client is left alone.
     const t = this.now();
-    if (t - (this.lastResync.get(from) ?? -Infinity) < 4000) return;
+    const n = this.resyncCount.get(from) ?? 0;
+    if (n >= RESYNC_MAX || this.resyncBusy.has(from)) return;
+    if (t - (this.lastResync.get(from) ?? -Infinity) < 4000 * 2 ** n) return;
     this.lastResync.set(from, t);
+    this.resyncCount.set(from, n + 1);
     if (this.simProvider) {
-      this.sendSnapshot(from);
+      this.resyncBusy.add(from);
+      this.sendSnapshot(from, () => this.resyncBusy.delete(from));
     }
   }
 
@@ -736,3 +747,5 @@ export class HostLobby {
 
 /** Checksum interval (sim steps): 2 s at 30 Hz. */
 export const CHECK_EVERY = 60;
+/** Most resyncs the host sends one client per battle (a client that keeps diverging is left alone after that). */
+const RESYNC_MAX = 6;

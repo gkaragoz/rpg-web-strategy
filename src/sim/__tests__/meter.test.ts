@@ -84,3 +84,28 @@ describe('damage meter helpers', () => {
     expect(rankRows([5], [7], [3], [-1], 10)[0].total).toBe(7);
   });
 });
+
+describe('projectile capacity', () => {
+  it('grows with the army so big battles do not drop shots', async () => {
+    const { projectileCapacity } = await import('../battle');
+    const small = { mode: 'custom' as const, perTeam: 0, teamCount: 2, mapSize: 56, env: true, kite: true, terrainSeed: 1, layout: new Float32Array(40) };
+    const big = { ...small, layout: new Float32Array(4 * 30000) };
+    expect(projectileCapacity(small)).toBe(4096);
+    expect(projectileCapacity(big)).toBeGreaterThan(20000);
+  });
+});
+
+describe('lockstep hash coverage', () => {
+  it('notices differences in timers, motion and crowd-control state, not only in positions', () => {
+    const base = duel(5);
+    for (let i = 0; i < 10; i++) base.step(1 / 30);
+    const h0 = base.hash();
+    for (const field of ['burnT', 'slowT', 'kbVx', 'swing', 'weakT', 'spd', 'hx'] as const) {
+      const other = duel(5);
+      for (let i = 0; i < 10; i++) other.step(1 / 30);
+      expect(other.hash()).toBe(h0);
+      other.units[field][0] += 0.5;
+      expect(other.hash(), field).not.toBe(h0);
+    }
+  });
+});

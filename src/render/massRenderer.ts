@@ -46,7 +46,7 @@ export class MassRenderer {
     dynamicProperties: { vertex: true, position: true, rotation: true, uvs: true, color: true },
   });
   private readonly arrows = new ParticleContainer({
-    dynamicProperties: { vertex: false, position: true, rotation: true, uvs: false, color: false },
+    dynamicProperties: { vertex: true, position: true, rotation: true, uvs: true, color: true },
   });
   private readonly bars = new ParticleContainer({
     dynamicProperties: { vertex: true, position: true, rotation: false, uvs: false, color: true },

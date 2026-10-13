@@ -1309,8 +1309,10 @@ export class Battle {
     const u = this.units;
     const n = u.count;
     let h = 2166136261;
-    for (const arr of [u.x, u.y, u.hp, u.cooldown, u.stunT, u.lift] as Typed[]) h = fnv(h, arr, n, 4);
-    for (const arr of [u.alive, u.team, u.kind] as Typed[]) h = fnv(h, arr, n, 1);
+    // Everything that shapes the future of a unit: position, health, timers, motion and crowd-control state. A client that
+    // diverges in any of these is caught at the next checkpoint instead of drifting silently.
+    for (const arr of [u.x, u.y, u.hp, u.cooldown, u.stunT, u.lift, u.swing, u.retarget, u.kbVx, u.kbVy, u.spd, u.hx, u.hy, u.slowT, u.burnT, u.shieldT, u.fearT, u.weakT, u.invulnT, u.tauntT] as Typed[]) h = fnv(h, arr, n, 4);
+    for (const arr of [u.alive, u.team, u.kind, u.stacks] as Typed[]) h = fnv(h, arr, n, 1);
     h = fnv(h, u.target, n, 4);
     h ^= this.rngObj.a;
     h = Math.imul(h, 16777619) >>> 0;
@@ -2510,7 +2512,8 @@ export function unitCapacity(config: BattleConfig): number {
 }
 
 export function projectileCapacity(config: BattleConfig): number {
-  if (config.mode === 'custom') return 4096;
+  // Custom (solo studio / online) battles can have 30 000 soldiers: about 3 in 4 may have a shot in the air at once.
+  if (config.mode === 'custom') return Math.max(4096, Math.ceil(unitCapacity(config) * 0.75));
   return config.mode === 'bench' ? 16384 : 1024;
 }
 

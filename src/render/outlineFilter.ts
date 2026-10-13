@@ -4,7 +4,10 @@ import { ColorMatrixFilter, Filter, GlProgram, defaultFilterVert } from 'pixi.js
  * Outline for a display object (used on the detailed unit views): every transparent pixel next to an opaque one
  * is painted in the outline colour. WebGL only (the game forces the WebGL renderer).
  */
+// `precision highp float` is required: the default filter vertex shader declares uInputSize as highp, and WebGL refuses to link
+// a program whose uniform has different precisions in the two stages ("Could not initialize shader").
 const FRAGMENT = `
+precision highp float;
 in vec2 vTextureCoord;
 out vec4 finalColor;
 uniform sampler2D uTexture;

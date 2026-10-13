@@ -138,16 +138,20 @@ export class FxSystem {
     if (this.quality === 'off') return;
     const high = this.quality === 'high';
     const crowded = this.live.length > MAX_PARTICLES * 0.85;
+    // With tens of thousands of units hundreds of events arrive per frame: spawn effects for a bounded number of them.
+    let budget = 120;
     for (const ev of events) {
+      if (budget <= 0) break;
       const sx = isoX(ev.x, ev.y);
       const sy = isoY(ev.x, ev.y, this.elev(ev.x, ev.y));
       if (!this.inView(sx, sy, view)) continue;
+      budget--;
       switch (ev.type) {
         case 'hit':
           if (!crowded) this.hit(sx, sy, ev.value ?? 10, ev.kind ?? 0, high);
           break;
         case 'death':
-          this.death(sx, sy, ev.kind ?? 0, high);
+          if (!crowded) this.death(sx, sy, ev.kind ?? 0, high);
           break;
         case 'heal':
           this.heal(sx, sy, ev.value ?? 10, high);

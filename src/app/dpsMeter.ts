@@ -81,6 +81,12 @@ export class DpsMeter {
   private readonly peak = new Int32Array(MAX_TEAMS * KIND_COUNT);
   private readonly fell = new Float32Array(MAX_TEAMS * KIND_COUNT).fill(-1);
   private started = false;
+  // Scratch buffers: update() runs 5 times a second and must not allocate.
+  private readonly aliveBuf = new Int32Array(MAX_TEAMS * KIND_COUNT);
+  private readonly sDmg = new Float64Array(KIND_COUNT);
+  private readonly sAlive = new Float64Array(KIND_COUNT);
+  private readonly sTotal = new Float64Array(KIND_COUNT);
+  private readonly sFell = new Float64Array(KIND_COUNT);
 
   constructor(
     root: HTMLElement,
@@ -164,7 +170,8 @@ export class DpsMeter {
   /** Refreshes the numbers (called with the HUD tick). */
   update(sim: SimBackend): void {
     const u = sim.units;
-    const alive = new Int32Array(MAX_TEAMS * KIND_COUNT);
+    const alive = this.aliveBuf;
+    alive.fill(0);
     for (let i = 0; i < u.count; i++) if (u.alive[i]) alive[u.team[i] * KIND_COUNT + u.kind[i]]++;
     if (!this.started) {
       // Starting strength: the soldiers that are alive at the first update (dormant summons are not counted).
@@ -182,8 +189,11 @@ export class DpsMeter {
       return;
     }
     const base = this.team * KIND_COUNT;
-    const sl = (a: ArrayLike<number>): number[] => Array.from({ length: KIND_COUNT }, (_, k) => a[base + k]);
-    const rows = rankRows(sl(sim.meter.dmg), sl(alive), sl(this.total), sl(this.fell), time);
+    const sl = (a: ArrayLike<number>, out: Float64Array): Float64Array => {
+      for (let k = 0; k < KIND_COUNT; k++) out[k] = a[base + k];
+      return out;
+    };
+    const rows = rankRows(sl(sim.meter.dmg, this.sDmg), sl(alive, this.sAlive), sl(this.total, this.sTotal), sl(this.fell, this.sFell), time);
     let totalDmg = 0;
     for (const r of rows) totalDmg += r.dmg;
     this.head.textContent = t('battle.meter.total', { total: fmtDamage(totalDmg), time: fmtTime(time) });
