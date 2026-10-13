@@ -4,7 +4,9 @@ import { t } from '../../i18n';
 import { HostLobby } from '../../net/host';
 import { GuestSession, HostSession, type Session } from '../../net/client';
 import { LockstepSim } from '../../net/lockstepSim';
-import { battleConfig, makeCode, type GameInit, type ServerMsg } from '../../net/protocol';
+import { LockstepWorkerSim } from '../../net/lockstepWorkerSim';
+import type { SimBackend } from '../../sim/backend';
+import { battleConfig, makeCode, type ClientMsg, type GameInit, type ServerMsg } from '../../net/protocol';
 import { PeerGuestTransport, PeerHostTransport } from '../../net/peerTransport';
 import type { Transport } from '../../net/transport';
 import { NetError, WsGuestTransport, WsHostTransport, lanUrl } from '../../net/wsTransport';
@@ -76,6 +78,8 @@ export interface OnlineEnv {
   /** Leave online mode: back to the home page (`home`), or to the Battle Studio when the player chose their own simulation. */
   onExit(home: boolean): void;
   setComedyVisual(on: boolean | null): void;
+  /** Whether the sim may run in a Web Worker (SharedArrayBuffer available, not in debug mode). */
+  workerOk(): boolean;
 }
 
 type Screen = 'menu' | 'lobby' | 'placing' | 'battle';
@@ -110,7 +114,7 @@ export class OnlineApp {
   private colors: TeamColors[] = [];
   private biome: MapSpec['biome'] = 'forest';
   private inBattle = false;
-  private sim: LockstepSim | null = null;
+  private sim: SimBackend | null = null;
   private kind: 'lan' | 'net' = 'lan';
   /** Transport in use ('lan' | 'relay' | 'webrtc'): for display and diagnostics. */
   private via = 'lan';
@@ -478,7 +482,21 @@ export class OnlineApp {
     this.placement = null;
     const cfg = battleConfig(start);
     const host = s instanceof HostSession ? s.lobby : undefined;
-    this.sim = new LockstepSim(cfg, start.simSeed, m, { host, send: (msg) => s.send(msg) });
+    const lockOpts = { host, send: (msg: ClientMsg) => s.send(msg) };
+    let sim: SimBackend | null = null;
+    if (env.workerOk()) {
+      // The battle runs in a Web Worker (the main thread only renders); fall back to the main thread if it cannot start.
+      try {
+        sim = await LockstepWorkerSim.createLockstep(cfg, start.simSeed, m, lockOpts);
+      } catch (e) {
+        console.warn('[online] sim worker unavailable, running on the main thread', e);
+      }
+    }
+    if (this.dead) {
+      sim?.dispose();
+      return;
+    }
+    this.sim = sim ?? new LockstepSim(cfg, start.simSeed, m, lockOpts);
     const names = init.teamPlayers.map((_, i) => m.state?.players.find((p) => p.role === 'player' && p.team === i)?.name ?? '');
     env.setComedyVisual(init.comedyVisual);
     const d = env.battleDefaults();

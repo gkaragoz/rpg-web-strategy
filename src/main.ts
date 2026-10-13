@@ -493,6 +493,7 @@ function startOnline(joinCode?: string): void {
     icon: renderIcon,
     preview,
     battleDefaults: () => ({ fx: state.options.fx, numbers: state.options.numbers }),
+    workerOk,
     setComedyVisual: (on) => {
       comedy.visual = on ?? comedyVisualOn();
     },

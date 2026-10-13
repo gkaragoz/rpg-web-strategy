@@ -3,6 +3,7 @@ import { mulberry32 } from '../sim/random';
 import { Terrain } from '../sim/terrain';
 import { STATS, KIND_COUNT } from '../sim/units';
 import { TROOP_BY_ID } from '../sim/data/troops';
+import { PlaceIndex } from './placeIndex';
 import { MAX_GOLD, MAX_ROOM_UNITS, ONLINE_MAP_SIZES, buyable, costTable, mapSizeForPlayers, placeBlock, teamZones, type Zone } from './economy';
 import {
   CHAT_MAX,
@@ -75,14 +76,14 @@ export class HostLobby {
   /** Server messages for the host player (UI). */
   onEvent: (msg: ServerMsg) => void = () => {};
   /** Sim provider for battles: current step, hash and state snapshot (wired by the host app). */
-  simProvider: { snapshot(): { step: number; data: string } } | null = null;
+  simProvider: { snapshot(): { step: number; data: string } | Promise<{ step: number; data: string }> } | null = null;
 
   private readonly now: () => number;
   private readonly rnd: () => number;
   private passHashed: string | null = null;
   private readonly slots = new Map<string, Slot>();
   private readonly kickedTokens = new Set<string>();
-  private units: PlacedItem[] = [];
+  private readonly units = new PlaceIndex(PLACE_GAP, (k) => this.init?.costs[k] ?? 0);
   private nextUnitId = 1;
   private init: GameInit | null = null;
   private terrain: Terrain | null = null;
@@ -183,16 +184,8 @@ export class HostLobby {
     if (!this.init) return;
     for (const p of this.players) {
       if (p.role !== 'player') continue;
-      let spent = 0;
-      let n = 0;
-      for (const u of this.units) {
-        if (u.team === p.team) {
-          spent += this.init.costs[u.kind] ?? 0;
-          n++;
-        }
-      }
-      p.gold = this.init.gold - spent;
-      p.units = n;
+      p.gold = this.init.gold - this.units.spent(p.team);
+      p.units = this.units.count(p.team);
     }
   }
 
@@ -310,6 +303,15 @@ export class HostLobby {
     }
   }
 
+  /** Sends the current battle state to one peer (a worker-backed sim answers asynchronously). */
+  private sendSnapshot(to: string): void {
+    const r = this.simProvider?.snapshot();
+    if (!r) return;
+    const send = (s: { step: number; data: string }): void => this.sendTo(to, { t: 'resync', step: s.step, data: s.data });
+    if (r instanceof Promise) void r.then(send);
+    else send(r);
+  }
+
   private onJoin(from: string, msg: Extract<ClientMsg, { t: 'join' }>): void {
     if (msg.version !== PROTOCOL) return this.reject(from, 'version');
     // A second join from the same connection (double click / resend): ignore.
@@ -351,8 +353,7 @@ export class HostLobby {
     this.refreshCounts();
     this.sendTo(to, { t: 'welcome', you: to, token, state: this.state(), start: this.battleStart ?? undefined });
     if (this.phase === 'battle' && this.simProvider) {
-      const s = this.simProvider.snapshot();
-      this.sendTo(to, { t: 'resync', step: s.step, data: s.data });
+      this.sendSnapshot(to);
     }
     if (this.phase === 'placing') {
       // Send the existing placements (all of them with open placement, otherwise only the player's own).
@@ -487,7 +488,7 @@ export class HostLobby {
     }
     this.terrain = new Terrain(size, { seed, spec, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
     this.zones = teamZones(size, teams, this.terrain);
-    this.units = [];
+    this.units.clear();
     this.nextUnitId = 1;
     this.init = {
       spec,
@@ -516,14 +517,7 @@ export class HostLobby {
     }
     const zone = this.zones[p.team];
     const costs = this.init.costs;
-    let spent = 0;
-    let n = 0;
-    for (const u of this.units) {
-      if (u.team === p.team) {
-        spent += costs[u.kind] ?? 0;
-        n++;
-      }
-    }
+    let spent = this.units.spent(p.team);
     const placed: PlacedItem[] = [];
     const failed: number[] = [];
     let reason: PlaceFailReason = 'busy';
@@ -555,29 +549,22 @@ export class HostLobby {
         fail('gold');
         continue;
       }
-      if (this.units.length + placed.length >= MAX_ROOM_UNITS) {
+      if (this.units.size + placed.length >= MAX_ROOM_UNITS) {
         fail('cap');
         continue;
       }
-      let close = false;
-      for (const u of this.units) {
-        if (u.team === p.team && (u.x - it.x) ** 2 + (u.y - it.y) ** 2 < PLACE_GAP * PLACE_GAP) {
-          close = true;
-          break;
-        }
-      }
-      if (!close) for (const u of placed) if ((u.x - it.x) ** 2 + (u.y - it.y) ** 2 < PLACE_GAP * PLACE_GAP) close = true;
-      if (close) {
+      // Units accepted earlier in this very batch are already in the index (added below as they pass).
+      if (this.units.near(p.team, it.x, it.y)) {
         fail('close');
         continue;
       }
       spent += c;
-      n++;
-      placed.push({ id: this.nextUnitId++, cid: it.cid, team: p.team, kind: it.kind, x: it.x, y: it.y });
+      const item = { id: this.nextUnitId++, cid: it.cid, team: p.team, kind: it.kind, x: it.x, y: it.y };
+      this.units.add(item);
+      placed.push(item);
     }
     if (failed.length) this.sendTo(p.id, { t: 'placeFail', cids: failed, reason });
     if (!placed.length) return;
-    for (const u of placed) this.units.push(u);
     // Always to the owner; to others only with open placement.
     this.sendTo(p.id, { t: 'placed', owner: p.id, items: placed });
     if (this.settings.openPlacement) this.emit({ t: 'placed', owner: p.id, items: placed }, p.id);
@@ -596,11 +583,8 @@ export class HostLobby {
       if (p.role === 'player') this.sendUnplaceFail(p.id, ids);
       return;
     }
-    const set = new Set(ids);
-    const removed = this.units.filter((u) => set.has(u.id) && u.team === p.team).map((u) => u.id);
+    const removed = this.units.remove(ids, p.team);
     if (!removed.length) return;
-    const rm = new Set(removed);
-    this.units = this.units.filter((u) => !rm.has(u.id));
     this.sendTo(p.id, { t: 'unplaced', owner: p.id, ids: removed });
     if (this.settings.openPlacement) this.emit({ t: 'unplaced', owner: p.id, ids: removed }, p.id);
     this.dirtyState = true;
@@ -608,7 +592,7 @@ export class HostLobby {
 
   private beginBattle(): void {
     if (!this.init) return;
-    const sorted = this.units.slice().sort((a, b) => a.id - b.id);
+    const sorted = this.units.all().sort((a, b) => a.id - b.id);
     const layout: number[] = [];
     for (const u of sorted) layout.push(u.team, u.kind, u.x, u.y);
     this.battleStart = { init: this.init, simSeed: 1 + Math.floor(this.rnd() * 1000000), layout };
@@ -670,8 +654,7 @@ export class HostLobby {
     if (t - (this.lastResync.get(from) ?? -Infinity) < 4000) return;
     this.lastResync.set(from, t);
     if (this.simProvider) {
-      const s = this.simProvider.snapshot();
-      this.sendTo(from, { t: 'resync', step: s.step, data: s.data });
+      this.sendSnapshot(from);
     }
   }
 
@@ -690,7 +673,7 @@ export class HostLobby {
 
   /** Placements a player may see: all of them with open placement, otherwise only the own team's. */
   private visibleUnits(me: PlayerInfo | undefined): PlacedItem[] {
-    return this.units.filter((u) => this.settings.openPlacement || (me && u.team === me.team));
+    return this.units.visible(this.settings.openPlacement ? null : me ? me.team : -1);
   }
 
   /** Rematch: same map, teams and settings; the last formation stays and everybody places (tweaks) again. */
@@ -713,7 +696,7 @@ export class HostLobby {
 
   private toLobby(): void {
     this.phase = 'lobby';
-    this.units = [];
+    this.units.clear();
     this.init = null;
     this.battleStart = null;
     this.terrain = null;

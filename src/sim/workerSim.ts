@@ -35,11 +35,11 @@ export class WorkerSim implements SimBackend {
   readonly units: UnitsView;
   readonly projectiles: ProjView;
   readonly meter: MeterView;
-  private readonly worker: Worker;
-  private readonly sh: Shared;
+  protected readonly worker: Worker;
+  protected readonly sh: Shared;
   private pendingReset: ((count: number) => void) | null = null;
 
-  private constructor(
+  protected constructor(
     readonly config: BattleConfig,
     worker: Worker,
     sh: Shared,
@@ -85,6 +85,7 @@ export class WorkerSim implements SimBackend {
     worker.onmessage = (e: MessageEvent<WorkerEvent>) => {
       const m = e.data;
       if (m.type === 'events') this.events.push(...m.events);
+      else if (m.type === 'hash' || m.type === 'snapshot') this.onExtra(m);
       else if (m.type === 'reset') {
         // Events the worker sent before this reset belong to the old battle.
         this.events.length = 0;
@@ -95,7 +96,16 @@ export class WorkerSim implements SimBackend {
     };
   }
 
+  /** Hook for the lockstep subclass (hash / snapshot replies). */
+  protected onExtra(_m: WorkerEvent): void {}
+
   static async create(config: BattleConfig, seed: number): Promise<WorkerSim> {
+    const { worker, sh, count } = await WorkerSim.spawn(config, seed);
+    return new WorkerSim(config, worker, sh, count);
+  }
+
+  /** Starts the worker (self-timed solo loop, or lockstep mode when `lockCheckEvery` is given) and waits until it is ready. */
+  protected static async spawn(config: BattleConfig, seed: number, lockCheckEvery = 0): Promise<{ worker: Worker; sh: Shared; count: number }> {
     const sab = allocShared(unitCapacity(config), projectileCapacity(config));
     const sh = bindShared(sab, unitCapacity(config), projectileCapacity(config));
     const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
@@ -113,17 +123,17 @@ export class WorkerSim implements SimBackend {
           clearTimeout(timer);
           reject(new Error(`sim worker error: ${e.message}`));
         };
-        worker.postMessage({ type: 'init', sab, config, seed } satisfies WorkerCommand);
+        worker.postMessage((lockCheckEvery > 0 ? { type: 'initLock', sab, config, seed, checkEvery: lockCheckEvery } : { type: 'init', sab, config, seed }) satisfies WorkerCommand);
       });
     } catch (err) {
       worker.terminate(); // never leave a half-started worker running
       throw err;
     }
     worker.onerror = (e) => console.error('[sim worker]', e.message);
-    return new WorkerSim(config, worker, sh, count);
+    return { worker, sh, count };
   }
 
-  frame(): FrameInfo {
+  frame(_dt?: number): FrameInfo {
     const sh = this.sh;
     const latest = Atomics.load(sh.ctrlI, I_LATEST);
     const cur = latest % SNAP_SLOTS;

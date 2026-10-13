@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { Battle, DBG_KEYS, type BattleConfig, type SimEvent, projectileCapacity, unitCapacity } from './battle';
 import { SIM_DT } from './constants';
+import { packSnapshot, unpackSnapshot } from './snapshot';
 import {
   F_ALIVE_BASE,
   F_DBG,
@@ -29,12 +30,19 @@ export type WorkerCommand =
   | { type: 'reset'; seed: number }
   | { type: 'speed'; speed: number }
   | { type: 'pause'; paused: boolean }
-  | { type: 'resetStats' };
+  | { type: 'resetStats' }
+  /** Online lockstep: no self-timed loop; the main thread says how many steps to run. */
+  | { type: 'initLock'; sab: SharedArrayBuffer; config: BattleConfig; seed: number; checkEvery: number }
+  | { type: 'steps'; n: number }
+  | { type: 'snapshot'; id: number }
+  | { type: 'restore'; data: Uint8Array };
 
 export type WorkerEvent =
   | { type: 'ready'; count: number }
   | { type: 'reset'; count: number }
-  | { type: 'events'; events: SimEvent[] };
+  | { type: 'events'; events: SimEvent[] }
+  | { type: 'hash'; step: number; hash: number }
+  | { type: 'snapshot'; id: number; step: number; data: Uint8Array };
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -49,6 +57,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let totalMs = 0;
 let steps = 0;
 let maxMs = 0;
+let checkEvery = 60;
 
 const epochNow = () => performance.timeOrigin + performance.now();
 
@@ -106,12 +115,12 @@ function publish(): void {
   Atomics.store(sh.ctrlI, I_LATEST, step);
 }
 
-function runStep(): void {
+function runStep(doPublish = true): void {
   const t0 = performance.now();
   battle.step(SIM_DT);
   const ms = performance.now() - t0;
   step++;
-  publish();
+  if (doPublish) publish();
 
   totalMs += ms;
   steps++;
@@ -171,6 +180,41 @@ ctx.onmessage = (e: MessageEvent<WorkerCommand>) => {
       next = performance.now();
       ctx.postMessage({ type: 'ready', count: battle.units.count } satisfies WorkerEvent);
       tick();
+      break;
+    }
+    case 'initLock': {
+      config = m.config;
+      checkEvery = m.checkEvery;
+      battle = new Battle(m.seed, config);
+      sh = bindShared(m.sab, unitCapacity(config), projectileCapacity(config));
+      sh.pActive.fill(1);
+      publishStatic();
+      publish();
+      ctx.postMessage({ type: 'ready', count: battle.units.count } satisfies WorkerEvent);
+      break;
+    }
+    case 'steps': {
+      // Lockstep batch: every step runs (never dropped); only the last two are published (render interpolation needs two).
+      let published = false;
+      for (let i = 0; i < m.n && battle.winner === -1; i++) {
+        const last = i >= m.n - 2;
+        runStep(last);
+        published = last;
+        if (step % checkEvery === 0) ctx.postMessage({ type: 'hash', step, hash: battle.hash() } satisfies WorkerEvent);
+      }
+      if (!published && m.n > 0) publish();
+      break;
+    }
+    case 'snapshot': {
+      const data = packSnapshot(battle.serialize());
+      ctx.postMessage({ type: 'snapshot', id: m.id, step, data } satisfies WorkerEvent, [data.buffer]);
+      break;
+    }
+    case 'restore': {
+      battle.restore(unpackSnapshot(m.data));
+      step = battle.stepCount;
+      publishStatic();
+      publish();
       break;
     }
     case 'reset': {

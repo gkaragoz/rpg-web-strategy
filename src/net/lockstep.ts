@@ -13,9 +13,19 @@ export interface SimLike {
   restore(s: BattleSnapshot): void;
   readonly winner: number;
   readonly alivePerTeam: number[];
+  /** Worker-backed sims: steps handed to the worker that it has not finished yet (the runner stops queuing when it falls behind). */
+  readonly pending?: number;
+  /** Worker-backed sims report the checkpoint hashes asynchronously through this callback (instead of hash()). */
+  onHash?(cb: (step: number, hash: number) => void): void;
+  /** Worker-backed sims restore a packed snapshot (taken at `step`) without unpacking it on the main thread. */
+  restorePacked?(data: Uint8Array, step: number): void;
+  /** Worker-backed sims take snapshots asynchronously. */
+  snapshotPacked?(): Promise<{ step: number; data: Uint8Array }>;
 }
 
 const MAX_STEPS_PER_FRAME = 8;
+/** With a worker sim: do not queue more than this many unfinished steps (a slow machine slows down instead of lagging further and further behind). */
+const MAX_PENDING = 12;
 /** When the gap between the host step and the local step exceeds this, catching up / waiting kicks in. */
 const LAG_TOLERANCE = 3;
 /** Interval (steps) at which the host broadcasts its step info. */
@@ -45,10 +55,18 @@ export class LockstepRunner {
     private readonly opts: { host?: HostLobby; send?: (m: ClientMsg) => void; now?: () => number },
   ) {
     if (opts.host) {
-      opts.host.simProvider = {
-        snapshot: () => ({ step: sim.stepCount, data: b64encode(packSnapshot(sim.serialize())) }),
+      const host = opts.host;
+      host.simProvider = {
+        snapshot: () =>
+          sim.snapshotPacked
+            ? sim.snapshotPacked().then((r) => ({ step: r.step, data: b64encode(r.data) }))
+            : { step: sim.stepCount, data: b64encode(packSnapshot(sim.serialize())) },
       };
     }
+    sim.onHash?.((step, hash) => {
+      if (opts.host) opts.host.recordHash(step, hash);
+      else opts.send?.({ t: 'check', step, hash });
+    });
   }
 
   private now(): number {
@@ -62,7 +80,8 @@ export class LockstepRunner {
     const rs = this.model.pendingResync;
     if (!host && rs) {
       this.model.pendingResync = null;
-      this.sim.restore(unpackSnapshot(b64decode(rs.data)));
+      if (this.sim.restorePacked) this.sim.restorePacked(b64decode(rs.data), rs.step);
+      else this.sim.restore(unpackSnapshot(b64decode(rs.data)));
       this.resyncs++;
       this.acc = 0;
     }
@@ -91,12 +110,13 @@ export class LockstepRunner {
       if (lag > LAG_TOLERANCE) n = Math.min(MAX_STEPS_PER_FRAME, Math.max(n, lag - 1));
       else if (lag < -LAG_TOLERANCE) n = 0;
     }
+    if (this.sim.pending !== undefined) n = Math.min(n, Math.max(0, MAX_PENDING - this.sim.pending));
     let ran = 0;
     for (let i = 0; i < n && this.sim.winner === -1; i++) {
       this.sim.step(SIM_DT);
       ran++;
       const step = this.sim.stepCount;
-      if (step % CHECK_EVERY === 0) {
+      if (!this.sim.onHash && step % CHECK_EVERY === 0) {
         if (host) host.recordHash(step, this.sim.hash());
         else this.opts.send?.({ t: 'check', step, hash: this.sim.hash() });
       }

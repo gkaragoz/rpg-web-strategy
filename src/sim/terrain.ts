@@ -295,6 +295,19 @@ export class Terrain {
   private astarStamp: Int32Array | null = null;
   private astarClosed: Int32Array | null = null;
   private astarGen = 0;
+  private heapNode = new Int32Array(4096);
+  private heapF = new Float64Array(4096);
+  private nav: Uint8Array | null = null;
+
+  /** 1 per walkable tile (built once; the terrain never changes during a battle). */
+  private navMask(): Uint8Array {
+    if (!this.nav) {
+      const nav = new Uint8Array(this.size * this.size);
+      for (let i = 0; i < nav.length; i++) nav[i] = this.flags[i] !== T_WATER && this.flags[i] !== T_BLOCKED ? 1 : 0;
+      this.nav = nav;
+    }
+    return this.nav;
+  }
 
   /** Are all samples along the line (x0,y0)-(x1,y1) walkable (with a unit-radius margin). */
   lineWalkable(x0: number, y0: number, x1: number, y1: number): boolean {
@@ -355,40 +368,55 @@ export class Terrain {
       const dy = Math.abs(y - ty);
       return dx + dy + (1.414 - 2) * Math.min(dx, dy);
     };
-    // binary heap (smallest f value first)
-    const heapNode: number[] = [];
-    const heapF: number[] = [];
+    // binary heap (smallest f value first) on reusable typed arrays; same ordering rules as the original array heap
+    const nav = this.navMask();
+    let hn = this.heapNode;
+    let hf = this.heapF;
+    let hs = 0;
     const push = (node: number, f: number): void => {
-      let i = heapNode.length;
-      heapNode.push(node);
-      heapF.push(f);
+      if (hs === hn.length) {
+        const nn = new Int32Array(hn.length * 2);
+        nn.set(hn);
+        const nf = new Float64Array(hf.length * 2);
+        nf.set(hf);
+        hn = this.heapNode = nn;
+        hf = this.heapF = nf;
+      }
+      let i = hs++;
       while (i > 0) {
         const p = (i - 1) >> 1;
-        if (heapF[p] <= heapF[i]) break;
-        [heapNode[p], heapNode[i]] = [heapNode[i], heapNode[p]];
-        [heapF[p], heapF[i]] = [heapF[i], heapF[p]];
+        if (hf[p] <= f) break;
+        hn[i] = hn[p];
+        hf[i] = hf[p];
         i = p;
       }
+      hn[i] = node;
+      hf[i] = f;
     };
     const pop = (): number => {
-      const top = heapNode[0];
-      const lastN = heapNode.pop()!;
-      const lastF = heapF.pop()!;
-      if (heapNode.length) {
-        heapNode[0] = lastN;
-        heapF[0] = lastF;
+      const top = hn[0];
+      hs--;
+      if (hs > 0) {
+        const lastN = hn[hs];
+        const lastF = hf[hs];
         let i = 0;
         for (;;) {
           const l = i * 2 + 1;
+          if (l >= hs) break;
+          let m = l;
           const r = l + 1;
-          let m = i;
-          if (l < heapNode.length && heapF[l] < heapF[m]) m = l;
-          if (r < heapNode.length && heapF[r] < heapF[m]) m = r;
-          if (m === i) break;
-          [heapNode[m], heapNode[i]] = [heapNode[i], heapNode[m]];
-          [heapF[m], heapF[i]] = [heapF[i], heapF[m]];
+          let mf = hf[l];
+          if (r < hs && hf[r] < mf) {
+            m = r;
+            mf = hf[r];
+          }
+          if (!(mf < lastF)) break;
+          hn[i] = hn[m];
+          hf[i] = mf;
           i = m;
         }
+        hn[i] = lastN;
+        hf[i] = lastF;
       }
       return top;
     };
@@ -398,7 +426,8 @@ export class Terrain {
     push(start, h(start % n, (start / n) | 0));
     let expanded = 0;
     let found = false;
-    while (heapNode.length && expanded < maxNodes) {
+    const relief = this.hasRelief;
+    while (hs > 0 && expanded < maxNodes) {
       const cur = pop();
       if (C[cur] === gen) continue;
       C[cur] = gen;
@@ -410,15 +439,16 @@ export class Terrain {
       const cx = cur % n;
       const cy = (cur / n) | 0;
       for (let dy = -1; dy <= 1; dy++) {
+        const ny = cy + dy;
+        if (ny < 0 || ny >= n) continue;
         for (let dx = -1; dx <= 1; dx++) {
           if (!dx && !dy) continue;
           const nx = cx + dx;
-          const ny = cy + dy;
-          if (nx < 0 || ny < 0 || nx >= n || ny >= n) continue;
-          if (!this.walkable(nx + 0.5, ny + 0.5)) continue;
-          if (dx && dy && !(this.walkable(cx + dx + 0.5, cy + 0.5) && this.walkable(cx + 0.5, cy + dy + 0.5))) continue;
+          if (nx < 0 || nx >= n) continue;
           const idx = ny * n + nx;
-          const climb = this.hasRelief ? Math.max(0, this.height[idx] - this.height[cur]) / H_UNITS : 0;
+          if (!nav[idx]) continue;
+          if (dx && dy && !(nav[cy * n + nx] && nav[ny * n + cx])) continue;
+          const climb = relief ? Math.max(0, this.height[idx] - this.height[cur]) / H_UNITS : 0;
           const ng = G[cur] + (dx && dy ? 1.414 : 1) * (1 + PATH_SLOPE_COST * climb);
           if (S[idx] === gen && ng >= G[idx]) continue;
           S[idx] = gen;

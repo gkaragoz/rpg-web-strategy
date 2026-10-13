@@ -480,7 +480,7 @@ export class Placement {
       .map((p) => {
         const mine = p.id === this.session.model.you;
         const gold = mine && this.editor ? this.init.gold - spent(this.state.units, this.init.costs) : p.gold;
-        return `<span class="on-chip${p.ready ? ' rdy' : ''}${mine ? ' me' : ''}${p.connected ? '' : ' off'}" style="border-color:${hex(playerColor(p.color))}"><i class="dot" style="background:${hex(playerColor(p.color))}"></i>${esc(p.name)} <b>${fmtGold(gold)}g</b> <small>${t('online.place.units', { n: p.units })}</small>${p.ready ? ' ✓' : ''}</span>`;
+        return `<span class="on-chip${p.ready ? ' rdy' : ''}${mine ? ' me' : ''}${p.connected ? '' : ' off'}" style="border-color:${hex(playerColor(p.color))}"><i class="dot" style="background:${hex(playerColor(p.color))}"></i>${esc(p.name)} <b>${fmtGold(gold)}${gold >= 100000 ? '' : 'g'}</b> <small>${t('online.place.units', { n: p.units })}</small>${p.ready ? ' ✓' : ''}</span>`;
       })
       .join('');
     const spec = st.players.filter((p) => p.role === 'spectator').length;

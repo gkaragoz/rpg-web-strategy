@@ -7,7 +7,7 @@
     "type": "git",
     "url": "https://github.com/gkaragoz/rpg-web-strategy.git"
   },
-  "version": "1.13.1",
+  "version": "1.14.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,6 +17,7 @@
     "check": "tsc --noEmit && node scripts/check-repo.mjs && vitest run",
     "check:fast": "tsc --noEmit && node scripts/check-repo.mjs && vitest run --exclude \"**/{fuzz,rosterfuzz,comedy,mapSpec,onlinesetup,economy,troops,determinism,snapsize,crowd}.test.ts\"",
     "lint:repo": "node scripts/check-repo.mjs",
+    "bench:sim": "node scripts/bench-sim.mjs",
     "balance": "node scripts/balance.mjs",
     "balance:quick": "node scripts/balance.mjs --quick",
     "balance:calibrate": "node scripts/balance.mjs --quick --calibrate 8 --write",
