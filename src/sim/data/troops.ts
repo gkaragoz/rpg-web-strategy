@@ -4,6 +4,7 @@
  * game scale (HP_DIV / ATK_DIV / ARMOR_K).
  */
 import type { Localized } from '../../i18n';
+import { ARM, DMG } from './combat';
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
 export type Race = 'human' | 'dark' | 'sacred' | 'wild';
@@ -68,6 +69,9 @@ export interface TroopDef {
   summoned?: boolean;
   /** Base stats: [hp, attack, defense]. */
   base: [number, number, number];
+  /** Damage type of its attacks and armor class of its body (indices, see data/combat.ts). */
+  dmgType: number;
+  armorClass: number;
 }
 
 /** Role archetypes: share of the rarity budget spent on hp / attack and the base defense. */
@@ -88,6 +92,28 @@ function baseFor(rarity: Rarity, role: Role, hpX = 1, atkX = 1, defAdd = 0): [nu
   const b = BUDGET[rarity];
   const r = ROLE[role];
   return [Math.round((b * r.hp * 1.6 * hpX) / 10) * 10, Math.round((b * r.atk * 0.2 * atkX) / 5) * 5, Math.round(r.def + defAdd)];
+}
+
+/**
+ * Damage type / armor class per roster unit: S slash, P pierce, B blunt, M magic / L light, M medium, H heavy, S spirit.
+ * Slash beats light, pierce beats medium, blunt beats heavy, magic beats spirit and heavy (see TYPE_MULT).
+ */
+const TYPING: Record<string, string> = {
+  militia: 'S-M', longbowmen: 'P-L', 'bulwark-guard': 'B-H', grenadier: 'B-L', 'pyre-sling': 'B-L', 'dungeon-warden': 'B-M', 'bone-soldier': 'S-S',
+  'ember-adept': 'M-L', cutpurses: 'S-L', 'hill-brute': 'B-M', 'shade-blades': 'S-S', 'spark-novice': 'M-L', berserker: 'S-M', 'frost-adept': 'M-L',
+  lorekeeper: 'M-L', zealot: 'P-M', 'risen-guard': 'S-S', 'flame-herald': 'M-M', oathkeeper: 'B-H', 'bolt-thrower': 'P-L', 'blast-imps': 'B-L',
+  thornlings: 'P-M', 'bone-caller': 'M-L', wayfarers: 'B-L', 'night-lancer': 'P-M', 'sun-priest': 'M-L', 'soul-reaver': 'S-S', 'lancer-knight': 'P-H',
+  javelineers: 'P-L', 'pit-fighters': 'B-M', 'horned-seer': 'M-L', 'hex-poppets': 'P-S', scarecrow: 'B-M', 'hex-witch': 'M-L', mender: 'M-L',
+  'war-barge': 'B-H', 'ash-fiend': 'S-M', 'axe-warden': 'S-M', 'dread-totem': 'M-S', 'cinder-golem': 'B-H', 'dawn-blade': 'S-M', 'rime-archers': 'P-L',
+  'tusk-rider': 'P-H', 'sand-king': 'M-S', 'granite-colossus': 'B-H',
+};
+const DMG_CODE: Record<string, number> = { S: DMG.slash, P: DMG.pierce, B: DMG.blunt, M: DMG.magic };
+const ARM_CODE: Record<string, number> = { L: ARM.light, M: ARM.medium, H: ARM.heavy, S: ARM.spirit };
+function typingOf(id: string): [number, number] {
+  const code = TYPING[id];
+  if (!code) throw new Error(`missing damage/armor typing for ${id}`);
+  const [d, a] = code.split('-');
+  return [DMG_CODE[d], ARM_CODE[a]];
 }
 
 const L = (en: string, tr: string): Localized => ({ en, tr });
@@ -128,6 +154,8 @@ const T = (s: Spec): TroopDef => ({
   skillText: s.text ?? NONE,
   summoned: s.summoned,
   base: baseFor(s.rarity, s.role, ...(s.tweak ?? [1, 1, 0])),
+  dmgType: typingOf(s.id)[0],
+  armorClass: typingOf(s.id)[1],
 });
 
 // Reach: short 1.0, medium 1.8, long 2.6; ranged: bows/spells 8-9, siege 10-13.

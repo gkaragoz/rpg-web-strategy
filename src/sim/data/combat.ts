@@ -47,3 +47,28 @@ export function slopeSpeed(grade: number, heavy: boolean): number {
   if (grade < -0.05) return 1 + Math.min(DOWNHILL_MAX, -grade * DOWNHILL_K);
   return 1;
 }
+
+// ---- Damage types and armor classes (rock-paper-scissors layer) ----
+
+/** Damage types of attacks and armor classes of bodies; indices into TYPE_MULT. */
+export const DMG = { slash: 0, pierce: 1, blunt: 2, magic: 3 } as const;
+export const ARM = { light: 0, medium: 1, heavy: 2, spirit: 3 } as const;
+export const DMG_IDS = ['slash', 'pierce', 'blunt', 'magic'] as const;
+export const ARM_IDS = ['light', 'medium', 'heavy', 'spirit'] as const;
+export type DmgId = (typeof DMG_IDS)[number];
+export type ArmId = (typeof ARM_IDS)[number];
+
+/**
+ * TYPE_MULT[dmg * 4 + arm]: damage multiplier of a damage type against an armor class.
+ * Every type is strong against one class and weak against another; every class has a natural counter.
+ *            light  medium  heavy  spirit
+ *   slash     1.30   1.00    0.70   0.90
+ *   pierce    1.10   1.30    0.70   0.80
+ *   blunt     0.80   1.00    1.30   0.70
+ *   magic     1.00   1.00    1.20   1.40
+ */
+export const TYPE_MULT = new Float32Array([1.3, 1.0, 0.7, 0.9, 1.1, 1.3, 0.7, 0.8, 0.8, 1.0, 1.3, 0.7, 1.0, 1.0, 1.2, 1.4]);
+
+export function typeMultiplier(dmg: number, arm: number): number {
+  return TYPE_MULT[dmg * 4 + arm];
+}

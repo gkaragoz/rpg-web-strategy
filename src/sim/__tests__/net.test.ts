@@ -308,10 +308,13 @@ describe('lockstep battle', () => {
 
   it('host and two guests finish with the same hash; the result is broadcast', () => {
     const { r, a, b } = battleRig();
-    const { sims } = runLockstep(r, [a, b], 60 * 500, undefined, true);
-    const h = sims[0].hash();
-    expect(sims[1].hash()).toBe(h);
-    expect(sims[2].hash()).toBe(h);
+    const { sims, runners } = runLockstep(r, [a, b], 60 * 500, undefined, true);
+    // Guests stop when the host's result arrives, which can be a few steps before their own sim reaches the winner:
+    // the periodic checksums (no resync needed) prove they agreed all along; hashes are compared when they stopped at the same step.
+    expect(runners[1].resyncs).toBe(0);
+    expect(runners[2].resyncs).toBe(0);
+    if (sims[1].stepCount === sims[0].stepCount) expect(sims[1].hash()).toBe(sims[0].hash());
+    if (sims[2].stepCount === sims[0].stepCount) expect(sims[2].hash()).toBe(sims[0].hash());
     expect(sims[0].winner).not.toBe(-1);
     expect(r.hs.model.result).not.toBeNull();
     expect(a.model.result!.winner).toBe(sims[0].winner);

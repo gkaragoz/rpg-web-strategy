@@ -873,6 +873,14 @@ input[type='range'] {
   color: #ffb36b;
   background: #3a2a1d;
 }
+.ug-chip.dmg {
+  color: #c9a8ff;
+  background: #2c2540;
+}
+.ug-chip.arm {
+  color: #9fd0ff;
+  background: #1f3047;
+}
 .ug-chip.single {
   opacity: 0.7;
 }

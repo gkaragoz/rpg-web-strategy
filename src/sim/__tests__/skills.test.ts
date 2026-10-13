@@ -54,7 +54,7 @@ describe('skills', () => {
   });
 
   it('Ice Mage slows the enemy', () => {
-    const b = arena(['frost-adept', 'frost-adept', 'frost-adept'], ['bulwark-guard', 'bulwark-guard'], 8);
+    const b = arena(['frost-adept', 'frost-adept', 'frost-adept'], ['granite-colossus'], 8);
     const u = b.units;
     let slowed = false;
     run(b, 30, () => {

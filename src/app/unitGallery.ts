@@ -4,6 +4,7 @@ import { KIND_COUNT, LEGACY_COUNT, STATS, isHealer, isMelee, unitDisplayName } f
 import { unitGold } from '../net/economy';
 import { trackDialog } from '../net/act';
 import { skillParams } from '../sim/data/skills';
+import { ARM_IDS, DMG_IDS, TYPE_MULT } from '../sim/data/combat';
 import { cardIcon, type CardIcon } from './cardIcons';
 import type { UnitPreview } from './unitPreview';
 import { saveState, type AppState } from './state';
@@ -121,6 +122,16 @@ export class UnitGallery {
         ? `<span class="ug-chip area" title="${esc(t('units.area.tip'))}">${cardIcon('burst', 14)}${esc(t('units.area.area', { r: radius.toFixed(1) }))}</span>`
         : `<span class="ug-chip single" title="${esc(t('units.area.singleTip'))}">${cardIcon('target', 14)}${esc(t('units.area.single'))}</span>`) +
       (skillArea ? `<span class="ug-chip area skill" title="${esc(t('units.area.skillTip'))}">${cardIcon('star', 14)}${esc(t('units.area.skill'))}</span>` : '');
+    const dmgId = DMG_IDS[s.dmgType];
+    const armId = ARM_IDS[s.armorCls];
+    const best = (vals: number[], max: boolean): number => vals.indexOf(max ? Math.max(...vals) : Math.min(...vals));
+    const dmgRow = [0, 1, 2, 3].map((a) => TYPE_MULT[s.dmgType * 4 + a]);
+    const armCol = [0, 1, 2, 3].map((d) => TYPE_MULT[d * 4 + s.armorCls]);
+    const armName = (i: number): string => t(`units.arm.${ARM_IDS[i]}`);
+    const dmgName = (i: number): string => t(`units.dmg.${DMG_IDS[i]}`);
+    const types =
+      `<span class="ug-chip dmg" title="${esc(t('units.dmg.tip', { type: dmgName(s.dmgType), strong: armName(best(dmgRow, true)), weak: armName(best(dmgRow, false)) }))}">${cardIcon(dmgId, 14)}${esc(dmgName(s.dmgType))}</span>` +
+      `<span class="ug-chip arm" title="${esc(t('units.arm.tip', { type: armName(s.armorCls), weak: dmgName(best(armCol, true)), strong: dmgName(best(armCol, false)) }))}">${cardIcon(armId, 14)}${esc(armName(s.armorCls))}</span>`;
     const sel = this.d.state.selKind === k;
     const gold = this.d.online ? this.d.online.cost(k) : unitGold(k);
     const price = `<span class="ug-price">${cardIcon('coin')}${esc(t('units.gold', { n: gold }))}</span>`;
@@ -133,7 +144,7 @@ export class UnitGallery {
   <span class="ug-icon" data-icon="${k}"></span>
   <span class="ug-name">${esc(unitDisplayName(k))}</span>
   <span class="ug-meta">${esc(meta)}</span>
-  <span class="ug-chips"><span class="ug-role">${cardIcon(roleIcon, 15)}${esc(role)}</span>${area}</span>
+  <span class="ug-chips"><span class="ug-role">${cardIcon(roleIcon, 15)}${esc(role)}</span>${types}${area}</span>
   <span class="ug-stats">${stats}</span>${skill}
 </button>`;
   }

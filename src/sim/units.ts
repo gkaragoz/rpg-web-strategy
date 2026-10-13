@@ -1,5 +1,6 @@
 import { t } from '../i18n';
 import { TROOPS, type MoveClass, type SkillId, type TroopDef } from './data/troops';
+import { ARM, DMG } from './data/combat';
 
 export const MAX_TEAMS = 6;
 /** The first 5 kinds (classic) have fixed ids. The rest are roster units (in TROOPS order). */
@@ -36,21 +37,24 @@ export interface KindStats {
   shape: number;
   /** Magical damage (visual/audio cue). */
   magical: boolean;
+  /** Damage type of the attacks and armor class of the body (indices, see data/combat.ts). */
+  dmgType: number;
+  armorCls: number;
   /** Roster unit id (absent for classic kinds) and its skill. */
   troop?: string;
   skill: SkillId | null;
 }
 
-const classic = (s: Omit<KindStats, 'role' | 'splash' | 'shape' | 'magical' | 'skill'> & { role: number }): KindStats => ({ ...s, splash: 0, shape: 0, magical: false, skill: null });
+const classic = (s: Omit<KindStats, 'role' | 'splash' | 'shape' | 'magical' | 'skill' | 'dmgType' | 'armorCls'> & { role: number; dmg: number; arm: number }): KindStats => ({ ...s, dmgType: s.dmg, armorCls: s.arm, splash: 0, shape: 0, magical: false, skill: null });
 
 export const STATS: KindStats[] = [
-  classic({ name: 'Warrior', role: Role.Melee, hp: 160, speed: 3.0, range: 1.0, power: 16, cooldown: 0.9, swing: 0.35, hitAt: 0.2, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
-  classic({ name: 'Archer', role: Role.Ranged, hp: 80, speed: 2.4, range: 9, power: 13, cooldown: 1.4, swing: 0.4, hitAt: 0.25, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
-  classic({ name: 'Priest', role: Role.Healer, hp: 90, speed: 2.6, range: 6.5, power: 14, cooldown: 1.8, swing: 0.5, hitAt: 0.3, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
+  classic({ dmg: DMG.slash, arm: ARM.medium, name: 'Warrior', role: Role.Melee, hp: 160, speed: 3.0, range: 1.0, power: 16, cooldown: 0.9, swing: 0.35, hitAt: 0.2, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
+  classic({ dmg: DMG.pierce, arm: ARM.light, name: 'Archer', role: Role.Ranged, hp: 80, speed: 2.4, range: 9, power: 13, cooldown: 1.4, swing: 0.4, hitAt: 0.25, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
+  classic({ dmg: DMG.magic, arm: ARM.light, name: 'Priest', role: Role.Healer, hp: 90, speed: 2.6, range: 6.5, power: 14, cooldown: 1.8, swing: 0.5, hitAt: 0.3, armor: 0, scale: 1, aoe: 0, knockback: 0 }),
   // Shield Tank: knocks back in the cone in front of it (strong knockback).
-  classic({ name: 'Shield Tank', role: Role.Tank, hp: 520, speed: 1.9, range: 1.5, power: 12, cooldown: 1.6, swing: 0.5, hitAt: 0.28, armor: 0.35, scale: 2, aoe: 2.6, knockback: 3.0 }),
+  classic({ dmg: DMG.blunt, arm: ARM.heavy, name: 'Shield Tank', role: Role.Tank, hp: 520, speed: 1.9, range: 1.5, power: 12, cooldown: 1.6, swing: 0.5, hitAt: 0.28, armor: 0.35, scale: 2, aoe: 2.6, knockback: 3.0 }),
   // Hammer Tank: circular strike around it; knockback is half of the Shield's.
-  classic({ name: 'Hammer Tank', role: Role.Tank, hp: 460, speed: 2.1, range: 1.8, power: 22, cooldown: 2.0, swing: 0.6, hitAt: 0.35, armor: 0.2, scale: 2, aoe: 2.2, knockback: 1.5 }),
+  classic({ dmg: DMG.blunt, arm: ARM.heavy, name: 'Hammer Tank', role: Role.Tank, hp: 460, speed: 2.1, range: 1.8, power: 22, cooldown: 2.0, swing: 0.6, hitAt: 0.35, armor: 0.2, scale: 2, aoe: 2.2, knockback: 1.5 }),
 ];
 
 // ---- Roster units: normalized to the game scale ----
@@ -86,6 +90,8 @@ function troopStats(t: TroopDef): KindStats {
     splash: t.aoe,
     shape: { single: 0, round: 1, rect: 2, pierce: 3 }[t.shape],
     magical: t.magical,
+    dmgType: t.dmgType,
+    armorCls: t.armorClass,
     troop: t.id,
     skill: t.skill,
   };

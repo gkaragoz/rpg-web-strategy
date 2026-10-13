@@ -4,7 +4,11 @@ import type { MapSpec } from './mapSpec';
 import { PROJ_TAG, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides } from './units';
 import { PF_PIERCE, PF_SKILL, Projectiles } from './projectiles';
 import { SKILL_ELEMENT, skillParams, type SkillParams } from './data/skills';
-import { highGroundDamage, highGroundRange, slopeSpeed } from './data/combat';
+import { TYPE_MULT, highGroundDamage, highGroundRange, slopeSpeed } from './data/combat';
+
+/** Damage type / armor class per kind (indices into TYPE_MULT). */
+const DMG_OF = Uint8Array.from(STATS, (s) => s.dmgType);
+const ARM_OF = Uint8Array.from(STATS, (s) => s.armorCls);
 import type { SkillId } from './data/troops';
 import { Mulberry } from './random';
 import { copyTyped, fnv, pasteTyped, type BattleSnapshot, type Typed } from './snapshot';
@@ -1923,6 +1927,7 @@ export class Battle {
     const stale = this.time - this.lastDeathTime - STALE_AFTER;
     if (stale > 0) amount *= 1 + stale * STALE_RAMP;
     if (src >= 0 && src !== j && this.terrain && this.terrain.hasRelief) amount *= highGroundDamage(this.terrain.heightAt(u.x[src], u.y[src]) - this.terrain.heightAt(u.x[j], u.y[j]), melee);
+    if (src >= 0) amount *= TYPE_MULT[DMG_OF[u.kind[src]] * 4 + ARM_OF[u.kind[j]]];
     amount *= 1 - STATS[u.kind[j]].armor;
     if (u.shieldT[j] > 0) amount *= u.shieldK[j];
     const dealt = Math.min(amount, Math.max(0, u.hp[j]));
