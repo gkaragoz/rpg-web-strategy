@@ -3,7 +3,7 @@ import { mulberry32 } from '../sim/random';
 import { Terrain } from '../sim/terrain';
 import { STATS, KIND_COUNT } from '../sim/units';
 import { TROOP_BY_ID } from '../sim/data/troops';
-import { MAX_GOLD, MAX_ROOM_UNITS, ONLINE_MAP_SIZES, buyable, costTable, mapSizeForPlayers, teamZones, type Zone } from './economy';
+import { MAX_GOLD, MAX_ROOM_UNITS, ONLINE_MAP_SIZES, buyable, costTable, mapSizeForPlayers, placeBlock, teamZones, type Zone } from './economy';
 import {
   CHAT_MAX,
   MAX_PLAYERS,
@@ -545,8 +545,9 @@ export class HostLobby {
         fail('banned');
         continue;
       }
-      if (!zone.contains(it.x, it.y) || !this.terrain.walkable(it.x, it.y) || !this.terrain.reachable(it.x, it.y)) {
-        fail('zone');
+      const block = placeBlock(this.terrain, zone, it.x, it.y);
+      if (block) {
+        fail(block);
         continue;
       }
       const c = costs[it.kind] ?? 0;

@@ -70,6 +70,15 @@ export const MAX_GOLD = 10_000_000;
 /** Map sizes the host accepts (0 = automatic by player count). */
 export const ONLINE_MAP_SIZES: readonly number[] = [0, 40, 56, 80, 100, 120, 160, 200, 256];
 
+/**
+ * Why a unit cannot be placed at (x, y): outside the team zone or not walkable ('zone'), or walkable but cut off from the
+ * main area, e.g. an isolated plateau ('unreachable'). null: allowed. Host and client use this same check.
+ */
+export function placeBlock(terrain: Terrain, zone: Zone, x: number, y: number): 'zone' | 'unreachable' | null {
+  if (!zone.contains(x, y) || !terrain.walkable(x, y)) return 'zone';
+  return terrain.reachable(x, y) ? null : 'unreachable';
+}
+
 /** Recommended map size for the number of players. */
 export function mapSizeForPlayers(players: number): number {
   return players <= 2 ? 56 : players <= 4 ? 80 : 100;

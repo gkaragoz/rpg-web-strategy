@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Battle } from '../battle';
 import { GuestSession, HostSession } from '../../net/client';
-import { teamZones } from '../../net/economy';
+import { placeBlock, teamZones, type Zone } from '../../net/economy';
 import { HostLobby } from '../../net/host';
 import { LockstepRunner } from '../../net/lockstep';
 import { PROTOCOL, battleConfig, type ClientMsg } from '../../net/protocol';
@@ -41,6 +41,46 @@ function three(): { r: Rig; a: GuestSession; b: GuestSession } {
   expect(r.hs.model.state!.phase).toBe('placing');
   return { r, a, b };
 }
+
+describe('unreachable ground', () => {
+  const everywhere: Zone = { team: 0, contains: () => true, area: 1, cx: 0, cy: 0 };
+
+  it('placeBlock tells an isolated walkable tile from a reachable one', () => {
+    let found = 0;
+    for (let seed = 1; seed <= 60 && !found; seed++) {
+      const t = new Terrain(56, { seed, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
+      for (let y = 0; y < 56 && !found; y++)
+        for (let x = 0; x < 56; x++) {
+          if (t.walkable(x + 0.5, y + 0.5) && !t.reachable(x + 0.5, y + 0.5)) {
+            expect(placeBlock(t, everywhere, x + 0.5, y + 0.5)).toBe('unreachable');
+            found++;
+            break;
+          }
+        }
+    }
+    expect(found).toBeGreaterThan(0);
+    const t = new Terrain(56, { seed: 1, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
+    expect(placeBlock(t, { ...everywhere, contains: () => false }, 10.5, 10.5)).toBe('zone');
+  });
+
+  it('the host refuses an unreachable tile with its own reason and charges nothing', () => {
+    const { r, b } = three();
+    const init = r.hs.model.state!.init!;
+    const t = new Terrain(init.size, { seed: init.seed, spec: init.spec, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
+    const zone = teamZones(init.size, init.teams, t)[b.model.me!.team];
+    let spot: { x: number; y: number } | null = null;
+    for (let y = 0; y < init.size && !spot; y++)
+      for (let x = 0; x < init.size; x++)
+        if (zone.contains(x + 0.5, y + 0.5) && t.walkable(x + 0.5, y + 0.5) && !t.reachable(x + 0.5, y + 0.5)) {
+          spot = { x: x + 0.5, y: y + 0.5 };
+          break;
+        }
+    if (!spot) return; // this map has no isolated ground inside the zone; placeBlock is covered above
+    b.send({ t: 'place', items: [{ cid: 1, kind: 0, x: spot.x, y: spot.y }] });
+    expect(b.model.lastFail?.reason).toBe('unreachable');
+    expect(b.model.placed.size).toBe(0);
+  });
+});
 
 describe('big rooms', () => {
   it('accepts huge gold and the big map sizes, clamps the rest', () => {

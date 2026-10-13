@@ -107,7 +107,7 @@ export class Placement {
         toast: env.toast,
       });
       this.editor.constraint = {
-        allow: (x, y) => !this.locked && zone.contains(x, y),
+        allow: (x, y) => !this.locked && zone.contains(x, y) && (!this.env.world.terrain || this.env.world.terrain.reachable(x, y)),
         canEdit: () => !this.locked,
         cost: (k) => init.costs[k] ?? 0,
         left: () => init.gold - spent(this.state.units, init.costs),
@@ -234,6 +234,7 @@ export class Placement {
         }
         if (bad.length && this.editor) this.editor.removeSilently(bad);
         this.env.toast(t(`online.reason.${msg.reason}`));
+        this.refreshUi();
         this.flushReady();
         break;
       }
@@ -334,7 +335,7 @@ export class Placement {
       for (let ty = 0; ty < size; ty++) {
         for (let tx = 0; tx < size; tx++) {
           if (!z.contains(tx + 0.5, ty + 0.5)) continue;
-          if (t && !t.walkable(tx + 0.5, ty + 0.5)) continue;
+          if (t && (!t.walkable(tx + 0.5, ty + 0.5) || !t.reachable(tx + 0.5, ty + 0.5))) continue;
           const e = (x: number, y: number): number => (t && t.hasRelief ? t.elevPx(x, y) : 0);
           const p = (x: number, y: number): [number, number] => [isoX(x, y), isoY(x, y, e(x, y))];
           const a = p(tx, ty);

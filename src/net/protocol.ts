@@ -3,7 +3,7 @@ import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
 
 /** Protocol version: a client with a different version cannot join the lobby. */
-export const PROTOCOL = 8;
+export const PROTOCOL = 9;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;
@@ -125,7 +125,7 @@ export type ClientMsg =
  * busy: not allowed right now; invalid: unknown unit; unbuyable: unit cannot be bought; banned: rarity disabled;
  * zone: outside the team zone; gold: not enough gold; cap: unit cap reached; close: too close to another unit.
  */
-export type PlaceFailReason = 'busy' | 'invalid' | 'unbuyable' | 'banned' | 'zone' | 'gold' | 'cap' | 'close';
+export type PlaceFailReason = 'busy' | 'invalid' | 'unbuyable' | 'banned' | 'zone' | 'gold' | 'cap' | 'close' | 'unreachable';
 
 /** Why a session ended (stable codes, translated by the UI as `online.reason.<code>`). */
 export type CloseReason = 'closed' | 'kicked' | 'lost' | 'serverLost';
