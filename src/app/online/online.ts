@@ -540,7 +540,8 @@ export class OnlineApp {
   }
 
   /** Leave online mode: close the session, remove the screens, return to the studio. */
-  exit(keepRejoin = false): void {
+  /** Leaves online mode. `quiet` skips returning to the studio (used right before a page reload). */
+  exit(keepRejoin = false, quiet = false): void {
     if (this.dead) return;
     this.dead = true;
     if (!keepRejoin) saveLast(null);
@@ -559,6 +560,6 @@ export class OnlineApp {
     this.root.remove();
     this.env.setIconColors(null);
     this.env.setComedyVisual(null);
-    this.env.onExit(keepRejoin);
+    if (!quiet) this.env.onExit(keepRejoin);
   }
 }

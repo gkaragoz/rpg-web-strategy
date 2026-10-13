@@ -3,6 +3,10 @@ import type { StringTable } from './types';
 /** Strings for the "system" area. Every key must exist in both languages (checked by src/sim/__tests__/i18n.test.ts). */
 export const system: StringTable = {
   en: {
+    'sys.lang.aria': 'Language',
+    'sys.lang.country.en': 'United Kingdom',
+    'sys.lang.country.tr': 'Türkiye',
+    'sys.lang.confirmLeave': 'Changing the language reloads the page and leaves the online lobby. Continue?',
     'sys.title': 'RPG Web - Battle Studio',
     'sys.loading': 'Loading…',
     'sys.error.unexpected': 'An unexpected error occurred: {msg}',
@@ -14,6 +18,10 @@ export const system: StringTable = {
     'sys.slow': 'Frames are slow: graphics resolution lowered ({res}×)',
   },
   tr: {
+    'sys.lang.aria': 'Dil',
+    'sys.lang.country.en': 'Birleşik Krallık',
+    'sys.lang.country.tr': 'Türkiye',
+    'sys.lang.confirmLeave': 'Dili değiştirmek sayfayı yeniler ve çevrimiçi lobiden çıkarır. Devam edilsin mi?',
     'sys.title': 'RPG Web - Savaş Stüdyosu',
     'sys.loading': 'Yükleniyor…',
     'sys.error.unexpected': 'Beklenmeyen bir hata oluştu: {msg}',

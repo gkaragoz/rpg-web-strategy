@@ -3,7 +3,6 @@ import { t } from '../../i18n';
 /** In-game connection badge (bottom right): connection type + lobby code; tapping copies the invite link. */
 export class ConnBadge {
   private readonly el: HTMLButtonElement;
-  private readonly timer: ReturnType<typeof setInterval>;
   private note = '';
 
   constructor(
@@ -24,8 +23,6 @@ export class ConnBadge {
       }, 1500);
     });
     this.paint();
-    this.timer = setInterval(() => this.place(), 400);
-    this.place();
   }
 
   private paint(): void {
@@ -37,23 +34,7 @@ export class ConnBadge {
     this.el.title = t('online.badge.tip', { via: t(`online.via.${via}`) });
   }
 
-  /** Stay above the bottom dock (tall on phones) and the battle's bottom bar. */
-  private place(): void {
-    const h = window.innerHeight;
-    let top = h;
-    for (const sel of ['.on-dock', '.hud-bottom']) {
-      const e = document.querySelector(sel) as HTMLElement | null;
-      if (!e || e.hidden) continue;
-      const r = e.getBoundingClientRect();
-      // Only push up for elements that cover the bottom-right area of the screen.
-      if (r.right > window.innerWidth - 150 && r.top < top) top = r.top;
-    }
-    this.el.style.bottom = `${Math.round(h - top + 8)}px`;
-    this.paint();
-  }
-
   destroy(): void {
-    clearInterval(this.timer);
     this.el.remove();
   }
 }

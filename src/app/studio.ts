@@ -1,4 +1,4 @@
-import { LANGS, getLang, switchLang, t, type Lang } from '../i18n';
+import { t } from '../i18n';
 import { initSheet } from './sheet';
 import { LEGACY_COUNT, MAX_TEAMS, unitDisplayName } from '../sim/units';
 import type { Editor } from './editor';
@@ -107,7 +107,6 @@ export class Studio {
   </section>
   <section>
     <h2>${t('studio.display.h')}</h2>
-    <div class="row stack"><span>${t('studio.lang')}</span><div class="seg" id="lang" role="group" aria-label="${t('studio.lang.aria')}"></div></div>
     <label class="row"><span>${t('studio.snd')}</span><input type="checkbox" id="snd" role="switch" /></label>
     <div class="row"><span>${t('studio.vol')}</span><input type="range" id="vol" min="0" max="100" step="5" aria-label="${t('studio.vol')}" /></div>
     <div class="row stack"><span>${t('studio.fx')}</span><div class="seg" id="fxq" role="group" aria-label="${t('studio.fx.aria')}"></div></div>
@@ -318,8 +317,6 @@ export class Studio {
     $in('#kite').checked = s.kite;
     if (document.activeElement !== $in('#seed')) $in('#seed').value = String(s.seed);
 
-    this.seg(this.$('#lang'), LANGS.map((l) => ({ id: l.id, label: l.label })), getLang(), (id) => switchLang(id as Lang));
-    this.seg(this.$('#lang'), LANGS.map((l) => ({ id: l.id, label: l.label })), getLang(), (id) => switchLang(id as Lang));
     this.seg(this.$('#mapsize'), MAP_SIZES.map((m) => ({ id: m.id, label: m.name })), s.mapSize, (id) => {
       s.mapSize = Number(id);
       this.changed(true);

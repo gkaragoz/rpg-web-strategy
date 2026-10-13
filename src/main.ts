@@ -1,5 +1,7 @@
 import { Application, Container, Rectangle } from 'pixi.js';
 import { getLang, t } from './i18n';
+import { startBottomStack } from './app/bottomStack';
+import { mountLangPicker } from './app/langPicker';
 import './app/studio.css';
 import { BattleScene, type BattleOptions } from './app/battle';
 import { Editor } from './app/editor';
@@ -49,6 +51,18 @@ const params = new URLSearchParams(location.search);
 const benchPer = params.has('bench') ? Math.max(10, Number(params.get('bench')) || 10000) : 0;
 const autoSeconds = Number(params.get('auto')) || 0;
 const isBench = benchPer > 0;
+if (!isBench) {
+  mountLangPicker({
+    // Switching reloads the page: leave an active online session cleanly first (keeps the rejoin entry).
+    beforeSwitch: () => {
+      if (!online) return true;
+      if (!window.confirm(t('sys.lang.confirmLeave'))) return false;
+      online.exit(true, true);
+      return true;
+    },
+  });
+  startBottomStack();
+}
 const canUseWorker = typeof SharedArrayBuffer !== 'undefined' && self.crossOriginIsolated;
 // ?debug=1: the stall-tracking overlay needs direct access to the sim, so the sim runs on the main thread.
 const debugParam = params.get('debug') === '1';
