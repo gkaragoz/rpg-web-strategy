@@ -5,13 +5,54 @@ import { NetError } from './wsTransport';
 
 /** Genel PeerJS bulutunda lobi kodunun on eki (baska uygulamalarla kimlik carpismasini onler). */
 const PREFIX = 'rpgweb-strategy-';
-const OPEN_TIMEOUT_MS = 12000;
+/** Sinyal sunucusuna baglanma suresi. */
+const OPEN_TIMEOUT_MS = 15000;
+/** Host ile dogrudan (STUN/TURN uzerinden) baglanti kurma suresi: mobil ag + role icin uzun tutulur. */
+const CONNECT_TIMEOUT_MS = 35000;
+
+/** Kullanici TURN ayari (menu > Gelismis); yoksa yalniz STUN. peerjs.com ve Open Relay TURN'leri artik calismiyor. */
+export const TURN_KEY = 'rpgweb.turn';
+export interface TurnConfig {
+  urls: string;
+  username: string;
+  credential: string;
+}
+export function loadTurn(): TurnConfig | null {
+  try {
+    const t = JSON.parse(localStorage.getItem(TURN_KEY) ?? 'null') as TurnConfig | null;
+    return t && typeof t.urls === 'string' && t.urls.trim() ? t : null;
+  } catch {
+    return null;
+  }
+}
+export function saveTurn(t: TurnConfig | null): void {
+  try {
+    if (t && t.urls.trim()) localStorage.setItem(TURN_KEY, JSON.stringify(t));
+    else localStorage.removeItem(TURN_KEY);
+  } catch {
+    /* depolama kapali */
+  }
+}
+function iceServers(): RTCIceServer[] {
+  const list: RTCIceServer[] = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+  ];
+  const t = loadTurn();
+  if (t) list.push({ urls: t.urls.split(/[\s,]+/).filter(Boolean), username: t.username, credential: t.credential });
+  return list;
+}
+
+/** ?relay=1: yalniz TURN rolesi (farkli aglardaki bagi taklit eder; tani amacli). */
+const forceRelay = (): boolean => typeof location !== 'undefined' && new URLSearchParams(location.search).get('relay') === '1';
+const peerOpts = (): { config: RTCConfiguration } => ({ config: { iceServers: iceServers(), iceCandidatePoolSize: 2, iceTransportPolicy: forceRelay() ? 'relay' : 'all' } });
 
 export const peerId = (code: string): string => PREFIX + code.toUpperCase();
 
 function openPeer(id?: string): Promise<Peer> {
   return new Promise((resolve, reject) => {
-    const p = id ? new Peer(id) : new Peer();
+    const p = id ? new Peer(id, peerOpts()) : new Peer(peerOpts());
     const timer = setTimeout(() => {
       p.destroy();
       reject(new NetError('failed', 'Sinyal sunucusuna ulasilamadi'));
@@ -112,8 +153,16 @@ export class PeerGuestTransport implements Transport {
       const conn = peer.connect(peerId(code), { reliable: true });
       const timer = setTimeout(() => {
         peer.destroy();
-        reject(new NetError('noroom', 'Host yanit vermedi'));
-      }, OPEN_TIMEOUT_MS);
+        reject(new NetError('failed', 'ice-timeout'));
+      }, CONNECT_TIMEOUT_MS);
+      conn.on('iceStateChanged', (st) => {
+        console.info('[peer] ICE', st);
+        if (st === 'failed') {
+          clearTimeout(timer);
+          peer.destroy();
+          reject(new NetError('failed', 'ice-failed'));
+        }
+      });
       peer.on('error', (e: { type?: string }) => {
         clearTimeout(timer);
         peer.destroy();

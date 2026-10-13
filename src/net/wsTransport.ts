@@ -11,6 +11,9 @@ export class NetError extends Error {
   }
 }
 
+/** LAN sunucusu yanit vermezse (ornegin Pages) hemen internete gecilsin. */
+const WS_TIMEOUT_MS = 4000;
+
 interface Ack {
   ok?: boolean;
   id?: string;
@@ -35,9 +38,11 @@ function open(url: string): Promise<{ ws: WebSocket; ack: Ack }> {
       return;
     }
     let done = false;
+    const timer = setTimeout(() => fail(new NetError('failed', 'Baglanti zaman asimi')), WS_TIMEOUT_MS);
     const fail = (err: NetError): void => {
       if (done) return;
       done = true;
+      clearTimeout(timer);
       try {
         ws.close();
       } catch {
@@ -58,6 +63,7 @@ function open(url: string): Promise<{ ws: WebSocket; ack: Ack }> {
       if (a.err) return fail(new NetError(a.err as NetError['code']));
       if (a.ok) {
         done = true;
+        clearTimeout(timer);
         resolve({ ws, ack: a });
       }
     };

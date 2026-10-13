@@ -139,6 +139,7 @@ export class OnlineApp {
   }
 
   private fail(msg: string): void {
+    this.menu?.setStatus('');
     this.menu?.setBusy(false);
     this.menu?.setError(msg);
     this.busy = false;
@@ -153,6 +154,7 @@ export class OnlineApp {
     try {
       let tp: Transport | null = null;
       let code = '';
+      this.menu?.setStatus(kind === 'net' ? 'Sinyal sunucusuna bağlanılıyor…' : 'LAN sunucusuna bağlanılıyor…');
       for (let i = 0; i < 6 && !tp; i++) {
         code = makeCode();
         try {
@@ -186,11 +188,13 @@ export class OnlineApp {
       // Once LAN sunucusu (ayni adres), olmazsa internet (PeerJS).
       let tp: Transport;
       let kind: 'lan' | 'net' = 'lan';
+      this.menu?.setStatus('LAN sunucusu aranıyor…');
       try {
         tp = await WsGuestTransport.create(lanUrl(code, 'guest'));
       } catch (e) {
         if (e instanceof NetError && (e.code === 'full' || e.code === 'taken')) throw e;
         kind = 'net';
+        this.menu?.setStatus('İnternet üzerinden host’a bağlanılıyor… (kurulması 30 sn’ye kadar sürebilir)');
         tp = await PeerGuestTransport.create(code);
       }
       this.kind = kind;
@@ -219,7 +223,18 @@ export class OnlineApp {
       saveLast({ code, token: s.model.token, name, color, at: Date.now() });
       this.attach(s);
     } catch (e) {
-      this.fail(e instanceof NetError ? (e.code === 'noroom' ? 'Böyle bir lobi yok.' : e.code === 'full' ? 'Lobi dolu.' : 'Sunucuya bağlanılamadı (LAN adresini kontrol et).') : `Bağlantı hatası: ${(e as Error).message}`);
+      const detail = e instanceof NetError ? e.message : '';
+      this.fail(
+        e instanceof NetError
+          ? e.code === 'noroom'
+            ? 'Böyle bir lobi yok (kodu kontrol et; host sayfası açık olmalı).'
+            : e.code === 'full'
+              ? 'Lobi dolu.'
+              : detail.startsWith('ice')
+                ? 'Host bulundu ama doğrudan bağlantı kurulamadı (ağ/NAT engeli). Farklı ağ ya da LAN dene; mobil veride bazı operatörler WebRTC’yi engeller.'
+                : 'Sunucuya bağlanılamadı (internet ya da PeerJS sinyal sunucusu erişimi).'
+          : `Bağlantı hatası: ${(e as Error).message}`,
+      );
     }
   }
 
