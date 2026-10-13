@@ -86,11 +86,11 @@ describe('LAN WebSocket server', () => {
     const gtp = await WsGuestTransport.create(lanUrl(code, 'guest', base));
     const g = new GuestSession(gtp, { name: 'G', color: 1 });
     await until(() => g.model.state !== null);
-    // A ~300 KB resync message (host -> guest).
-    const data = 'A'.repeat(300000);
-    htp.send(g.model.you, { t: 'resync', step: 7, data });
-    await until(() => g.model.pendingResync !== null);
-    expect(g.model.pendingResync!.data.length).toBe(300000);
+    // A ~300 KB message (host -> guest).
+    const text = 'A'.repeat(300000);
+    htp.send(g.model.you, { t: 'chat', id: 'x', name: 'H', text, ts: 1 });
+    await until(() => g.model.chat.length === 1);
+    expect(g.model.chat[0].text.length).toBe(300000);
     // Guest -> host: a long chat text is truncated (CHAT_MAX) and the connection stays healthy.
     g.send({ t: 'chat', text: 'x'.repeat(5000) });
     await until(() => hs.model.chat.length === 1);
