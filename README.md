@@ -62,6 +62,15 @@ paleti, asker yerleştirme ve benchmark.
 - Nehir (kıvrımlı, düz, adalı, göllü, nehirsiz), orman (yoğun, seyrek, koru, çevre ormanı, ormansız), köy (köy, dağınık evler,
   harabe kale, kamp, köysüz), geçit (ahşap köprü, taş köprü, sığ geçit) seçenekleri.
 
+**Komedi modu** (Totally Accurate Battle Simulator tadında; iki bağımsız anahtar — stüdyo *Görünüm ve ses → Komedi modu*,
+savaşta HUD düğmeleri, `K` tuşu, ya da `?comedy=1` ile ikisi birden):
+- **Komedi görünümü** (yalnız çizim/ses, anında açılıp kapanır): ölenler **ragdoll** olarak dönerek havaya uçar, sekip kayar,
+  su üstüne düşenler batar (ara sıra şapka/yıldız ayrılıp uçar); yalpalayan yürüyüş, vuruşta squash-stretch, tökezleme;
+  "BONK! / AAAH! / KABOOM!" yazıları, kartun sesler (bonk, boing, wail, splat, whoosh), büyütülmüş efektler, kamera sarsıntısı ve zoom darbesi.
+- **Komedi fiziği** (sim'i değiştirir, savaşı yeniden başlatır): canın büyük kısmını alan vuruşlar, tank darbeleri ve alan
+  yetenekleri birimi parabolik olarak havaya fırlatır (en çok 14 tile); suya inen **boğulur**, engel/uçuruma inen en yakın
+  yürünebilir noktaya konur, yere inince kısa süre yatar ve altındakileri ezer. Mod kapalıyken sim hiç etkilenmez.
+
 **Debug katmanı:** stüdyoda *Görünüm ve ses → Hata ayıklama* anahtarı, savaşta HUD'daki *Debug* düğmesi veya `V` tuşu
 (savaş aynı dizilimle yeniden başlar) ya da `?debug=1` ile açılır. Sim ana thread'de çalışır ve test paketindeki takılma dedektörü savaşı canlı izler.
 Sorunlu birim kırmızı nabızlı halka, sıkışan birim turuncu halka, hedefi yasaklanan mor halka alır; sol üstteki panel
