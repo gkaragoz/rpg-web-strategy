@@ -42,6 +42,12 @@ export class UnitGallery {
     });
   }
 
+  /** Pencereyi kapatip DOM'dan kaldirir (acik modal ekrani kilitli birakmasin; eylem etiketi temizlenir). */
+  destroy(): void {
+    if (this.dlg.open) this.dlg.close();
+    this.dlg.remove();
+  }
+
   open(): void {
     this.render();
     this.actTrack.open();

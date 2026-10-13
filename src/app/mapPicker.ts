@@ -125,6 +125,12 @@ export class MapPicker {
     return p ? p.name : 'Özel harita';
   }
 
+  /** Pencereyi kapatip DOM'dan kaldirir. */
+  destroy(): void {
+    if (this.dlg.open) this.dlg.close();
+    this.dlg.remove();
+  }
+
   open(): void {
     this.render();
     this.actTrack.open();

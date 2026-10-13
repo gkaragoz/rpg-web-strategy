@@ -1,6 +1,7 @@
 import { Graphics, Sprite, type Application } from 'pixi.js';
 import type { Camera } from '../../camera';
 import { isoX, isoY } from '../../iso';
+import { act } from '../../net/act';
 import { spent, teamZones, type Zone } from '../../net/economy';
 import type { Session } from '../../net/client';
 import type { GameInit, PlacedItem, ServerMsg } from '../../net/protocol';
@@ -413,6 +414,8 @@ export class Placement {
     this.editor?.exit();
     this.top.remove();
     this.sheet?.destroy();
+    this.gallery?.destroy();
+    if (act.text === 'Birim seçiyor') act.text = undefined;
     this.dock?.remove();
     this.overlay.destroy();
     for (const s of this.remote.values()) s.destroy();

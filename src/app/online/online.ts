@@ -320,7 +320,7 @@ export class OnlineApp {
   private sync(): void {
     if (this.wanted() === null) return;
     // Gecisler sirayla calissin (asenkron savas kurulumu); hedef calisma aninda yeniden okunur.
-    this.transition = this.transition.then(() => this.reconcile()).catch((e) => console.error(e));
+    this.transition = this.transition.then(() => this.reconcile()).catch((e) => this.setupFailed(e));
   }
 
   /** Oturum durumunun istedigi ekran; henuz kurulamiyorsa (init/start gelmedi) ya da zaten oradaysa null. */
@@ -333,6 +333,14 @@ export class OnlineApp {
     if (want === 'battle' && !m.start) return null;
     if (want === this.screen && (want !== 'battle' || this.inBattle)) return null;
     return want;
+  }
+
+  /** Ekran kurulumu hata verirse bos ekranda kalma: hatayi goster, oturumu koruyarak menuye don (jeton saklanir). */
+  private setupFailed(e: unknown): void {
+    console.error('[online] ekran kurulamadi', e);
+    if (this.dead) return;
+    this.toast(`Ekran kurulamadı: ${String((e as Error)?.message ?? e).slice(0, 120)}. Menüden yeniden bağlanabilirsin.`, 12000);
+    this.exit(!this.session?.isHost);
   }
 
   private async reconcile(): Promise<void> {
@@ -516,12 +524,12 @@ export class OnlineApp {
 
   // ---------------------------------------------------------------- yardimci
 
-  private toast(msg: string): void {
+  private toast(msg: string, ms = 4000): void {
     const el = document.createElement('div');
     el.className = 'on-toast';
     el.textContent = msg;
     document.body.appendChild(el);
-    setTimeout(() => el.remove(), 4000);
+    setTimeout(() => el.remove(), ms);
   }
 
   /** Cevrimici moddan cik: oturumu kapat, ekranlari kaldir, stüdyoya don. */

@@ -484,6 +484,8 @@ export class LobbyScreen {
   }
 
   destroy(): void {
+    this.picker.destroy();
+    if (act.text === 'Lobi ayarları') act.text = undefined;
     this.el.remove();
   }
 }
