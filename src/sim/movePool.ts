@@ -4,18 +4,18 @@ import type { Units } from './units';
 
 /** Control block (Int32 slots) shared by the sim thread and the helpers. */
 export const C_GEN = 0; // generation: bumped to start a phase
-export const C_NEXT = 1; // next chunk to take
-export const C_DONE = 2; // helpers finished with the current phase
+export const C_NEXT = 1; // (phase tag << 16) | next chunk to take
+export const C_FIN = 2; // chunks of the current phase that are finished
 export const C_COUNT = 3; // unit count
 export const C_STEP = 4; // step number
 export const C_LOS = 5; // line-of-sight interval
 export const C_QUIT = 6;
 export const C_READY = 7; // helpers that finished their setup (each takes the next index)
-export const C_ACTIVE = 8; // helpers taking part in the current phase (indices 0 .. active-1)
 export const C_PHASE = 9; // which kernel the current phase runs (PH_*)
 export const C_MASK = 10; // bit mask of the teams that are alive
 export const C_SEPPH = 11; // separation turn (step % SEP_STRIDE)
-export const C_LEN = 12;
+export const C_UNITS = 12; // number of units
+export const C_LEN = 14;
 /** Float64 params. */
 export const F_DT = 0;
 export const F_BRAKE = 1;
@@ -29,6 +29,12 @@ export const PH_MOVE = 0;
 export const PH_PICK = 1;
 export const PH_SEP_SCAN = 2;
 export const PH_SEP_APPLY = 3;
+export const PH_GRID = 4;
+
+/** Units per chunk of a phase (the grid phase hands out one grid per chunk). */
+export function phaseChunk(phase: number, count: number): number {
+  return phase === PH_GRID ? 1 : chunkSize(count);
+}
 
 /** Per-step inputs of the kernels, written once per step by the sim thread. */
 export interface StepParams {
@@ -56,6 +62,17 @@ export interface HelperInit {
   /** Team grids (index = team) followed by the separation grid. */
   grids: Array<{ cell: number; cols: number; start: SharedArrayBuffer; items: SharedArrayBuffer }>;
   teamCount: number;
+}
+
+/** Takes the next chunk of the phase with this tag; -1 when the phase is over (or a later one has begun). */
+export function takeChunk(c: Int32Array, tag: number, chunks: number): number {
+  for (;;) {
+    const v = Atomics.load(c, C_NEXT);
+    if (v >>> 16 !== tag) return -1;
+    const k = v & 0xffff;
+    if (k >= chunks) return -1;
+    if (Atomics.compareExchange(c, C_NEXT, v, v + 1) === v) return k;
+  }
 }
 
 /** Moves the unit arrays into SharedArrayBuffers (in place, contents kept) and returns the buffers by field name. */
@@ -126,39 +143,47 @@ export class MovePool {
     this.fctrl[F_DECAY] = p.decay;
   }
 
-  /** Runs the chunks of one phase (kernel `phase`) on all available threads; `runChunk` is the sim thread's own kernel. */
-  run(phase: number, count: number, runChunk: (from: number, to: number) => void): void {
+  /**
+   * Runs the chunks of one phase (kernel `phase`) on all available threads; `runChunk` is the sim thread's own kernel. Chunks are
+   * handed out through C_NEXT, which carries the phase's tag: a helper that wakes up late (after the phase is over) cannot take
+   * a chunk of a later phase with stale inputs. The sim thread returns when every chunk is finished; it never waits for a
+   * helper that has not started a chunk.
+   */
+  run(phase: number, count: number, units: number, runChunk: (from: number, to: number, k: number) => void): void {
     const c = this.ctrl;
-    const size = chunkSize(count);
+    const size = phaseChunk(phase, count);
     const chunks = Math.ceil(count / size);
-    const active = this.broken ? 0 : Atomics.load(c, C_READY);
+    if (this.broken || Atomics.load(c, C_READY) === 0) {
+      for (let k = 0; k < chunks; k++) runChunk(k * size, Math.min(count, (k + 1) * size), k);
+      return;
+    }
     Atomics.store(c, C_COUNT, count);
     Atomics.store(c, C_PHASE, phase);
-    Atomics.store(c, C_NEXT, 0);
-    Atomics.store(c, C_DONE, 0);
-    Atomics.store(c, C_ACTIVE, active);
-    if (active > 0) {
-      Atomics.add(c, C_GEN, 1);
-      Atomics.notify(c, C_GEN);
-    }
+    Atomics.store(c, C_UNITS, units);
+    const gen = (Atomics.load(c, C_GEN) + 1) | 0;
+    const tag = gen & 0xffff;
+    Atomics.store(c, C_FIN, 0);
+    Atomics.store(c, C_NEXT, tag << 16);
+    Atomics.store(c, C_GEN, gen);
+    Atomics.notify(c, C_GEN);
     for (;;) {
-      const k = Atomics.add(c, C_NEXT, 1);
-      if (k >= chunks) break;
-      runChunk(k * size, Math.min(count, (k + 1) * size));
+      const k = takeChunk(c, tag, chunks);
+      if (k < 0) break;
+      runChunk(k * size, Math.min(count, (k + 1) * size), k);
+      Atomics.add(c, C_FIN, 1);
     }
-    if (active === 0) return;
-    // Wait for the helpers that are still inside a chunk (a helper that never answers is given up on).
+    // Chunks a helper took are still running: wait for them (a helper that stalls inside a chunk is given up on).
     const t0 = Date.now();
     for (;;) {
-      const d = Atomics.load(c, C_DONE);
-      if (d >= active) break;
+      const f = Atomics.load(c, C_FIN);
+      if (f >= chunks) break;
       if (Date.now() - t0 > 2000) {
         this.broken = true;
-        this.log('a movement helper did not answer within 2 s: continuing on one thread');
+        this.log('a movement helper did not finish its chunk within 2 s: continuing on one thread');
         this.stop();
         break;
       }
-      Atomics.wait(c, C_DONE, d, 20);
+      Atomics.wait(c, C_FIN, f, 20);
     }
   }
 

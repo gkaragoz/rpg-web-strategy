@@ -58,6 +58,7 @@ export function runBench(perTeam: number, teams: number, size: number, steps: nu
   }
   const prof = battle.prof as unknown as Record<string, number>;
   for (const k of Object.keys(prof)) prof[k] = 0;
+  battle.phaseMs.fill(0);
   let max = 0;
   const t0 = performance.now();
   for (let i = 0; i < steps; i++) {
@@ -67,6 +68,7 @@ export function runBench(perTeam: number, teams: number, size: number, steps: nu
   }
   const total = performance.now() - t0;
   const phases: Record<string, number> = {};
+  ['move', 'pick', 'sepScan', 'sepApply', 'gridPhase'].forEach((k, i) => (phases[k] = Math.round((battle.phaseMs[i] / steps) * 100) / 100));
   for (const k of Object.keys(prof)) if (k !== 'steps') phases[k] = Math.round((prof[k] / steps) * 100) / 100;
   return { dt, helpers: battle.helperThreads, units, size, teams, msPerStep: Math.round((total / steps) * 100) / 100, maxStepMs: Math.round(max * 10) / 10, phases, alive: battle.alivePerTeam.slice(0, teams), dbg: { ...(battle.dbg as unknown as Record<string, number>) }, hash: battle.hash() };
 }

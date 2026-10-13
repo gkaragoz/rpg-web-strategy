@@ -2,30 +2,32 @@
 import { mapSizeFor, terrainFor } from './battle';
 import { Grid } from './grid';
 import {
-  C_ACTIVE,
   C_COUNT,
-  C_DONE,
+  C_FIN,
   C_GEN,
   C_LOS,
   C_MASK,
-  C_NEXT,
   C_PHASE,
   C_QUIT,
   C_READY,
   C_SEPPH,
   C_STEP,
+  C_UNITS,
   F_BRAKE,
   F_DECAY,
   F_DT,
   F_GAIN,
   F_MAXSTEP,
+  PH_GRID,
   PH_MOVE,
   PH_PICK,
   PH_SEP_APPLY,
   PH_SEP_SCAN,
+  phaseChunk,
+  takeChunk,
   type HelperInit,
 } from './movePool';
-import { Mover, chunkSize } from './mover';
+import { Mover } from './mover';
 import { Picker } from './picker';
 import { Separator } from './separator';
 import { Units, applyStats } from './units';
@@ -49,7 +51,8 @@ const KINDS: Record<string, ViewCtor> = (() => {
 /** The helper's life: set up from the shared buffers, then serve phases until the sim thread says quit. Blocks (Atomics.wait). */
 export function runHelper(m: HelperInit): void {
   applyStats(m.config.stats);
-  const units = Object.create(Units.prototype) as Units;
+  // A regular Units object (tiny arrays) whose fields are then pointed at the shared buffers: keeps the fast property layout.
+  const units = new Units(1);
   for (const [k, buf] of Object.entries(m.units)) (units as unknown as Record<string, unknown>)[k] = new (KINDS[k] ?? Float32Array)(buf);
   (units as unknown as { cap: number }).cap = m.cap;
   const ctrl = new Int32Array(m.ctrl);
@@ -62,18 +65,22 @@ export function runHelper(m: HelperInit): void {
   const separator = new Separator(units, terrain, grids[m.teamCount], mapSize);
   // Read the generation first, then announce: a phase opened after this read wakes us, one opened before it does not count us.
   let seen = Atomics.load(ctrl, C_GEN);
-  const index = Atomics.add(ctrl, C_READY, 1);
+  Atomics.add(ctrl, C_READY, 1);
   for (;;) {
+    // Sleep until the sim thread opens a phase; right after finishing one, spin briefly first (the next phase usually follows within microseconds).
+    spinFor(ctrl, seen, 60);
     Atomics.wait(ctrl, C_GEN, seen);
-    seen = Atomics.load(ctrl, C_GEN);
+    const gen = Atomics.load(ctrl, C_GEN);
+    seen = gen;
     if (Atomics.load(ctrl, C_QUIT)) return;
-    if (index >= Atomics.load(ctrl, C_ACTIVE)) continue;
+    const tag = gen & 0xffff;
     const count = Atomics.load(ctrl, C_COUNT);
     const phase = Atomics.load(ctrl, C_PHASE);
     const dt = fctrl[F_DT];
     const step = Atomics.load(ctrl, C_STEP);
     mover.stepNo = step;
     mover.losEvery = Atomics.load(ctrl, C_LOS);
+    mover.chunks = Math.ceil(Atomics.load(ctrl, C_UNITS) / phaseChunk(PH_MOVE, Atomics.load(ctrl, C_UNITS)));
     mover.brakeK = fctrl[F_BRAKE];
     picker.step = step;
     picker.dt = dt;
@@ -82,22 +89,33 @@ export function runHelper(m: HelperInit): void {
     separator.gain = fctrl[F_GAIN];
     separator.maxStep = fctrl[F_MAXSTEP];
     separator.decay = fctrl[F_DECAY];
-    if (phase === PH_PICK) picker.prepare();
-    const size = chunkSize(count);
+    units.count = Atomics.load(ctrl, C_UNITS);
+    const size = phaseChunk(phase, count);
     const chunks = Math.ceil(count / size);
+    let prepared = false;
     for (;;) {
-      const k = Atomics.add(ctrl, C_NEXT, 1);
-      if (k >= chunks) break;
+      const k = takeChunk(ctrl, tag, chunks);
+      if (k < 0) break;
+      if (phase === PH_PICK && !prepared) {
+        picker.prepare();
+        prepared = true;
+      }
       const from = k * size;
       const to = Math.min(count, from + size);
-      if (phase === PH_MOVE) mover.runChunk(from, to, dt);
+      if (phase === PH_MOVE) mover.runChunk(from, to, dt, k);
       else if (phase === PH_PICK) picker.runChunk(from, to);
       else if (phase === PH_SEP_SCAN) separator.scan(from, to);
       else if (phase === PH_SEP_APPLY) separator.apply(from, to);
+      else if (phase === PH_GRID) for (let g = from; g < to; g++) grids[g].build(units, g < m.teamCount ? g : -1);
+      if (Atomics.add(ctrl, C_FIN, 1) + 1 === chunks) Atomics.notify(ctrl, C_FIN);
     }
-    Atomics.add(ctrl, C_DONE, 1);
-    Atomics.notify(ctrl, C_DONE);
   }
+}
+
+/** Busy-waits up to `micros` for the generation to change (cheaper than a sleep/wake-up when the next phase is imminent). */
+function spinFor(ctrl: Int32Array, seen: number, micros: number): void {
+  const until = performance.now() + micros / 1000;
+  while (performance.now() < until) if (Atomics.load(ctrl, C_GEN) !== seen) return;
 }
 
 // In a Web Worker the setup message starts the helper (not when this module is imported by Node tooling).

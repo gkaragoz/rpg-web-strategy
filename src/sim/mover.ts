@@ -3,9 +3,9 @@ import { slopeSpeed } from './data/combat';
 import type { Terrain } from './terrain';
 import { F_RAGE, MOTION, STATS, type Units } from './units';
 
-/** Units are processed in chunks (independent of the number of threads): one chunk is always handled by one thread, in index order. */
-export const PATH_REQUESTS_PER_CHUNK = 2;
-export const MAX_CHUNKS = 16;
+/** Units are processed in chunks (independent of the number of threads): one chunk is always handled by one thread, in index order.
+ * A* searches are budgeted per chunk, see `runChunk`. */
+export const MAX_CHUNKS = 64;
 
 /** Intent flags (Units.mvFlags). */
 export const MV_INTENT = 1;
@@ -44,6 +44,8 @@ export class Mover {
   brakeK: number = MOTION.brake;
   losEvery = 20;
   stepNo = 0;
+  /** Number of chunks of the movement phase this step (set with the other per-step parameters). */
+  chunks = 1;
   /** Counters (CNT_*). */
   readonly counts: Int32Array;
   private pathBudget = 0;
@@ -75,10 +77,11 @@ export class Mover {
     if (Math.abs(sx) > 0.05) this.u.facing[i] = sx >= 0 ? 1 : -1;
   }
 
-  /** Executes the queued move intents of units [from, to) (one chunk): same result whichever thread runs the chunk. */
-  runChunk(from: number, to: number, dt: number): void {
+  /** Executes the queued move intents of units [from, to) (chunk number `chunk`): same result whichever thread runs the chunk. */
+  runChunk(from: number, to: number, dt: number, chunk: number): void {
     const u = this.u;
-    this.pathBudget = PATH_REQUESTS_PER_CHUNK;
+    // About 24-30 A* searches per step for the whole army, however it is split: few chunks get several each step, many chunks one every other step.
+    this.pathBudget = this.chunks > 24 ? ((chunk + this.stepNo) % 2 === 0 ? 1 : 0) : Math.ceil(24 / Math.max(1, this.chunks));
     for (let i = from; i < to; i++) {
       const f = u.mvFlags[i];
       if ((f & MV_INTENT) === 0) continue;

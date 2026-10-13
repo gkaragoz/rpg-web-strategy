@@ -32,11 +32,12 @@ export class Grid {
 
   /** A read-only view of a grid built by another thread. */
   static view(g: { cell: number; cols: number; start: SharedArrayBuffer; items: SharedArrayBuffer }): Grid {
-    const grid = Object.create(Grid.prototype) as Grid;
+    const grid = new Grid(1, 1, 1); // regular object shape, fields pointed at the shared buffers
     grid.cell = g.cell;
     grid.cols = g.cols;
     grid.start = new Int32Array(g.start);
     grid.items = new Int32Array(g.items);
+    grid.cursor = new Int32Array(g.cols * g.cols); // scratch of whichever thread builds this grid
     return grid;
   }
 

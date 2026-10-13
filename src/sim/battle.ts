@@ -2,10 +2,10 @@ import { Grid } from './grid';
 import { Terrain, T_WATER } from './terrain';
 import type { MapSpec } from './mapSpec';
 import { simDtFor } from './constants';
-import { MovePool, PH_MOVE, PH_PICK, PH_SEP_APPLY, PH_SEP_SCAN, type HelperInit } from './movePool';
+import { MovePool, PH_GRID, PH_MOVE, PH_PICK, PH_SEP_APPLY, PH_SEP_SCAN, phaseChunk, type HelperInit } from './movePool';
 import { PICK_KEEP, Picker } from './picker';
 import { Separator } from './separator';
-import { Mover, MV_FACE, MV_INTENT, MV_ROUTE, CNT_PATHS, CNT_PATH_FAILS, CNT_STUCK, chunkSize } from './mover';
+import { Mover, MV_FACE, MV_INTENT, MV_ROUTE, CNT_PATHS, CNT_PATH_FAILS, CNT_STUCK } from './mover';
 import { PROJ_TAG, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides, KIND_COUNT } from './units';
 import { PF_PIERCE, PF_SKILL, Projectiles } from './projectiles';
 import { SKILL_ELEMENT, skillParams, type SkillParams } from './data/skills';
@@ -421,8 +421,10 @@ export class Battle {
     let tn = performance.now();
     pf.prep += tn - tp;
     tp = tn;
-    for (let tm = 0; tm < this.teamCount; tm++) this.grids[tm].build(u, tm);
-    this.sepGrid.build(u, -1);
+    // The grids are independent of each other: one per team plus the separation grid, one per chunk.
+    this.runPhase(PH_GRID, this.teamCount + 1, (from, to) => {
+      for (let g = from; g < to; g++) (g < this.teamCount ? this.grids[g] : this.sepGrid).build(u, g < this.teamCount ? g : -1);
+    });
     this.beginPhases(dt);
     this.runPhase(PH_PICK, u.count, (from, to) => this.picker.runChunk(from, to));
     tn = performance.now();
@@ -921,18 +923,27 @@ export class Battle {
   }
 
   /** Runs one parallel phase over all units: on the helper threads when there are any, otherwise chunk by chunk right here. */
-  private runPhase(phase: number, count: number, fn: (from: number, to: number) => void): void {
+  private runPhase(phase: number, count: number, fn: (from: number, to: number, chunk: number) => void): void {
+    const t0 = performance.now();
+    this.runPhaseNow(phase, count, fn);
+    this.phaseMs[phase] += performance.now() - t0;
+  }
+
+  /** Diagnostics: accumulated milliseconds per parallel phase (PH_*), see the benchmark. */
+  readonly phaseMs = [0, 0, 0, 0, 0];
+
+  private runPhaseNow(phase: number, count: number, fn: (from: number, to: number, chunk: number) => void): void {
     if (this.pool) {
-      this.pool.run(phase, count, fn);
+      this.pool.run(phase, count, this.units.count, fn);
       return;
     }
-    const size = chunkSize(count);
+    const size = phaseChunk(phase, count);
     const chunks = Math.ceil(count / size);
     // Test hook: the order in which chunks are executed must not change the result (helper threads take them in any order).
     const order = this.chunkOrder ? this.chunkOrder(chunks) : null;
     for (let k = 0; k < chunks; k++) {
       const c = order ? order[k] : k;
-      fn(c * size, Math.min(count, (c + 1) * size));
+      fn(c * size, Math.min(count, (c + 1) * size), c);
     }
   }
 
@@ -2043,7 +2054,8 @@ export class Battle {
     mover.stepNo = this.stepNo;
     mover.brakeK = this.brakeK;
     mover.losEvery = this.losEvery;
-    this.runPhase(PH_MOVE, n, (from, to) => mover.runChunk(from, to, dt));
+    mover.chunks = Math.ceil(n / phaseChunk(PH_MOVE, n));
+    this.runPhase(PH_MOVE, n, (from, to, k) => mover.runChunk(from, to, dt, k));
     const c = mover.counts;
     this.dbg.stuck += c[CNT_STUCK];
     this.dbg.paths += c[CNT_PATHS];
