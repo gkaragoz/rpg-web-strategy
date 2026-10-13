@@ -42,6 +42,43 @@ function three(): { r: Rig; a: GuestSession; b: GuestSession } {
   return { r, a, b };
 }
 
+describe('rematch', () => {
+  it('keeps the map and the last formation, clears READY and starts a new battle with a new sim seed', () => {
+    const { r, a, b } = three();
+    const teamB = b.model.me!.team;
+    const sp = spots(r, teamB, 3);
+    b.send({ t: 'place', items: sp.map((q, i) => ({ cid: i, kind: 0, x: q.x, y: q.y })) });
+    for (const g of [a, b]) g.send({ t: 'ready', ready: true });
+    r.hs.send({ t: 'ready', ready: true });
+    r.host.tick();
+    expect(r.hs.model.state!.phase).toBe('battle');
+    const first = r.hs.model.start!;
+    r.hs.send({ t: 'rematch' });
+    const st = r.hs.model.state!;
+    expect(st.phase).toBe('placing');
+    expect(st.init!.seed).toBe(first.init.seed);
+    expect(st.players.every((p) => !p.ready)).toBe(true);
+    expect(b.model.placed.size).toBe(3);
+    expect([...b.model.placed.values()].map((u) => [u.x, u.y])).toEqual(sp.map((q) => [q.x, q.y]));
+    for (const g of [a, b]) g.send({ t: 'ready', ready: true });
+    r.hs.send({ t: 'ready', ready: true });
+    r.host.tick();
+    expect(r.hs.model.state!.phase).toBe('battle');
+    expect(r.hs.model.start!.layout).toEqual(first.layout);
+    expect(r.hs.model.start!.simSeed).not.toBe(first.simSeed);
+  });
+
+  it('only the host can rematch or return to the lobby', () => {
+    const { r, a, b } = three();
+    for (const g of [a, b]) g.send({ t: 'ready', ready: true });
+    r.hs.send({ t: 'ready', ready: true });
+    r.host.tick();
+    a.send({ t: 'rematch' });
+    a.send({ t: 'lobby' });
+    expect(r.hs.model.state!.phase).toBe('battle');
+  });
+});
+
 describe('leaving mid-game', () => {
   it('when a player leaves during placement, team numbers do not shift; the rest can still place', () => {
     const { r, a, b } = three();
@@ -72,7 +109,7 @@ describe('leaving mid-game', () => {
     r.hs.send({ t: 'ready', ready: true });
     r.host.tick();
     expect(r.hs.model.state!.phase).toBe('battle');
-    r.hs.send({ t: 'rematch' });
+    r.hs.send({ t: 'lobby' });
     const st = r.hs.model.state!;
     expect(st.phase).toBe('lobby');
     expect(st.players.map((p) => p.name).sort()).toEqual(['B', 'Host']);

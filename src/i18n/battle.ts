@@ -64,7 +64,8 @@ export const battle: StringTable = {
     'battle.teams.aria': 'Remaining health of every team (hover a team to outline its enemies)',
     'battle.result.wins': '{name} wins',
     'battle.result.draw': 'Draw',
-    'battle.result.rematch': 'Rematch (new round)',
+    'battle.result.rematch': 'Rematch (keep formation)',
+    'battle.result.lobby': 'Back to lobby',
     'battle.result.hostNote': 'You return to the lobby when the host starts a new round.',
     'battle.result.replay': 'Play again',
 
@@ -171,7 +172,8 @@ export const battle: StringTable = {
     'battle.teams.aria': 'Her takımın kalan canı (düşmanlarını çerçevelemek için bir takımın üzerine gel)',
     'battle.result.wins': '{name} kazandı',
     'battle.result.draw': 'Berabere',
-    'battle.result.rematch': 'Rövanş (yeni tur)',
+    'battle.result.rematch': 'Rövanş (dizilim kalsın)',
+    'battle.result.lobby': 'Lobiye dön',
     'battle.result.hostNote': 'Host yeni tur başlatınca lobiye dönersin.',
     'battle.result.replay': 'Yeniden oyna',
 

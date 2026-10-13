@@ -3,7 +3,7 @@ import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
 
 /** Protocol version: a client with a different version cannot join the lobby. */
-export const PROTOCOL = 7;
+export const PROTOCOL = 8;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;
@@ -116,6 +116,7 @@ export type ClientMsg =
   | { t: 'start' }
   | { t: 'cmd'; speed?: number; paused?: boolean; comedyVisual?: boolean }
   | { t: 'rematch' }
+  | { t: 'lobby' }
   | { t: 'leave' };
 
 /**

@@ -53,6 +53,7 @@ export interface BattleOptions {
     onComedyView?: (on: boolean) => void;
     onLeave: () => void;
     onRematch?: () => void;
+    onLobby?: () => void;
   };
 }
 
@@ -485,7 +486,7 @@ export class BattleScene {
       const on = this.opts.online;
       const title = w >= 0 ? t('battle.result.wins', { name: this.teamName(w) }) : t('battle.result.draw');
       const btns = on
-        ? `${on.onRematch ? `<button type="button" id="res-restart" class="primary">${t('battle.result.rematch')}</button>` : `<span class="note">${t('battle.result.hostNote')}</span>`}<button type="button" id="res-edit">${on.isHost ? t('battle.leave.host') : t('battle.leave.guest')}</button>`
+        ? `${on.onRematch ? `<button type="button" id="res-restart" class="primary">${t('battle.result.rematch')}</button>` : `<span class="note">${t('battle.result.hostNote')}</span>`}${on.onLobby ? `<button type="button" id="res-lobby">${t('battle.result.lobby')}</button>` : ''}<button type="button" id="res-edit">${on.isHost ? t('battle.leave.host') : t('battle.leave.guest')}</button>`
         : `<button type="button" id="res-restart">${t('battle.result.replay')}</button><button type="button" id="res-edit" class="primary">${t('battle.edit')}</button>`;
       res.innerHTML = `<div class="res-card" role="dialog" aria-label="${t('battle.result.over', { dur })}"><p class="res-sub">${t('battle.result.over', { dur })}</p><h2 style="color:${color}">${title}</h2>${this.scoreboard(w)}${this.details(w)}<div class="btns"><button type="button" id="res-details" aria-expanded="false">${t('battle.result.details')}</button>${btns}</div></div>`;
       document.getElementById('res-details')!.addEventListener('click', (e) => {
@@ -495,6 +496,7 @@ export class BattleScene {
         (e.currentTarget as HTMLElement).classList.toggle('on', !box.hidden);
       });
       document.getElementById('res-restart')?.addEventListener('click', () => (on ? on.onRematch?.() : void this.restart()));
+      document.getElementById('res-lobby')?.addEventListener('click', () => on?.onLobby?.());
       document.getElementById('res-edit')!.addEventListener('click', () => (on ? on.onLeave() : this.opts.onEdit()));
       (document.getElementById('res-restart') ?? document.getElementById('res-edit'))?.focus();
     }

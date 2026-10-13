@@ -154,7 +154,7 @@ The game opens on the **Home** page (the **Home** button in the studio brings yo
   sees everyone's soldiers live), comedy physics/look, banned rarities, password; **kick / mute** players. Players = teams (max 6).
 - **Game flow:** everyone clicks *Ready* → the host clicks *Start game* → everyone places soldiers in their own zone with a gold
   budget (every unit has an automatic gold cost) → the battle starts when everyone is *READY* or the time runs out. Speed and pause are
-  **host-only**; they are locked for everyone else. After the battle the host can start a *Rematch*.
+  **host-only**; they are locked for everyone else. After the battle the host can start a *Rematch* (same map, last formation kept, placement open again) or send everybody *Back to lobby*.
 - **Everyone has a name, a color and a cursor:** cursors are drawn in world coordinates on the map (independent of camera/zoom) and in
   page coordinates in the lobby. While a panel such as the unit gallery is open, the cursor label reads `Name (Choosing a unit)`.
   Press `Enter` for in-game chat.

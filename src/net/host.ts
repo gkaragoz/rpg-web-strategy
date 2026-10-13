@@ -297,6 +297,9 @@ export class HostLobby {
         if (msg.speed !== undefined || msg.paused !== undefined) this.emit({ t: 'tick', step: -1, speed: msg.speed ?? 1, paused: !!msg.paused });
         break;
       case 'rematch':
+        if (isHost && (this.phase === 'result' || this.phase === 'battle')) this.rematch();
+        break;
+      case 'lobby':
         if (isHost && (this.phase === 'result' || this.phase === 'battle')) this.toLobby();
         break;
       case 'leave':
@@ -354,8 +357,7 @@ export class HostLobby {
     }
     if (this.phase === 'placing') {
       // Send the existing placements (all of them with open placement, otherwise only the player's own).
-      const me = this.player(to);
-      const items = this.units.filter((u) => this.settings.openPlacement || (me && u.team === me.team));
+      const items = this.visibleUnits(this.player(to));
       if (items.length) this.sendTo(to, { t: 'placed', owner: '*', items });
     }
   }
@@ -684,6 +686,29 @@ export class HostLobby {
   /** Broadcasts the host's timed sim info (speed/pause); step = host step count. */
   broadcastTick(step: number, speed: number, paused: boolean): void {
     this.emit({ t: 'tick', step, speed, paused });
+  }
+
+  /** Placements a player may see: all of them with open placement, otherwise only the own team's. */
+  private visibleUnits(me: PlayerInfo | undefined): PlacedItem[] {
+    return this.units.filter((u) => this.settings.openPlacement || (me && u.team === me.team));
+  }
+
+  /** Rematch: same map, teams and settings; the last formation stays and everybody places (tweaks) again. */
+  private rematch(): void {
+    if (!this.init || !this.terrain) return this.toLobby();
+    this.phase = 'placing';
+    this.battleStart = null;
+    this.hashes.clear();
+    this.placeEndsAt = this.settings.placeSecs > 0 ? this.now() + this.settings.placeSecs * 1000 : Infinity;
+    for (const p of this.players) p.ready = !p.connected;
+    this.refreshCounts();
+    this.pushState();
+    // After the state: clients clear their placements when the phase changes.
+    for (const p of this.players) {
+      if (!p.connected) continue;
+      const items = this.visibleUnits(p);
+      if (items.length) this.sendTo(p.id, { t: 'placed', owner: '*', items });
+    }
   }
 
   private toLobby(): void {

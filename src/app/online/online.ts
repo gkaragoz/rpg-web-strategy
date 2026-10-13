@@ -502,6 +502,7 @@ export class OnlineApp {
         onComedyView: s.isHost ? (on) => s.send({ t: 'cmd', comedyVisual: on }) : undefined,
         onLeave: () => this.exit(),
         onRematch: s.isHost ? () => s.send({ t: 'rematch' }) : undefined,
+        onLobby: s.isHost ? () => s.send({ t: 'lobby' }) : undefined,
       },
     });
     if (this.dead) {
