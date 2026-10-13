@@ -460,7 +460,7 @@ export class OnlineApp {
     const kinds = new Set<number>(Array.from({ length: LEGACY_COUNT }, (_, i) => i));
     for (let i = 0; i < start.layout.length; i += 4) kinds.add(start.layout[i + 1]);
     // Bone Caller savasta iskelet cagirir (uyuyan iskeletler baslangicta sim'de vardir): dokusu atlas'ta olmali.
-    for (const k of [...kinds]) if (STATS[k]?.troop === 'bone-caller') kinds.add(KIND_OF_TROOP.skeleton);
+    for (const k of [...kinds]) if (STATS[k]?.troop === 'bone-caller') kinds.add(KIND_OF_TROOP['bone-soldier']);
     env.bake(this.colors, this.biome, kinds);
     this.placement?.destroy();
     this.placement = null;

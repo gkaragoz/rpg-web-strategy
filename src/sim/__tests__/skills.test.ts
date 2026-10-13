@@ -25,7 +25,7 @@ describe('yetenekler', () => {
   it('Bone Caller iskelet cagirir (havuzdan uyandirir), iskeletler dusmana saldirir', () => {
     const b = arena(['bone-caller'], ['militia', 'militia', 'militia'], 8, 14);
     const u = b.units;
-    const skel = K('skeleton');
+    const skel = K('bone-soldier');
     let peak = 0;
     run(b, 25, () => {
       let n = 0;
@@ -37,7 +37,7 @@ describe('yetenekler', () => {
   });
 
   it('Undead Soldier bir kez yeniden dirilir', () => {
-    const b = arena(['risen-guard'], ['archers', 'archers', 'archers', 'archers'], 3, 6);
+    const b = arena(['risen-guard'], ['longbowmen', 'longbowmen', 'longbowmen', 'longbowmen'], 3, 6);
     const u = b.units;
     let revived = false;
     run(b, 40, () => {
@@ -64,7 +64,7 @@ describe('yetenekler', () => {
   });
 
   it('Nun dostu iyilestirir ve kontrol etkisini temizler', () => {
-    const b = arena(['nun', 'militia'], ['archers', 'archers'], 6, 7);
+    const b = arena(['mender', 'militia'], ['longbowmen', 'longbowmen'], 6, 7);
     const u = b.units;
     let healed = false;
     run(b, 20, () => {
@@ -94,7 +94,7 @@ describe('yetenekler', () => {
   });
 
   it('Hex Poppets zarar gorunce bagli dusmanlar da zarar alir', () => {
-    const b = arena(['hex-poppets', 'militia'], ['archers', 'archers', 'archers'], 6, 6);
+    const b = arena(['hex-poppets', 'militia'], ['longbowmen', 'longbowmen', 'longbowmen'], 6, 6);
     const u = b.units;
     let mirrored = false;
     const start = Array.from({ length: u.count }, (_, i) => u.hp[i]);
@@ -105,7 +105,7 @@ describe('yetenekler', () => {
   });
 
   it('roster birimleri 2x2 karisik savasta NaN/negatif can uretmez', () => {
-    const ids = ['pyre-sling', 'bolt-thrower', 'war-barge', 'sand-king', 'sun-priest', 'horned-seer', 'demon', 'dawn-blade', 'rime-archers', 'cinder-golem'];
+    const ids = ['pyre-sling', 'bolt-thrower', 'war-barge', 'sand-king', 'sun-priest', 'horned-seer', 'ash-fiend', 'dawn-blade', 'rime-archers', 'cinder-golem'];
     const b = arena(ids, ids.slice().reverse(), 10, 7);
     run(b, 90);
     const u = b.units;

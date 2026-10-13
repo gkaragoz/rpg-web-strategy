@@ -97,7 +97,7 @@ function neededKinds(): Set<number> {
   const set = new Set<number>(Array.from({ length: LEGACY_COUNT }, (_, i) => i));
   for (const u of state.units) set.add(u.kind);
   set.add(state.selKind);
-  for (const k of [...set]) if (STATS[k]?.troop === 'bone-caller') set.add(KIND_OF_TROOP.skeleton);
+  for (const k of [...set]) if (STATS[k]?.troop === 'bone-caller') set.add(KIND_OF_TROOP['bone-soldier']);
   return set;
 }
 

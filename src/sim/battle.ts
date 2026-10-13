@@ -1490,7 +1490,7 @@ export class Battle {
   /** Yetenekli birimlerin yasam dongusu kurulumu: iskelet havuzu, hex baglari. */
   private setupSkills(): void {
     const u = this.units;
-    const skelKind = KIND_OF_TROOP.skeleton;
+    const skelKind = KIND_OF_TROOP['bone-soldier'];
     const n = u.count;
     for (let i = 0; i < n; i++) {
       const skill = STATS[u.kind[i]].skill;
@@ -1754,7 +1754,7 @@ export class Battle {
         case 'chill':
           if (this.tick(i, p.every)) flags |= PF_SKILL;
           break;
-        case 'scarecrow':
+        case 'hex':
           flags |= PF_SKILL;
           break;
         case 'orbs':
@@ -1867,8 +1867,8 @@ export class Battle {
       } else if (skill === 'chill') {
         slowSkill = p;
         stun = p.dur * 0.75;
-      } else if (skill === 'scarecrow') stun = p.dur;
-    } else if (skill === 'scarecrow') stun = this.sp('scarecrow').dur;
+      } else if (skill === 'hex') stun = p.dur;
+    } else if (skill === 'hex') stun = this.sp('hex').dur;
     else if (skill === 'chill') slowSkill = this.sp('chill');
     const first = out[0];
     for (let k = 0; k < out.length; k++) {
@@ -2445,7 +2445,7 @@ export function unitCapacity(config: BattleConfig): number {
   if (config.mode === 'custom') {
     const L = config.layout;
     let necro = 0;
-    if (L) for (let k = 1; k < L.length; k += 4) if (L[k] === KIND_OF_TROOP.bone-caller) necro++;
+    if (L) for (let k = 1; k < L.length; k += 4) if (L[k] === KIND_OF_TROOP['bone-caller']) necro++;
     return Math.floor((L?.length ?? 0) / 4) + 16 + necro * SUMMON_POOL;
   }
   return config.perTeam * 2 + 16;

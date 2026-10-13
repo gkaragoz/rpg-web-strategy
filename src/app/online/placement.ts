@@ -134,7 +134,7 @@ export class Placement {
     for (const u of this.state.units) set.add(u.kind);
     for (const it of this.session.model.placed.values()) set.add(it.kind);
     set.add(this.state.selKind);
-    for (const k of [...set]) if (STATS[k]?.troop === 'bone-caller') set.add(KIND_OF_TROOP.skeleton);
+    for (const k of [...set]) if (STATS[k]?.troop === 'bone-caller') set.add(KIND_OF_TROOP['bone-soldier']);
     return set;
   }
 

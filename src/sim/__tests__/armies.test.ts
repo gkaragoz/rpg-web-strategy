@@ -6,7 +6,7 @@ import { KIND_OF_TROOP, STATS } from '../units';
 describe('rol tabanli ordu kompozisyonu', () => {
   it('Tauntman kaldirildi, iskelet yerlestirilemez', () => {
     expect(KIND_OF_TROOP.tauntman).toBeUndefined();
-    expect(placeableKinds()).not.toContain(KIND_OF_TROOP.skeleton);
+    expect(placeableKinds()).not.toContain(KIND_OF_TROOP['bone-soldier']);
   });
 
   it('her hat dolu, adetler makul ve maliyet butceyi asmaz', () => {

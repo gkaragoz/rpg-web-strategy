@@ -11,7 +11,7 @@ export interface Scenario {
   simSeed: number;
 }
 
-type Archetype = 'mixed' | 'melee' | 'ranged' | 'priests' | 'tanks' | 'single' | 'swarm' | 'archers' | 'healTank';
+type Archetype = 'mixed' | 'melee' | 'ranged' | 'priests' | 'tanks' | 'single' | 'swarm' | 'longbowmen' | 'healTank';
 type Style = 'ring' | 'scatter' | 'clusters' | 'stack' | 'twoSides';
 
 const MAPS = [40, 56, 80];
@@ -28,7 +28,7 @@ function kindsFor(rng: () => number, a: Archetype): number[] {
       return [...rep(Kind.Warrior, n(3, 30)), ...rep(Kind.Shield, n(0, 3)), ...rep(Kind.Brute, n(0, 3))];
     case 'ranged':
       return [...rep(Kind.Archer, n(2, 20)), ...rep(Kind.Priest, n(0, 4))];
-    case 'archers':
+    case 'longbowmen':
       return rep(Kind.Archer, n(1, 25));
     case 'priests':
       return rep(Kind.Priest, n(1, 8));
@@ -107,7 +107,7 @@ export function makeScenario(id: number): Scenario {
   const style = pick<Style>(rng, ['ring', 'ring', 'scatter', 'clusters', 'stack', 'twoSides']);
   const env = rng() < 0.85;
   const kite = rng() < 0.85;
-  const archetypes: Archetype[] = ['mixed', 'mixed', 'mixed', 'melee', 'ranged', 'archers', 'priests', 'tanks', 'single', 'swarm', 'healTank'];
+  const archetypes: Archetype[] = ['mixed', 'mixed', 'mixed', 'melee', 'ranged', 'longbowmen', 'priests', 'tanks', 'single', 'swarm', 'healTank'];
 
   const layout: number[] = [];
   const names: string[] = [];

@@ -1,3 +1,4 @@
+import { loc } from '../i18n';
 import { RACE_NAMES, RARITY_NAMES, TROOP_BY_ID, type Race, type Rarity } from '../sim/data/troops';
 import { KIND_COUNT, LEGACY_COUNT, MAX_LEVEL, STATS, isHealer, isMelee } from '../sim/units';
 import { trackDialog } from '../net/act';
@@ -82,9 +83,9 @@ export class UnitGallery {
     const s = STATS[k];
     const t = k >= LEGACY_COUNT ? TROOP_BY_ID[s.troop ?? ''] : undefined;
     const role = isHealer(k) ? 'Şifacı' : isMelee(k) ? 'Yakın' : 'Uzak';
-    const meta = t ? `${RARITY_NAMES[t.rarity]} · ${RACE_NAMES[t.race]}` : 'Klasik';
+    const meta = t ? `${loc(RARITY_NAMES[t.rarity])} · ${loc(RACE_NAMES[t.race])}` : 'Klasik';
     const stats = `Can ${Math.round(s.hp)} · Güç ${Math.round(s.power)} · Menzil ${s.range.toFixed(1)} · ${role}`;
-    const skill = t?.skillText ? `<span class="ug-skill">${esc(t.skillText)}</span>` : '';
+    const skill = t?.skillText ? `<span class="ug-skill">${esc(loc(t.skillText))}</span>` : '';
     const sel = this.d.state.selKind === k;
     const price = this.d.online ? `<span class="ug-price">${this.d.online.cost(k)} gold</span>` : '';
     return `<button type="button" class="ug-card r-${t ? t.rarity : 'legacy'}${sel ? ' sel' : ''}" data-kind="${k}" aria-pressed="${sel}">${price}
@@ -104,14 +105,14 @@ export class UnitGallery {
     const rarityChips = [
       this.chip('data-r', 'all', 'Hepsi', this.rarity === 'all'),
       this.chip('data-r', 'legacy', 'Klasik', this.rarity === 'legacy'),
-      ...RARITIES.map((r) => this.chip('data-r', r, RARITY_NAMES[r], this.rarity === r)),
+      ...RARITIES.map((r) => this.chip('data-r', r, loc(RARITY_NAMES[r]), this.rarity === r)),
     ].join('');
-    const raceChips = [this.chip('data-c', 'all', 'Tüm ırklar', this.race === 'all'), ...RACES.map((r) => this.chip('data-c', r, RACE_NAMES[r], this.race === r))].join('');
+    const raceChips = [this.chip('data-c', 'all', 'Tüm ırklar', this.race === 'all'), ...RACES.map((r) => this.chip('data-c', r, loc(RACE_NAMES[r]), this.race === r))].join('');
     const levels = Array.from({ length: MAX_LEVEL }, (_, i) => `<option value="${i + 1}"${i + 1 === s.level ? ' selected' : ''}>${i + 1}</option>`).join('');
     const list = this.kinds();
     this.dlg.innerHTML = `
 <form method="dialog">
-  <header><h2>Birimler</h2><p>the reference game birimleri; seviye roster tablosundaki 1-10 değerlerini seçer. Birime tıkla: seçilir ve yerleştirmeye hazır olur.</p></header>
+  <header><h2>Birimler</h2><p>Birimler; seviye 1-10 arasındaki değerleri seçer. Birime tıkla: seçilir ve yerleştirmeye hazır olur.</p></header>
   <div class="ug-bar">
     <div class="seg" role="group" aria-label="Nadirlik">${rarityChips}</div>
     <div class="seg" role="group" aria-label="Irk">${raceChips}</div>

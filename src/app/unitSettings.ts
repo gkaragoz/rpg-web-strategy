@@ -1,3 +1,4 @@
+import { loc } from '../i18n';
 import { RACE_NAMES, RARITY_NAMES, TROOP_BY_ID, type Rarity } from '../sim/data/troops';
 import { DEFAULT_STATS, KIND_COUNT, LEGACY_COUNT, STATS, TUNABLE, isTank, type StatKey } from '../sim/units';
 import { trackDialog } from '../net/act';
@@ -53,7 +54,7 @@ export class UnitSettings {
         const t = TROOP_BY_ID[STATS[k].troop ?? ''];
         if (t && t.rarity === r) kinds.push(k);
       }
-      if (kinds.length) out.push({ title: RARITY_NAMES[r], kinds });
+      if (kinds.length) out.push({ title: loc(RARITY_NAMES[r]), kinds });
     }
     return out;
   }
@@ -72,8 +73,8 @@ export class UnitSettings {
             }).join('');
             const has = Object.keys(this.state.stats[k]).length > 0;
             const t = STATS[k].troop ? TROOP_BY_ID[STATS[k].troop!] : undefined;
-            const meta = t ? `${RARITY_NAMES[t.rarity]} · ${RACE_NAMES[t.race]}` : 'Klasik';
-            const skill = t?.skillText ? `<small class="us-skill">${esc(t.skillText)}</small>` : '';
+            const meta = t ? `${loc(RARITY_NAMES[t.rarity])} · ${loc(RACE_NAMES[t.race])}` : 'Klasik';
+            const skill = t?.skillText ? `<small class="us-skill">${esc(loc(t.skillText))}</small>` : '';
             return `<tr><th scope="row" class="us-unit"><span class="us-icon" data-icon="${k}"></span><span class="us-name"><b>${esc(STATS[k].name)}</b><small>${esc(meta)}</small>${skill}</span></th>${cells}<td class="derived" data-derived="dps" data-k="${k}">${this.dps(k)}</td><td class="derived" data-derived="ehp" data-k="${k}">${this.effHp(k)}</td><td><button type="button" class="mini" data-reset-kind="${k}" ${has ? '' : 'disabled'}>Sıfırla</button></td></tr>`;
           })
           .join('');
