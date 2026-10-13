@@ -12,7 +12,7 @@ import { projStyle } from './projectileStyle';
 import { flatColorFilter, setFlatColor } from './outlineFilter';
 
 const DEPTH_SCALE = 4;
-/** Most silhouette particles drawn for the focus outline (4 per enemy): beyond this the outline is thinned out. */
+/** Most silhouette particles drawn for the focus outline (4 per soldier): beyond this the outline is thinned out. */
 const FOCUS_MAX = 12000;
 
 export interface MassViewport {
@@ -29,7 +29,7 @@ export interface MassOptions {
   bars: boolean;
   sort: boolean;
   cull: boolean;
-  /** Team whose enemies are outlined (-1: none) and the outline colour. */
+  /** Team whose soldiers are outlined (-1: none) and the outline colour. */
   focusTeam?: number;
   focusColor?: number;
 }
@@ -58,7 +58,7 @@ export class MassRenderer {
   private markSx = new Float32Array(0);
   private markSy = new Float32Array(0);
   private markLevel = new Uint8Array(0);
-  /** Coloured silhouettes (4 offset copies per enemy) under the units: together they read as an outline. */
+  /** Coloured silhouettes (4 offset copies per soldier) under the units: together they read as an outline. */
   private readonly focusLayer = new ParticleContainer({
     dynamicProperties: { vertex: true, position: true, rotation: true, uvs: true, color: false },
   });
@@ -295,8 +295,8 @@ export class MassRenderer {
       }
       // In the air (comedy physics): spins fast.
       if (alive && lift > 0.04) p.rotation = (time * 13 + i) * u.facing[i];
-      if (focus >= 0 && alive && u.team[i] !== focus && fn < FOCUS_MAX) {
-        // Four copies shifted by ~2 px in the focus colour behind the unit = an outline.
+      if (focus >= 0 && alive && u.team[i] === focus && fn < FOCUS_MAX) {
+        // Four copies shifted by ~2 px in the outline colour behind the unit = an outline.
         for (let c = 0; c < 4; c++) {
           let f = this.focusParticles[fn];
           if (!f) f = this.focusParticles[fn] = new Particle({ texture: p.texture, anchorX: p.anchorX, anchorY: p.anchorY });

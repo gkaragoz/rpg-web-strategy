@@ -21,6 +21,9 @@ import { t } from '../i18n';
 import { hex } from './state';
 import type { WorldView } from './world';
 
+/** Outline colour of the focused team's soldiers (team colours would vanish against their own units). */
+const FOCUS_OUTLINE = 0xffffff;
+
 const WARMUP_FRAMES = 60;
 /** Below this unit count use detailed (animated) drawing, above it use mass drawing. */
 const DETAILED_MAX = 150;
@@ -90,7 +93,7 @@ export class BattleScene {
   private arrowViews: Array<{ shadow: Graphics; arrow: Graphics; tag: number }> = [];
   private fx: FxSystem | null = null;
   private massOpts: MassOptions = { bars: true, sort: true, cull: true, focusTeam: -1, focusColor: 0xffffff };
-  /** Team whose enemies are outlined: hovered bar segment, or the one pinned by a tap. -1: none. */
+  /** Team whose soldiers are outlined: hovered bar segment, or the one pinned by a tap. -1: none. */
   private hoverTeam = -1;
   private pinnedTeam = -1;
   private segs: HTMLButtonElement[] = [];
@@ -351,7 +354,7 @@ export class BattleScene {
     this.updateHud(true);
   }
 
-  /** The focused team (hover or pinned): its enemies are outlined on the map. */
+  /** The focused team (hover or pinned): its own soldiers are outlined on the map. */
   private get focusTeam(): number {
     return this.pinnedTeam >= 0 ? this.pinnedTeam : this.hoverTeam;
   }
@@ -776,7 +779,7 @@ export class BattleScene {
   private syncMass(alpha: number): void {
     const ft = this.focusTeam;
     this.massOpts.focusTeam = ft;
-    this.massOpts.focusColor = ft >= 0 ? this.opts.colors[ft].main : 0xffffff;
+    this.massOpts.focusColor = FOCUS_OUTLINE;
     this.mass!.sync(this.time, alpha, this.viewRect(), this.massOpts);
     this.activeProjectiles = this.mass!.drawnArrows;
     this.drawnLine = `${t('battle.stats.drawn').padEnd(11)}${t('battle.stats.drawnLine', { units: this.mass!.drawnUnits, decor: this.mass!.drawnDecor, arrows: this.mass!.drawnArrows })}`;
@@ -826,7 +829,7 @@ export class BattleScene {
       const wy = u.py[i] + (u.y[i] - u.py[i]) * alpha;
       v.root.visible = true;
       const ft = this.focusTeam;
-      v.setOutline(alive && ft >= 0 && u.team[i] !== ft ? this.opts.colors[ft].main : -1);
+      v.setOutline(alive && ft >= 0 && u.team[i] === ft ? FOCUS_OUTLINE : -1);
       const ground = this.elev(wx, wy);
       v.root.position.set(isoX(wx, wy), isoY(wx, wy, ground + (u.lift ? u.lift[i] * 38 : 0)));
       // Height advantage over its current target (half steps): gold chevrons, one per step of advantage (max 3).
