@@ -11,7 +11,7 @@ import type { Atlas } from '../../render/atlas';
 import type { TeamColors } from '../../render/unitView';
 import type { MapSpec } from '../../sim/mapSpec';
 import { LEGACY_COUNT, setUnitLevel } from '../../sim/units';
-import type { StatsPanel } from '../../ui/stats';
+import { STATS_DEFAULT_SHOWN, type StatsPanel } from '../../ui/stats';
 import type { BattleOptions, BattleScene } from '../battle';
 import { makeTeamColor } from '../state';
 import type { WorldView } from '../world';
@@ -449,7 +449,7 @@ export class OnlineApp {
         onRematch: s.isHost ? () => s.send({ t: 'rematch' }) : undefined,
       },
     });
-    env.stats.setShown(true);
+    env.stats.setShown(STATS_DEFAULT_SHOWN);
     this.inBattle = true;
     this.cursors?.setView({ app: env.app, world: env.world, terrain: () => env.world.terrain, size: () => env.world.mapSize });
   }

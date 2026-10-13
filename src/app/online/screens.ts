@@ -197,7 +197,8 @@ export class LobbyScreen {
     this.el = document.createElement('div');
     this.el.className = 'on-screen on-lobby';
     this.el.innerHTML = `
-<div class="on-lobby-grid">
+<div class="on-tabs" role="tablist"><button type="button" role="tab" data-tab="players">Oyuncular</button><button type="button" role="tab" data-tab="settings">Ayarlar</button></div>
+<div class="on-lobby-grid" data-tab="players">
   <aside class="on-panel on-settings" id="l-settings" aria-label="Ayarlar">
     <h2>Ayarlar <small id="l-host-note"></small></h2>
     <div class="on-field"><span>Harita</span>
@@ -240,6 +241,14 @@ export class LobbyScreen {
       false,
     );
     this.build();
+    // Dar ekranda sekmeler: host once ayarlari, misafir oyunculari gorur.
+    const grid = this.q('.on-lobby-grid');
+    const setTab = (t: string): void => {
+      grid.dataset.tab = t;
+      this.el.querySelectorAll<HTMLElement>('.on-tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === t)));
+    };
+    this.el.querySelectorAll<HTMLElement>('.on-tabs button').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab!)));
+    setTab(this.session.model.isHost ? 'settings' : 'players');
     this.update();
   }
 

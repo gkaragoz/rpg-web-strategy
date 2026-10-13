@@ -7,6 +7,7 @@ import type { GameInit, PlacedItem, ServerMsg } from '../../net/protocol';
 import type { Atlas } from '../../render/atlas';
 import { POSES, type TeamColors } from '../../render/unitView';
 import { KIND_OF_TROOP, LEGACY_COUNT, MAX_TEAMS, STATS } from '../../sim/units';
+import { initSheet } from '../sheet';
 import { Editor } from '../editor';
 import { UnitGallery } from '../unitGallery';
 import { BRUSHES, defaultState, hex, type AppState, type PlacedUnit } from '../state';
@@ -47,6 +48,7 @@ export class Placement {
   private lastLeft = -2;
   private leftAt = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private sheet: { destroy(): void } | null = null;
 
   constructor(
     private readonly env: PlacementEnv,
@@ -321,12 +323,14 @@ export class Placement {
   private buildDock(): void {
     const d = this.dock!;
     d.innerHTML = `
-<div class="dock-group on-gold"><span id="pg-gold" class="on-gold-t"></span><div class="on-gbar"><i id="pg-bar"></i></div></div>
-<div class="dock-group" id="pg-kinds" role="radiogroup" aria-label="Birim"></div>
-<div class="dock-group"><button type="button" id="pg-gallery">Birimler…</button></div>
-<div class="dock-group"><div class="seg" id="pg-brush" role="group" aria-label="Fırça"></div><div class="seg" id="pg-tool" role="group" aria-label="Araç"></div></div>
+<div class="dock-group primary on-gold"><span id="pg-gold" class="on-gold-t"></span><div class="on-gbar"><i id="pg-bar"></i></div></div>
+<div class="dock-group primary" id="pg-kinds" role="radiogroup" aria-label="Birim"></div>
+<div class="dock-group primary"><button type="button" id="pg-gallery">Birimler…</button></div>
+<div class="dock-group"><div class="seg" id="pg-brush" role="group" aria-label="Fırça"></div></div>
+<div class="dock-group primary"><div class="seg" id="pg-tool" role="group" aria-label="Araç"></div></div>
 <div class="dock-group"><button type="button" id="pg-undo">Geri al</button><button type="button" id="pg-redo">Yinele</button><button type="button" id="pg-clear">Temizle</button></div>
-<div class="dock-group end"><button type="button" class="primary" id="pg-ready">HAZIR</button></div>`;
+<div class="dock-group end primary"><button type="button" class="primary" id="pg-ready">HAZIR</button></div>`;
+    this.sheet = initSheet(d);
     const q = (s: string): HTMLElement => d.querySelector(s) as HTMLElement;
     q('#pg-gallery').addEventListener('click', () => this.gallery!.open());
     q('#pg-undo').addEventListener('click', () => this.editor!.undo());
@@ -408,6 +412,7 @@ export class Placement {
     if (this.timer) clearInterval(this.timer);
     this.editor?.exit();
     this.top.remove();
+    this.sheet?.destroy();
     this.dock?.remove();
     this.overlay.destroy();
     for (const s of this.remote.values()) s.destroy();

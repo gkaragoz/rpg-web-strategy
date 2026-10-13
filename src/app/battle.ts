@@ -247,16 +247,22 @@ export class BattleScene {
   <button type="button" id="hud-pause">Duraklat</button>
   <button type="button" id="hud-sound" aria-pressed="true">Ses</button>
   <button type="button" id="hud-cv" aria-pressed="false" title="Komedi görünümü (K)">Komedi görünümü</button>
-  <button type="button" id="hud-cp" aria-pressed="false" title="Komedi fiziği (savaş yeniden başlar)">Komedi fiziği</button>
-  <button type="button" id="hud-debug" aria-pressed="false" title="Takılma izleme katmanı (savaş yeniden başlar)">Debug</button>
-  <button type="button" id="hud-full">Tam ekran</button>
+  <button type="button" id="hud-cp" class="sec" aria-pressed="false" title="Komedi fiziği (savaş yeniden başlar)">Komedi fiziği</button>
+  <button type="button" id="hud-debug" class="sec" aria-pressed="false" title="Takılma izleme katmanı (savaş yeniden başlar)">Debug</button>
+  <button type="button" id="hud-full" class="sec">Tam ekran</button>
+  <span class="hud-view" role="group" aria-label="Kamera"><button type="button" id="hud-zout" aria-label="Uzaklaş">−</button><button type="button" id="hud-zin" aria-label="Yakınlaş">+</button><button type="button" id="hud-center" aria-label="Haritayı ortala" title="Haritayı ortala">⌖</button><button type="button" id="hud-stats" aria-label="İstatistik" title="İstatistik (F3)">📊</button></span>
   <button type="button" id="hud-restart">Yeniden başlat</button>
   <button type="button" id="hud-edit" class="primary">Düzenle</button>
 </div>
-<div class="hud-hint">${this.opts.online ? (this.opts.online.isHost ? 'Space: duraklat · 1-2-3: hız (yalnız host) · ' : 'Hız ve duraklatma yalnız host’ta · ') + 'F3: istatistik · WASD / orta tuş: kaydır · tekerlek: yakınlaş' : 'Space: duraklat · R: yeniden başlat · Esc: düzenle · 1-2-3: hız · F3: istatistik · WASD / orta tuş: kaydır · tekerlek: yakınlaş'}</div>
+<div class="hud-hint">${window.matchMedia('(pointer: coarse)').matches ? 'Tek parmak: kaydır · İki parmak: yakınlaştır / kaydır' : ''}${window.matchMedia('(pointer: coarse)').matches ? '' : this.opts.online ? (this.opts.online.isHost ? 'Space: duraklat · 1-2-3: hız (yalnız host) · ' : 'Hız ve duraklatma yalnız host’ta · ') + 'F3: istatistik · WASD / orta tuş: kaydır · tekerlek: yakınlaş' : 'Space: duraklat · R: yeniden başlat · Esc: düzenle · 1-2-3: hız · F3: istatistik · WASD / orta tuş: kaydır · tekerlek: yakınlaş'}</div>
 <div class="result" id="hud-result" hidden></div>`;
     const q = (s: string) => root.querySelector(s) as HTMLElement;
     q('#hud-pause').addEventListener('click', () => this.togglePause());
+    q('#hud-zin').addEventListener('click', () => this.d.camera.zoomBy(1.35));
+    q('#hud-zout').addEventListener('click', () => this.d.camera.zoomBy(1 / 1.35));
+    q('#hud-center').addEventListener('click', () => this.d.camera.fit(this.d.app.screen.width, this.d.app.screen.height));
+    q('#hud-stats').addEventListener('click', () => this.d.stats.toggle());
+    if (!document.documentElement.requestFullscreen) q('#hud-full').hidden = true;
     if (this.opts.online) {
       // Cevrimici: yalniz Ses, Komedi gorunumu, Tam ekran ve Ayril kalir.
       for (const id of ['#hud-restart', '#hud-debug', '#hud-cp']) q(id).hidden = true;

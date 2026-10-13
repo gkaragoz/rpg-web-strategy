@@ -1,3 +1,4 @@
+import { initSheet } from './sheet';
 import { LEGACY_COUNT, MAX_TEAMS, STATS } from '../sim/units';
 import type { Editor } from './editor';
 import { MapPicker } from './mapPicker';
@@ -63,6 +64,7 @@ export class Studio {
     root.innerHTML = this.template();
     this.$ = (sel) => root.querySelector(sel) as HTMLElement;
     this.bind();
+    initSheet(root.querySelector('.dock') as HTMLElement);
     window.addEventListener('keydown', (e) => this.onKey(e));
   }
 
@@ -143,10 +145,11 @@ export class Studio {
 
 <div class="dock" role="toolbar" aria-label="Yerleştirme araçları">
   <div class="dock-note" id="reason" role="status"></div>
-  <div class="dock-group" id="chips" role="radiogroup" aria-label="Takım"></div>
-  <div class="dock-group" id="kinds" role="radiogroup" aria-label="Asker türü"></div>
-  <div class="dock-group"><button id="gallery-btn" type="button" title="Tüm birimler (nadirlik, ırk, seviye)">Birimler…</button></div>
-  <div class="dock-group"><div class="seg" id="brush" role="group" aria-label="Fırça boyutu"></div><div class="seg" id="tool" role="group" aria-label="Araç"></div></div>
+  <div class="dock-group primary" id="chips" role="radiogroup" aria-label="Takım"></div>
+  <div class="dock-group primary" id="kinds" role="radiogroup" aria-label="Asker türü"></div>
+  <div class="dock-group primary"><button id="gallery-btn" type="button" title="Tüm birimler (nadirlik, ırk, seviye)">Birimler…</button></div>
+  <div class="dock-group"><div class="seg" id="brush" role="group" aria-label="Fırça boyutu"></div></div>
+  <div class="dock-group primary"><div class="seg" id="tool" role="group" aria-label="Araç"></div></div>
   <div class="dock-group">
     <button id="undo" type="button" title="Geri al (Ctrl+Z)">Geri al</button>
     <button id="redo" type="button" title="Yinele (Ctrl+Y)">Yinele</button>
@@ -154,11 +157,11 @@ export class Studio {
     <button id="rand-enemy" type="button" title="Seçili takım dışındaki takımlara rastgele ordu ekle">Rastgele düşman</button>
     <button id="clear" type="button" title="Tüm askerleri sil">Temizle</button>
   </div>
-  <div class="dock-group end">
+  <div class="dock-group end primary">
     <span id="total" class="total">0 / ${MAX_PLACED}</span>
-    <button id="tgl-left" type="button" class="only-narrow">Ayarlar</button>
-    <button id="tgl-right" type="button" class="only-narrow">Takımlar</button>
-    <button id="online" type="button" title="Arkadaşlarınla çevrimiçi oyna (lobi kur / katıl)">Çevrimiçi</button>
+    <button id="tgl-left" type="button" class="only-narrow sec">Ayarlar</button>
+    <button id="tgl-right" type="button" class="only-narrow sec">Takımlar</button>
+    <button id="online" type="button" class="sec" title="Arkadaşlarınla çevrimiçi oyna (lobi kur / katıl)">Çevrimiçi</button>
     <button id="start" type="button" class="primary">Savaşı başlat</button>
   </div>
   <div class="dock-hint" id="hint">Sol tık: yerleştir · Sağ tık: sil · Shift+sağ tık: yalnız seçili takım · Tekerlek: yakınlaş · WASD / orta tuş: kaydır · Q/E: takım · 1-5: tür · Z/Y: geri al/yinele</div>

@@ -31,7 +31,7 @@
   position: absolute;
   top: 12px;
   width: 270px;
-  max-height: calc(100vh - 140px);
+  max-height: calc(100dvh - 140px);
   overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--panel-border);
@@ -464,7 +464,7 @@ kbd {
 .unit-dialog form {
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
 }
 .unit-dialog header {
   padding: 14px 18px 4px;
@@ -616,7 +616,7 @@ input[type='range'] {
   top: 8px;
   z-index: 30;
   width: 330px;
-  max-height: 60vh;
+  max-height: 60dvh;
   overflow: auto;
   padding: 8px 10px;
   border-radius: 8px;
@@ -842,10 +842,10 @@ input[type='range'] {
 .unit-dialog.unit-settings {
   width: min(1320px, 96vw);
   max-width: min(1320px, 96vw);
-  max-height: 94vh;
+  max-height: 94dvh;
 }
 .unit-settings form {
-  max-height: 94vh;
+  max-height: 94dvh;
 }
 .unit-settings .table-wrap {
   padding: 4px 22px 8px;
@@ -1385,4 +1385,368 @@ button.on {
   border: 1px solid var(--panel-border);
   color: var(--text);
   letter-spacing: 0.3px;
+}
+
+/* ---------------- Mobil / dokunmatik ---------------- */
+.sheet-handle {
+  display: none;
+}
+.dock-scroll {
+  display: contents;
+}
+.hud-view {
+  display: inline-flex;
+  gap: 4px;
+}
+
+@media (pointer: coarse) {
+  button,
+  select {
+    min-height: 40px;
+  }
+  .seg button {
+    min-height: 38px;
+    padding: 6px 12px;
+  }
+  .stepper button {
+    min-width: 38px;
+    min-height: 38px;
+  }
+  button.mini {
+    min-height: 34px;
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+  input[type='checkbox'][role='switch'] {
+    width: 44px;
+    height: 24px;
+    border-radius: 12px;
+  }
+  input[type='checkbox'][role='switch']::after {
+    width: 20px;
+    height: 20px;
+  }
+  input[type='checkbox'][role='switch']:checked::after {
+    transform: translateX(20px);
+  }
+  input[type='number'],
+  input[type='text'],
+  input[type='search'],
+  input[type='password'],
+  .on-panel input,
+  .on-panel select {
+    min-height: 40px;
+    font-size: 16px; /* iOS odaklaninca yakinlastirmasin */
+  }
+  .on-sw {
+    width: 34px;
+    height: 34px;
+  }
+  .on-sw.sm {
+    width: 28px;
+    height: 28px;
+  }
+  .on-x {
+    min-width: 44px;
+  }
+  .on-ig-btn {
+    min-height: 36px;
+  }
+  .on-badge {
+    min-height: 32px;
+    padding: 4px 12px;
+  }
+}
+
+@media (max-width: 760px), (max-height: 520px) {
+  /* Alt cekmece: kapaliyken tek satir, kaydirilabilir birincil ogeler; tutamaga dokununca tamami. */
+  .dock {
+    display: block;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    max-width: none;
+    border-radius: 16px 16px 0 0;
+    border-bottom: 0;
+    padding: 24px 0 calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  .sheet-handle {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 26px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 16px 16px 0 0;
+    background: transparent;
+  }
+  .sheet-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 10px;
+    width: 46px;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.38);
+    transform: translateX(-50%);
+  }
+  .dock-scroll {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 0 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .dock-scroll::-webkit-scrollbar {
+    display: none;
+  }
+  .dock-scroll > .dock-group {
+    flex: 0 0 auto;
+  }
+  .dock:not(.open) .dock-scroll > .dock-group:not(.primary),
+  .dock:not(.open) .sec,
+  .dock:not(.open) .dock-hint {
+    display: none;
+  }
+  .dock-scroll > .dock-group.end {
+    position: sticky;
+    right: 0;
+    padding-left: 8px;
+    background: #101620;
+    box-shadow: -10px 0 8px -4px #101620;
+  }
+  .dock.open .dock-scroll {
+    flex-wrap: wrap;
+    justify-content: center;
+    max-height: 72dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .dock.open .dock-scroll > .dock-group.end {
+    position: static;
+  }
+  .dock.open .dock-scroll > .dock-group {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 100%;
+  }
+  .sheet-handle:hover:not(:disabled),
+  .sheet-handle:active {
+    background: transparent;
+  }
+  .dock-note {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: calc(var(--dock-h, 80px) + 8px);
+    flex-basis: auto;
+    z-index: 6;
+  }
+
+  /* Savas HUD */
+  .hud-top {
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    max-width: calc(100vw - 16px);
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 4px 8px;
+    gap: 4px 6px;
+  }
+  .hud-bottom {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-radius: 16px 16px 0 0;
+    border-bottom: 0;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  .hud-bottom::-webkit-scrollbar {
+    display: none;
+  }
+  .hud-bottom > * {
+    flex: 0 0 auto;
+  }
+  .hud-bottom .sec {
+    display: none;
+  }
+  .hud-hint {
+    left: 8px;
+    right: 8px;
+    bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+    text-align: center;
+    background: rgba(10, 14, 20, 0.6);
+    animation: hint-out 1s ease 6s forwards;
+  }
+  /* Kamera dugmeleri hizli erisim icin hiz/duraklat'in hemen yaninda */
+  .hud-bottom #hud-speed {
+    order: 1;
+  }
+  .hud-bottom #hud-pause {
+    order: 2;
+  }
+  .hud-bottom .hud-view {
+    order: 3;
+  }
+  .hud-bottom #hud-sound {
+    order: 4;
+  }
+  .hud-bottom #hud-cv {
+    order: 5;
+  }
+  .hud-bottom #hud-restart {
+    order: 6;
+  }
+  .hud-bottom #hud-edit {
+    order: 7;
+  }
+  .result > div {
+    max-width: calc(100vw - 24px);
+    padding: 14px 18px;
+  }
+  .toasts {
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    max-width: calc(100vw - 24px);
+  }
+  #stats {
+    min-width: 0;
+    font-size: 11px;
+    right: 4px;
+    top: calc(4px + env(safe-area-inset-top, 0px));
+  }
+
+  /* Paneller */
+  .panel {
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    max-height: calc(100dvh - 100px);
+  }
+
+  /* Diyaloglar: tam ekran sayfa */
+  .unit-dialog,
+  .gallery-dialog,
+  .map-dialog {
+    max-width: 100vw;
+    width: 100vw;
+    max-height: 100dvh;
+    height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+    border: 0;
+  }
+  .unit-dialog form {
+    height: 100%;
+    max-height: 100dvh;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .ug-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .ug-icon {
+    width: 92px;
+    height: 110px;
+  }
+  .ug-bar {
+    padding: 8px 10px 0;
+  }
+
+  /* Cevrimici ekranlar */
+  .on-screen {
+    padding: 8px;
+    align-items: flex-start;
+  }
+  .on-menu-panel {
+    padding: 12px;
+  }
+  .on-cards {
+    grid-template-columns: 1fr;
+  }
+  .on-panel {
+    padding: 12px;
+  }
+  .on-nameinp {
+    width: 100px;
+  }
+  .on-prow {
+    flex-wrap: wrap;
+  }
+  .on-code {
+    font-size: 18px;
+  }
+  .on-top {
+    top: calc(6px + env(safe-area-inset-top, 0px));
+    padding: 4px 8px;
+    gap: 4px 8px;
+  }
+  .on-chip {
+    padding: 1px 6px;
+    font-size: 12px;
+  }
+  .on-gold {
+    min-width: 130px;
+  }
+  .on-toast {
+    top: calc(70px + env(safe-area-inset-top, 0px));
+    max-width: calc(100vw - 24px);
+  }
+  .on-ingame-chat {
+    left: 8px;
+  }
+}
+.on-tabs {
+  display: none;
+}
+@media (max-width: 760px), (max-height: 520px) {
+  .on-lobby {
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .on-tabs {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+  }
+  .on-tabs button {
+    flex: 1;
+    min-height: 44px;
+    font-weight: 600;
+  }
+  .on-tabs button[aria-selected='true'] {
+    background: var(--accent);
+    border-color: transparent;
+    color: #fff;
+  }
+  .on-lobby-grid[data-tab='players'] .on-settings,
+  .on-lobby-grid[data-tab='settings'] .on-players {
+    display: none;
+  }
+  .on-lobby-grid {
+    width: 100%;
+  }
+}
+.on-sw {
+  flex: none;
+}
+
+@keyframes hint-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
 }

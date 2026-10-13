@@ -11,6 +11,9 @@ export interface StatsInfo {
 }
 
 /** Sag ustte FPS / profiler paneli. */
+/** Dokunmatik cihazlarda istatistik paneli varsayilan kapali (ekrani kaplar); HUD dugmesiyle acilir. */
+export const STATS_DEFAULT_SHOWN = typeof matchMedia === 'undefined' || !matchMedia('(pointer: coarse)').matches;
+
 export class StatsPanel {
   private readonly el: HTMLElement;
   private readonly graph: HTMLCanvasElement;

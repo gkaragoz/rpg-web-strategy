@@ -13,7 +13,7 @@ import { comedy } from './render/comedy';
 import { POSE_STATES, UnitView, type TeamColors } from './render/unitView';
 import type { BattleConfig } from './sim/battle';
 import { KIND_OF_TROOP, LEGACY_COUNT, STATS, setUnitLevel } from './sim/units';
-import { StatsPanel } from './ui/stats';
+import { STATS_DEFAULT_SHOWN, StatsPanel } from './ui/stats';
 
 // Benchmark ve hata ayiklama parametreleri (stüdyoyu atlar):
 //   ?bench=10000&auto=30  -> takim basina birim, otomatik rapor
@@ -310,7 +310,7 @@ async function restartBattle(): Promise<void> {
   mode = 'studio';
   battle.exit();
   await battle.enter(battleOptions());
-  stats.setShown(true);
+  stats.setShown(STATS_DEFAULT_SHOWN);
   mode = 'battle';
 }
 
@@ -321,7 +321,7 @@ async function startBattle(): Promise<void> {
   studio.hide();
   editor.exit();
   await battle.enter(opts);
-  stats.setShown(true);
+  stats.setShown(STATS_DEFAULT_SHOWN);
   mode = 'battle';
 }
 
