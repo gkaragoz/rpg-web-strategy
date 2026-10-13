@@ -10,6 +10,7 @@ describe('roster birimli rastgele senaryolar', () => {
   for (let id = START; id < START + N; id++) {
     it(`senaryo ${id}`, () => {
       const sc = makeRosterScenario(id);
+      if (process.env.ROSTER_COMEDY === '1') sc.config = { ...sc.config, comedy: true };
       const r = runScenario(sc);
       expect(r.flags.map((f) => `${f.type} t=${f.t}: ${f.info}`), sc.desc).toEqual([]);
     });

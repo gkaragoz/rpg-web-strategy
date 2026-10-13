@@ -74,6 +74,7 @@ function publish(): void {
   s.moving.set(u.moving.subarray(0, n));
   s.alive.set(u.alive.subarray(0, n));
   s.status.set(u.status.subarray(0, n));
+  s.lift.set(u.lift.subarray(0, n));
 
   const p = battle.projectiles;
   let pn = 0;

@@ -29,6 +29,8 @@ export interface ViewState {
   phase?: number;
   /** Gorsel durum maskesi (ST_*): yavaslama, yanma, sersemleme... */
   status?: number;
+  /** Komedi fizigi: havadaki yukseklik (tile); 0 = yerde. */
+  lift?: number;
 }
 
 /** Durum maskesinden renk tonu (0xffffff: etkisiz). Oncelik: dokunulmaz > sersem > yanma > yavas > kalkan > korku > kiskirtma. */
@@ -78,6 +80,7 @@ export class UnitView {
   private readonly legL = new Graphics();
   private readonly legR = new Graphics();
   private readonly bar = new Graphics();
+  private readonly shadow: Graphics;
   private weapon: Container | null = null;
   private shield: Container | null = null;
   private orb: Graphics | null = null;
@@ -112,6 +115,7 @@ export class UnitView {
       .ellipse(0, 0, 15 * this.kScale, 7.5 * this.kScale)
       .fill({ color: 0x000000, alpha: 0.22 })
       .stroke({ width: 2 * Math.sqrt(this.kScale), color: colors.main, alpha: 0.95 });
+    this.shadow = shadow;
     this.root.addChild(shadow);
 
     this.inner.y = -16;
@@ -490,6 +494,12 @@ export class UnitView {
       const tripT = (time * 0.33 + this.seed * 0.137) % 1;
       if (Math.floor(time * 0.33 + this.seed * 0.137 + 7) % 53 === 0 && tripT < 0.25) lean += Math.sin((tripT / 0.25) * Math.PI) * 0.8;
     }
+    if (this.shadow) {
+      // Golge yerde kalir; birim havaya cikinca golge asagida kucuk gorunur.
+      const lf = s.lift ?? 0;
+      this.shadow.y = lf * 38;
+      this.shadow.scale.set(Math.max(0.5, 1 - lf * 0.12));
+    }
     this.torso.position.set(ox, 15 - bob);
     this.torso.rotation = lean;
     this.torso.scale.set(sx, sy);
@@ -510,7 +520,9 @@ export class UnitView {
       this.rig.y = k * 6;
     } else {
       this.root.alpha = 1;
-      this.rig.rotation = 0;
+      const lift = s.lift ?? 0;
+      // Havada kolu bacagi savrularak doner (komedi fizigi).
+      this.rig.rotation = lift > 0.04 ? (time * 13 + this.seed) * s.facing : 0;
       this.rig.y = 0;
     }
     this.rig.scale.y = this.base * squash * pop;

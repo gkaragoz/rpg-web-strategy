@@ -319,6 +319,16 @@ export class Units {
   sepY: Float32Array;
   /** Hedef menzilinde kesintisiz gecen sure (ilerleme bekcisi sifirlamasi icin). */
   rangeT: Float32Array;
+  /** Komedi fizigi: ucus suresi (kalan/toplam), baslangic-bitis noktasi, tepe yuksekligi, anlik yukseklik (tile), yeniden firlatma bagisikligi. */
+  airT: Float32Array;
+  airDur: Float32Array;
+  airX0: Float32Array;
+  airY0: Float32Array;
+  airX1: Float32Array;
+  airY1: Float32Array;
+  airH: Float32Array;
+  lift: Float32Array;
+  airImm: Float32Array;
 
   constructor(cap: number) {
     this.cap = cap;
@@ -395,6 +405,15 @@ export class Units {
     this.sepX = new Float32Array(cap);
     this.sepY = new Float32Array(cap);
     this.rangeT = new Float32Array(cap);
+    this.airT = new Float32Array(cap);
+    this.airDur = new Float32Array(cap);
+    this.airX0 = new Float32Array(cap);
+    this.airY0 = new Float32Array(cap);
+    this.airX1 = new Float32Array(cap);
+    this.airY1 = new Float32Array(cap);
+    this.airH = new Float32Array(cap);
+    this.lift = new Float32Array(cap);
+    this.airImm = new Float32Array(cap);
   }
 
   clear(): void {
@@ -451,6 +470,7 @@ export class Units {
     this.status[i] = 0;
     this.sepX[i] = this.sepY[i] = 0;
     this.rangeT[i] = 0;
+    this.airT[i] = this.airDur[i] = this.airH[i] = this.lift[i] = this.airImm[i] = 0;
     return i;
   }
 }

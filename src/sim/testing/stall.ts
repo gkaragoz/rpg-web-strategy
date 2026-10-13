@@ -136,7 +136,7 @@ export class StallDetector {
 
       // --- vuramayan: menzilde, hazir, ama saldirmiyor ---
       const tt = u.target[i];
-      if (tt >= 0 && u.alive[tt] && u.kiteState[i] !== 1 && u.stunT[i] <= 0 && u.fearT[i] <= 0 && u.swing[i] <= 0) {
+      if (tt >= 0 && u.alive[tt] && u.kiteState[i] !== 1 && u.stunT[i] <= 0 && u.fearT[i] <= 0 && u.airT[i] <= 0 && u.swing[i] <= 0) {
         const dx = u.x[tt] - u.x[i];
         const dy = u.y[tt] - u.y[i];
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -158,7 +158,7 @@ export class StallDetector {
         this.lastY[i] = u.y[i];
         const t = u.target[i];
         // holdT > 0: leash yuzunden kasitli bekleme (en fazla LEASH_HOLD_MAX sn), hata degil.
-        if (t >= 0 && u.alive[t] && u.kiteState[i] !== 1 && u.stunT[i] <= 0 && u.fearT[i] <= 0 && u.swing[i] <= 0 && u.holdT[i] <= 0) {
+        if (t >= 0 && u.alive[t] && u.kiteState[i] !== 1 && u.stunT[i] <= 0 && u.fearT[i] <= 0 && u.airT[i] <= 0 && u.swing[i] <= 0 && u.holdT[i] <= 0) {
           const dist = Math.hypot(u.x[t] - u.x[i], u.y[t] - u.y[i]);
           const s = STATS[u.kind[i]];
           const reach = isMelee(u.kind[i]) ? s.range + 0.6 : s.range;
@@ -171,7 +171,7 @@ export class StallDetector {
             const n = b.terrain!.size;
             const ri = this.region[(Math.floor(u.y[i]) * n + Math.floor(u.x[i])) | 0];
             const rt = this.region[(Math.floor(u.y[t]) * n + Math.floor(u.x[t])) | 0];
-            if (ri !== rt && ri !== -1 && rt !== -1 && dist > reach) this.flag('unreachable', i, `${this.describe(i)} hedefi farkli bolgede (${ri} -> ${rt})`, 60);
+            if (ri !== rt && ri !== -1 && rt !== -1 && dist > reach && u.airT[t] <= 0 && u.airImm[t] <= 0) this.flag('unreachable', i, `${this.describe(i)} hedefi farkli bolgede (${ri} -> ${rt})`, 60);
           }
         } else this.idleSec[i] = 0;
       }
@@ -218,7 +218,7 @@ export function checkInvariants(b: Battle): string[] {
       continue;
     }
     if (x < 0 || y < 0 || x > n || y > n) errs.push(`birim ${i} harita disinda (${x.toFixed(2)},${y.toFixed(2)})`);
-    if (t && !t.walkable(x, y)) errs.push(`birim ${i} (${STATS[u.kind[i]].name}) yurunemez karoda (${x.toFixed(2)},${y.toFixed(2)})`);
+    if (t && u.airT[i] <= 0 && !t.walkable(x, y)) errs.push(`birim ${i} (${STATS[u.kind[i]].name}) yurunemez karoda (${x.toFixed(2)},${y.toFixed(2)})`);
     if (u.attackers[i] > 60000) errs.push(`birim ${i} attackers sayaci ${u.attackers[i]} (tasma suphesi)`);
     if (u.hp[i] > u.maxHp[i] + 1e-3) errs.push(`birim ${i} can maxHp'yi asti`);
   }

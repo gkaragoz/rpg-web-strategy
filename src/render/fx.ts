@@ -271,7 +271,18 @@ export class FxSystem {
   /** Yetenek patlamasi/halkasi: unsura gore renkli halka ve parcaciklar (yaricap tile). */
   private burstFx(sx: number, sy: number, radius: number, element: number, high: boolean): void {
     if (element === 8) return; // whoosh: yalniz ses
-    const COLORS = [0xe9e1c8, 0xff8a2a, 0x9ae0ff, 0xffe27a, 0xb04fff, 0x7aff9a, 0x4fc3ff];
+    const COLORS = [0xe9e1c8, 0xff8a2a, 0x9ae0ff, 0xffe27a, 0xb04fff, 0x7aff9a, 0x4fc3ff, 0xffffff, 0xffffff, 0x5ab4ff];
+    if (element === 9) {
+      // Suya dusus: buyuk sicrama halkasi + damlalar.
+      this.spawn('ring', sx, sy - 4, 0, 0, 0.6, 0.3, 2.4 * this.big(), 0xbfe6ff, 0.95);
+      for (let i = 0; i < (high ? 9 : 4); i++) {
+        const a = Math.random() * Math.PI * 2;
+        this.spawn('puff', sx, sy - 8, Math.cos(a) * 55, -90 - Math.random() * 70, 0.7, 0.5, 0.2, 0xdff2ff, 0.9, { grav: 300 });
+      }
+      this.comic(sx, sy, ['SPLASH!', 'BLUB!', 'GLUB!'], 0x7fd0ff, 22);
+      this.camera.shake(2.5);
+      return;
+    }
     if (element === 7) {
       // Ragdoll yere carpti: konfeti toz bulutu + komik yazi.
       const cols = [0xff4fa0, 0x4fd0ff, 0xffe04a, 0x7aff7a, 0xb04fff];

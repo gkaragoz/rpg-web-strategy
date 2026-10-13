@@ -177,7 +177,8 @@ export class MassRenderer {
       const wx = u.px[i] + (u.x[i] - u.px[i]) * alpha;
       const wy = u.py[i] + (u.y[i] - u.py[i]) * alpha;
       let sx = isoX(wx, wy);
-      let sy = isoY(wx, wy, relief ? terr!.elevPx(wx, wy) : 0);
+      const lift = u.lift ? u.lift[i] : 0;
+      let sy = isoY(wx, wy, (relief ? terr!.elevPx(wx, wy) : 0) + lift * 38);
       // Hafif alcak gecirgen konum filtresi: sim-ici kucuk titresimler gorunmez (isinlanma: dogrudan).
       if (this.lastKey[i] >= 0 && dt > 0) {
         const jx = sx - this.fsx[i];
@@ -211,6 +212,7 @@ export class MassRenderer {
       let pose = 0;
       if (swing) pose = prog < 0.4 ? 3 : prog < 0.7 ? 4 : 0;
       else if (moving && calm > 0.25) pose = Math.sin(this.phase[i]) >= 0 ? 1 : 2;
+      if (lift > 0.04) pose = 4;
       p.texture = this.unitTex[(kind * MAX_TEAMS + u.team[i]) * POSES + pose];
       if (alive && comedy.visual) {
         // Komedi: yalpalayan yuruyus, yaylanan govde, vurusta squash-stretch, ara sira tokezleme.
@@ -234,6 +236,8 @@ export class MassRenderer {
         p.rotation = u.facing[i] * k * 1.2;
         p.scaleY = 1 - k * 0.2;
       }
+      // Havada (komedi fizigi): hizla doner.
+      if (alive && lift > 0.04) p.rotation = (time * 13 + i) * u.facing[i];
       // Derinlik anahtari histerezisi: kucuk degisimde sira ayni kalir (ust uste birimler titremez).
       let key = Math.min(this.counts.length - 2, Math.max(0, ((wx + wy) * DEPTH_SCALE) | 0));
       const lk = this.lastKey[i];
@@ -323,7 +327,7 @@ export class MassRenderer {
       const sx = isoX(wx, wy);
       const k = STATS[u.kind[i]].scale;
       const barW = 34 * Math.sqrt(k);
-      const sy = isoY(wx, wy, this.terrain && this.terrain.hasRelief ? this.terrain.elevPx(wx, wy) : 0) - 72 * k;
+      const sy = isoY(wx, wy, (this.terrain && this.terrain.hasRelief ? this.terrain.elevPx(wx, wy) : 0) + (u.lift ? u.lift[i] * 38 : 0)) - 72 * k;
       if (sx < view.left || sx > view.right || sy < view.top || sy > view.bottom) continue;
       const ratio = u.hp[i] / u.maxHp[i];
       let bg = this.barBg[n];

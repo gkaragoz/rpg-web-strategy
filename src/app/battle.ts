@@ -517,7 +517,7 @@ export class BattleScene {
       const wx = u.px[i] + (u.x[i] - u.px[i]) * alpha;
       const wy = u.py[i] + (u.y[i] - u.py[i]) * alpha;
       v.root.visible = true;
-      v.root.position.set(isoX(wx, wy), isoY(wx, wy, this.elev(wx, wy)));
+      v.root.position.set(isoX(wx, wy), isoY(wx, wy, this.elev(wx, wy) + (u.lift ? u.lift[i] * 38 : 0)));
       v.root.zIndex = wx + wy;
       const swingTotal = u.swing[i] > 0 ? STATS[u.kind[i]].swing : 0;
       v.update(
@@ -529,6 +529,7 @@ export class BattleScene {
           swingProgress: swingTotal > 0 ? 1 - u.swing[i] / swingTotal : -1,
           flash: u.flash[i] > 0,
           status: u.status[i],
+          lift: u.lift ? u.lift[i] : 0,
           deathT: alive ? -1 : u.deathT[i],
         },
         this.time,

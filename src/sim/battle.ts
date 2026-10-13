@@ -37,6 +37,8 @@ const ENGAGE_LOCK = 1.25;
 const MELEE_SLACK = 0.4;
 /** Tank hedefe yakin dovus menzili ek payi (tank itmesi yaricapi 1.8 > 1.4). */
 const TANK_REACH = 0.6;
+/** Komedi fizigi: en uzun firlatma mesafesi (tile). */
+const MAX_LAUNCH = 14;
 /** Ilerleme bekcisi: hedefe yaklasamayan birim bu sure sonra hedefi yasaklar. */
 const CHASE_TIMEOUT = 6;
 const BAN_TIME = 8;
@@ -164,6 +166,9 @@ export class Battle {
   private readonly nearestEnemy = new Int8Array(MAX_TEAMS).fill(-1);
   private readonly enemyList: number[][] = Array.from({ length: MAX_TEAMS }, () => []);
   private readonly teamCount: number;
+  /** Komedi fizigi acik mi (config.comedy). */
+  private readonly comedy: boolean;
+  private readonly allTeams: number[];
   /** Takim basina canli ve rahip olmayan birim sayisi (yalniz rahiplerden olusan takim kacmasin). */
   private readonly damagerCount: number[] = new Array(MAX_TEAMS).fill(0);
   private readonly selfList: number[][] = Array.from({ length: MAX_TEAMS }, (_, t) => [t]);
@@ -184,6 +189,8 @@ export class Battle {
     this.units = new Units(total);
     this.projectiles = new Projectiles(projectileCapacity(config));
     this.teamCount = Math.min(MAX_TEAMS, Math.max(2, config.teamCount ?? 2));
+    this.comedy = config.comedy === true;
+    this.allTeams = Array.from({ length: this.teamCount }, (_, t) => t);
     this.grids = Array.from({ length: this.teamCount }, () => new Grid(this.mapSize, GRID_CELL, total));
     this.sepGrid = new Grid(this.mapSize, SEP_CELL, total);
     this.reset(seed);
@@ -463,6 +470,13 @@ export class Battle {
     const kind = u.kind[i];
     const s = STATS[kind];
     const ranged = !isMelee(kind);
+    if (this.comedy) {
+      if (u.airImm[i] > 0) u.airImm[i] -= dt;
+      if (u.airT[i] > 0) {
+        this.flyStep(i, dt);
+        return;
+      }
+    }
     u.cooldown[i] -= dt * (u.slowT[i] > 0 || u.flags[i] !== 0 ? this.atkRate(i) : 1);
     u.retarget[i] -= dt;
     if (u.slowT[i] > 0) u.slowT[i] -= dt;
@@ -1001,8 +1015,12 @@ export class Battle {
       let ux = d > 0.01 ? dx / d : 1;
       let uy = d > 0.01 ? dy / d : 0;
       if (cone && d > 0.01 && (dx * fx + dy * fy) / d < TANK.coneCos) continue;
-      this.damage(j, power);
+      this.damage(j, power, i, true);
       if (!u.alive[j]) continue;
+      if (this.comedy && u.airT[j] <= 0) {
+        this.launch(j, cone ? fx : ux, cone ? fy : uy, push * 3.4 + 1.2);
+        continue;
+      }
       if (cone) {
         ux = fx;
         uy = fy;
@@ -1050,6 +1068,110 @@ export class Battle {
   private readonly pools = new Map<number, number[]>();
   private readonly scratch: number[] = [];
   private readonly scratch2: number[] = [];
+
+  // ===================================================================
+  // Komedi fizigi: firlatma, ucus, inis
+  // ===================================================================
+
+  /** j'yi (ux,uy) yonunde `dist` tile uzaga havadan firlatir (tepe yuksekligi mesafeyle artar). */
+  private launch(j: number, ux: number, uy: number, dist: number): void {
+    const u = this.units;
+    if (!this.comedy || !u.alive[j] || u.airT[j] > 0) return;
+    const heavy = STATS[u.kind[j]].scale > 1 ? 0.5 : 1;
+    const d = Math.min(MAX_LAUNCH, dist * heavy);
+    if (d < 1) return;
+    const lim = this.mapSize - 0.5;
+    const len = Math.hypot(ux, uy) || 1;
+    // Hafif sapma: her firlayis farkli gorunur (deterministik rng).
+    const a = Math.atan2(uy, ux) + (this.rng() - 0.5) * 0.7;
+    u.airX0[j] = u.x[j];
+    u.airY0[j] = u.y[j];
+    u.airX1[j] = Math.min(lim, Math.max(0.5, u.x[j] + Math.cos(a) * d * (len > 0 ? 1 : 0)));
+    u.airY1[j] = Math.min(lim, Math.max(0.5, u.y[j] + Math.sin(a) * d));
+    u.airDur[j] = 0.42 + d * 0.06;
+    u.airT[j] = u.airDur[j];
+    u.airH[j] = 1.1 + d * 0.2;
+    u.swing[j] = 0;
+    u.hitPending[j] = 0;
+    u.kbVx[j] = u.kbVy[j] = 0;
+    u.stunT[j] = 0;
+    u.sepX[j] = u.sepY[j] = 0;
+    this.paths.delete(j);
+    if (this.emitEvents) this.pushEvent({ type: 'burst', x: u.x[j], y: u.y[j], unit: -1, value: 0.8, element: 8 });
+  }
+
+  /** Ucus adimi: dogrusal ilerleme + parabolik yukseklik; inince land(). */
+  private flyStep(i: number, dt: number): void {
+    const u = this.units;
+    u.airT[i] -= dt;
+    const k = Math.min(1, Math.max(0, 1 - u.airT[i] / u.airDur[i]));
+    u.x[i] = u.airX0[i] + (u.airX1[i] - u.airX0[i]) * k;
+    u.y[i] = u.airY0[i] + (u.airY1[i] - u.airY0[i]) * k;
+    u.lift[i] = 4 * u.airH[i] * k * (1 - k);
+    u.moving[i] = 1;
+    u.swing[i] = 0;
+    u.hitPending[i] = 0;
+    if (u.airT[i] <= 0) this.land(i);
+  }
+
+  /** Inis: su -> bogulur; engel/ucurum -> en yakin yurunebilir noktaya; sonra yerde yatma + ezilme. */
+  private land(i: number): void {
+    const u = this.units;
+    u.airT[i] = 0;
+    u.lift[i] = 0;
+    u.x[i] = Math.fround(u.airX1[i]);
+    u.y[i] = Math.fround(u.airY1[i]);
+    const t = this.terrain;
+    if (t) {
+      const f = t.flags[((u.y[i] | 0) * t.size + (u.x[i] | 0)) | 0];
+      if (f === T_WATER) {
+        if (this.emitEvents) this.pushEvent({ type: 'burst', x: u.x[i], y: u.y[i], unit: -1, value: 1.8, element: 9 });
+        this.killUnit(i);
+        return;
+      }
+      if (!t.walkable(u.x[i], u.y[i]) || !t.reachable(u.x[i], u.y[i])) {
+        const p = t.nearestWalkable(u.x[i], u.y[i], 12, true);
+        if (!p) {
+          this.killUnit(i);
+          return;
+        }
+        u.x[i] = Math.fround(p.x);
+        u.y[i] = Math.fround(p.y);
+      }
+    }
+    u.px[i] = u.x[i];
+    u.py[i] = u.y[i];
+    u.winX[i] = u.x[i];
+    u.winY[i] = u.y[i];
+    u.winT[i] = 0;
+    u.stunT[i] = 0.9 + this.rng() * 0.6;
+    u.airImm[i] = 2.4;
+    u.target[i] = -1;
+    u.retarget[i] = 0.6;
+    // Ezilme: inen birimin altinda kalan komsulara kucuk hasar.
+    const out = this.scratch2;
+    this.gather(this.allTeams, u.x[i], u.y[i], 0.8, out, 12);
+    const crush = Math.max(2, u.maxHp[i] * 0.03);
+    for (let k = 0; k < out.length; k++) {
+      const j = out[k];
+      if (j !== i && u.airT[j] <= 0) this.damage(j, crush, i, false, true);
+    }
+    if (this.emitEvents) this.pushEvent({ type: 'burst', x: u.x[i], y: u.y[i], unit: -1, value: 1.2, element: 0 });
+  }
+
+  /** Vurustan sonra: hasar canin buyuk bir kismiysa birimi havaya atar (komedi fizigi). */
+  private comedyHit(j: number, src: number, amount: number, melee: boolean): void {
+    const u = this.units;
+    if (u.airImm[j] > 0 || u.airT[j] > 0 || !u.alive[j]) return;
+    const ratio = amount / Math.max(1, u.maxHp[j]);
+    const srcMul = (isTank(u.kind[src]) ? 2.2 : 1) * (melee ? 1 : 0.4);
+    const dist = (ratio * 34 + 0.4) * srcMul * (0.8 + this.rng() * 0.4);
+    if (dist < 2.6) return;
+    const dx = u.x[j] - u.x[src];
+    const dy = u.y[j] - u.y[src];
+    const l = Math.hypot(dx, dy);
+    this.launch(j, l > 0.01 ? dx / l : 1, l > 0.01 ? dy / l : 0, dist);
+  }
 
   /** Gorsel durum maskesini yazar (renderer renklendirir). */
   private updateStatus(): void {
@@ -1219,6 +1341,10 @@ export class Battle {
   private pushUnit(j: number, ux: number, uy: number, amount: number): void {
     const u = this.units;
     if (!u.alive[j]) return;
+    if (this.comedy) {
+      this.launch(j, ux, uy, amount * 3.2 + 1);
+      return;
+    }
     const a = isTank(u.kind[j]) ? amount * 0.5 : amount;
     u.kbVx[j] = ux * a * 9;
     u.kbVy[j] = uy * a * 9;
@@ -1696,6 +1822,7 @@ export class Battle {
     u.hp[j] -= amount;
     const skill = STATS[u.kind[j]].skill;
     if (skill === 'thorns' && melee && src >= 0 && u.alive[src]) this.damage(src, amount * this.sp('thorns').a, -1, false, true);
+    if (this.comedy && !quiet && src >= 0 && src !== j && u.hp[j] > 0) this.comedyHit(j, src, amount, melee);
     if (!quiet && this.links.size > 0) {
       const lk = this.links.get(j);
       if (lk) for (const e of lk) if (u.alive[e]) this.damage(e, amount * this.sp('destinyBond').a, -1, false, true);
@@ -2086,6 +2213,7 @@ export class Battle {
     const sy = u.sepY;
     for (let i = 0; i < u.count; i++) {
       if (!u.alive[i]) continue;
+      if (u.airT[i] > 0) continue;
       if (i % SEP_STRIDE === phase) {
         const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / grid.cell) | 0));
         const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / grid.cell) | 0));
@@ -2098,7 +2226,7 @@ export class Battle {
             const c = gy * cols + gx;
             for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
               const j = grid.items[k];
-              if (j <= i || !u.alive[j]) continue;
+              if (j <= i || !u.alive[j] || u.airT[j] > 0) continue;
               const dx = xi - u.x[j];
               const dy = yi - u.y[j];
               const d2 = dx * dx + dy * dy;

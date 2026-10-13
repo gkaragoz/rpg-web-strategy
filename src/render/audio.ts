@@ -89,9 +89,9 @@ export class AudioSystem {
       if (t === 'shot') return 'boing';
       if (t === 'death') return 'wail';
       if (t === 'bash' || t === 'slam') return 'bonk';
-      if (t === 'burst' && element === 7) return 'splat';
-      if (t === 'burst' && element === 8) return 'whoosh';
     }
+    if (t === 'burst' && (element === 7 || element === 8)) return comedy.visual ? (element === 7 ? 'splat' : 'whoosh') : null;
+    if (t === 'burst' && element === 9) return 'splat';
     switch (t) {
       case 'hit':
         return 'hit';
