@@ -1,5 +1,6 @@
 import { DEFAULT_MAP, type LayoutType, type MapSpec, type ReliefType, type RiverType } from './mapSpec';
 import { mulberry32 } from './random';
+import { COVER_SAMPLE, COVER_STEPS, PATH_SLOPE_COST, PATH_SMOOTH_MAX_GRADE } from './data/combat';
 
 export const T_GRASS = 0;
 export const T_WATER = 1;
@@ -9,7 +10,7 @@ export const T_PATH = 4;
 
 /** On-screen height of one elevation step (pixels). */
 export const LEVEL_PX = 22;
-export const MAX_LEVEL_H = 4;
+export const MAX_LEVEL_H = 8;
 /** Tile height units: 16 units per step; a neighbor difference >= CLIFF_UNITS makes a cliff. */
 export const H_UNITS = 16;
 export const CLIFF_UNITS = 24;
@@ -88,6 +89,8 @@ export class Terrain {
   height: Uint8Array;
   vh: Float32Array;
   hasRelief = false;
+  /** Highest tile (elevation steps); 0 on flat maps. */
+  maxH = 0;
   readonly cliffTiles: number[] = [];
   readonly spec: MapSpec;
   /** Effective river and relief type for the layout (citadel/crossroads have no river, archipelago has islands). */
@@ -183,6 +186,41 @@ export class Terrain {
     const h01 = this.vh[i + w];
     const h11 = this.vh[i + w + 1];
     return h00 + (h10 - h00) * fx + (h01 - h00) * fy + (h00 - h10 - h01 + h11) * fx * fy;
+  }
+
+  /**
+   * Is a direct shot from (x0,y0) to (x1,y1) blocked by terrain: the ground between the two points rises at least
+   * COVER_STEPS above both of them (a ridge or mountain in the way). Flat or low maps never block.
+   */
+  blocksFire(x0: number, y0: number, x1: number, y1: number): boolean {
+    if (this.maxH < COVER_STEPS) return false;
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 2 * COVER_SAMPLE) return false;
+    const ref = Math.max(this.heightAt(x0, y0), this.heightAt(x1, y1)) + COVER_STEPS;
+    const steps = Math.floor(len / COVER_SAMPLE);
+    for (let i = 1; i < steps; i++) {
+      const f = i / steps;
+      if (this.heightAt(x0 + dx * f, y0 + dy * f) >= ref) return true;
+    }
+    return false;
+  }
+
+  /** Steepest uphill grade (elevation steps per tile) along the straight line, sampled every 0.5 tiles. */
+  lineGrade(x0: number, y0: number, x1: number, y1: number): number {
+    if (!this.hasRelief) return 0;
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    const steps = Math.max(1, Math.ceil(len / 0.5));
+    let prev = this.heightAt(x0, y0);
+    let best = 0;
+    for (let i = 1; i <= steps; i++) {
+      const h = this.heightAt(x0 + ((x1 - x0) * i) / steps, y0 + ((y1 - y0) * i) / steps);
+      const g = (h - prev) / (len / steps);
+      if (g > best) best = g;
+      prev = h;
+    }
+    return best;
   }
 
   /** On-screen height at point (x,y) (pixels). */
@@ -380,7 +418,8 @@ export class Terrain {
           if (!this.walkable(nx + 0.5, ny + 0.5)) continue;
           if (dx && dy && !(this.walkable(cx + dx + 0.5, cy + 0.5) && this.walkable(cx + 0.5, cy + dy + 0.5))) continue;
           const idx = ny * n + nx;
-          const ng = G[cur] + (dx && dy ? 1.414 : 1);
+          const climb = this.hasRelief ? Math.max(0, this.height[idx] - this.height[cur]) / H_UNITS : 0;
+          const ng = G[cur] + (dx && dy ? 1.414 : 1) * (1 + PATH_SLOPE_COST * climb);
           if (S[idx] === gen && ng >= G[idx]) continue;
           S[idx] = gen;
           G[idx] = ng;
@@ -403,7 +442,7 @@ export class Terrain {
     let i = 0;
     while (i < pts.length / 2) {
       let j = pts.length / 2 - 1;
-      while (j > i && !this.lineWalkable(ax, ay, pts[j * 2], pts[j * 2 + 1])) j--;
+      while (j > i && !(this.lineWalkable(ax, ay, pts[j * 2], pts[j * 2 + 1]) && this.lineGrade(ax, ay, pts[j * 2], pts[j * 2 + 1]) <= PATH_SMOOTH_MAX_GRADE)) j--;
       out.push(pts[j * 2], pts[j * 2 + 1]);
       ax = pts[j * 2];
       ay = pts[j * 2 + 1];
@@ -727,16 +766,16 @@ export class Terrain {
         const dist = Math.hypot(x - c, y - c);
         let H = 0;
         if (rl === 'hills') {
-          H = 7 * amp * (0.65 * noise(x / 13, y / 13, seed) + 0.35 * noise(x / 6, y / 6, seed + 5) - 0.36);
+          H = 15 * amp * (0.65 * noise(x / 13, y / 13, seed) + 0.35 * noise(x / 6, y / 6, seed + 5) - 0.36);
         } else if (rl === 'valley') {
           // Two high ridges parallel to the middle axis; only one pass (gate) is open near s ~ 0.
           const R = n * 0.17;
           const hw = n * 0.05 * (1 - 0.97 * Math.exp(-((s / (n * 0.075)) ** 2)));
-          H = 4.4 * smooth(0, 1, (hw - Math.abs(ad - R)) / 0.9 + 0.5) + 0.35 * noise(x / 6, y / 6, seed + 4);
+          H = 7 * smooth(0, 1, (hw - Math.abs(ad - R)) / 0.9 + 0.5) + 0.5 * noise(x / 6, y / 6, seed + 4);
         } else if (rl === 'ridge') {
           const R = n * 0.2;
           const pass = 0.5 + 0.5 * Math.cos((s * Math.PI * 2) / (n * 0.5));
-          H = 4.2 * Math.exp(-(((ad - R) / (n * 0.055)) ** 2)) * (0.25 + 0.75 * smooth(0.25, 0.8, pass)) + 0.7 * noise(x / 7, y / 7, seed + 3);
+          H = 7.4 * Math.exp(-(((ad - R) / (n * 0.07)) ** 2)) * (0.25 + 0.75 * smooth(0.25, 0.8, pass)) + 1 * noise(x / 7, y / 7, seed + 3);
         } else if (rl === 'plateau') {
           const r = n * 0.21;
           const ang = Math.atan2(y - c, x - c);
@@ -744,10 +783,10 @@ export class Terrain {
           const w = 0.9 + 6 * ramp;
           // In the citadel layout the plateau top is perfectly flat (the castle is built there).
           const top = this.layout === 'citadel' && dist < r * 0.85 ? 0 : 0.3;
-          H = 3.4 * smooth(0, 1, (r - dist) / w + 0.5) + top * noise(x / 5, y / 5, seed + 2);
+          H = 5.6 * smooth(0, 1, (r - dist) / w + 0.5) + top * noise(x / 5, y / 5, seed + 2);
         } else {
-          const R = n * 0.26;
-          H = 5.4 * Math.pow(Math.max(0, 1 - dist / R), 1.15) + 1.1 * Math.abs(noise(x / 4.5, y / 4.5, seed + 9) - 0.5) * 2 * smooth(0, 5, R - dist);
+          const R = n * 0.23;
+          H = 8.2 * Math.pow(Math.max(0, 1 - dist / R), 1.0) + 1.6 * Math.abs(noise(x / 4.5, y / 4.5, seed + 9) - 0.5) * 2 * smooth(0, 5, R - dist);
         }
         if (!radial) H *= smooth(1.5, 5, ad); // river/middle axis valley
         if (hasRiver && !radial) H *= smooth(2.5, 6, this.riverEdgeDist(x, y));
@@ -799,6 +838,9 @@ export class Terrain {
     let any = false;
     for (let i = 0; i < this.height.length; i++) if (this.height[i] > 0) any = true;
     this.hasRelief = any;
+    let mh = 0;
+    for (let i = 0; i < this.height.length; i++) if (this.height[i] > mh) mh = this.height[i];
+    this.maxH = mh / H_UNITS;
     if (!any) return;
     const w = n + 1;
     for (let vy = 0; vy <= n; vy++) {

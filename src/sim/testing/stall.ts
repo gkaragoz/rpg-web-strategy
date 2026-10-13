@@ -142,8 +142,9 @@ export class StallDetector {
         const dist = Math.sqrt(dx * dx + dy * dy);
         const s = STATS[u.kind[i]];
         const reach = isMelee(u.kind[i]) ? s.range : s.range * 0.95;
+        const canShoot = isMelee(u.kind[i]) || b.canShoot(i, tt, dist);
         const hurtOk = u.kind[i] !== Kind.Priest || u.hp[tt] < u.maxHp[tt];
-        if (dist <= reach && u.cooldown[i] <= 0 && hurtOk) {
+        if (dist <= reach && canShoot && u.cooldown[i] <= 0 && hurtOk) {
           if (++this.cantHit[i] >= 60) this.flag('cannotHit', i, `${this.describe(i)} in range and ready but has not attacked for 2 s (distance ${dist.toFixed(2)})`);
         } else this.cantHit[i] = 0;
       } else this.cantHit[i] = 0;

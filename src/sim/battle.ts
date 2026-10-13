@@ -4,6 +4,7 @@ import type { MapSpec } from './mapSpec';
 import { PROJ_TAG, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides } from './units';
 import { PF_PIERCE, PF_SKILL, Projectiles } from './projectiles';
 import { SKILL_ELEMENT, skillParams, type SkillParams } from './data/skills';
+import { highGroundDamage, highGroundRange, slopeSpeed } from './data/combat';
 import type { SkillId } from './data/troops';
 import { Mulberry } from './random';
 import { copyTyped, fnv, pasteTyped, type BattleSnapshot, type Typed } from './snapshot';
@@ -560,7 +561,9 @@ export class Battle {
     // A big (tank) target has a wider body: melee fighters can hit it from this much farther away.
     const tr = isTank(u.kind[t]) && !isTank(kind) ? TANK_REACH : 0;
 
-    if (dist <= (isMelee(kind) ? s.range + MELEE_SLACK + tr : s.range * 0.95)) {
+    // Ranged attackers: height advantage extends the range, and a ridge in the way blocks direct fire (they must move).
+    const inRange = isMelee(kind) ? dist <= s.range + MELEE_SLACK + tr : this.canShoot(i, t, dist);
+    if (inRange) {
       // Entering range does not count instantly: a unit jittering at the range edge in a crowd cannot reset the counter.
       u.rangeT[i] += dt;
       if (u.rangeT[i] > 0.5) {
@@ -589,7 +592,7 @@ export class Battle {
         this.moveToward(i, gx, gy, s.speed, dt);
         return;
       }
-    } else if (dist > s.range * 0.95) {
+    } else if (!inRange) {
       if (isHealer(kind) && this.kiteOn) {
         // Approach the patient from behind: stay away from the enemy.
         const en = this.nearestEnemy[u.team[i]];
@@ -613,6 +616,21 @@ export class Battle {
 
     this.faceTo(i, dx, dy);
     if (u.cooldown[i] <= 0) this.startAttack(i);
+  }
+
+  /**
+   * Can unit i (not melee) hit target t from this distance: height advantage extends the range of ranged attackers
+   * (disadvantage shortens it), and a ridge in the way blocks direct fire (arrows, bolts), but not lobbed or magic shots.
+   */
+  canShoot(i: number, t: number, dist: number): boolean {
+    const u = this.units;
+    const s = STATS[u.kind[i]];
+    const tr = this.terrain;
+    if (!tr || !tr.hasRelief || !isRanged(u.kind[i])) return dist <= s.range * 0.95;
+    const reach = (s.range + highGroundRange(tr.heightAt(u.x[i], u.y[i]) - tr.heightAt(u.x[t], u.y[t]))) * 0.95;
+    if (dist > reach) return false;
+    if (s.magical || s.splash >= 3 || s.skill === 'ship') return true;
+    return !tr.blocksFire(u.x[i], u.y[i], u.x[t], u.y[t]);
   }
 
   /** Melee threat scan: 3x3 cells on the coarse grid, staggered per unit. */
@@ -1904,6 +1922,7 @@ export class Battle {
     // If no one has died for a long time, damage ramps up gradually: a heal stalemate cannot lock the battle.
     const stale = this.time - this.lastDeathTime - STALE_AFTER;
     if (stale > 0) amount *= 1 + stale * STALE_RAMP;
+    if (src >= 0 && src !== j && this.terrain && this.terrain.hasRelief) amount *= highGroundDamage(this.terrain.heightAt(u.x[src], u.y[src]) - this.terrain.heightAt(u.x[j], u.y[j]), melee);
     amount *= 1 - STATS[u.kind[j]].armor;
     if (u.shieldT[j] > 0) amount *= u.shieldK[j];
     const dealt = Math.min(amount, Math.max(0, u.hp[j]));
@@ -2021,10 +2040,10 @@ export class Battle {
     let step = Math.min(eff * dt, d);
     const ox = u.x[i];
     const oy = u.y[i];
-    // Uphill: slows down with the slope (at most 35%); downhill has no effect.
+    // Slopes: uphill slows down with the steepness of the climb, downhill is slightly faster (see slopeSpeed).
     if (t && t.hasRelief) {
-      const dh = t.heightAt(ox + ux * 0.45, oy + uy * 0.45) - t.heightAt(ox, oy);
-      if (dh > 0.04) step *= 1 - Math.min(0.35, dh * 0.6);
+      const grade = (t.heightAt(ox + ux * 0.45, oy + uy * 0.45) - t.heightAt(ox, oy)) / 0.45;
+      step *= slopeSpeed(grade, STATS[u.kind[i]].scale > 1.5);
     }
     // Positions are stored as Float32: the walkability test must use the rounded value.
     const lim = this.mapSize - 0.5;
