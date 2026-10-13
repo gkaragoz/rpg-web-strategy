@@ -90,6 +90,8 @@ try {
   if (-not (Test-Path (Join-Path $app 'index.html'))) { Die 'Paket beklenen icerikte degil.' }
   $srv = Join-Path $app 'server.mjs'
   if (Test-Path $srv) { Move-Item -Force $srv (Join-Path $Dir 'server.mjs') }
+  $lanf = Join-Path $app 'lan.mjs'
+  if (Test-Path $lanf) { Move-Item -Force $lanf (Join-Path $Dir 'lan.mjs') }
   Set-Content -Path $verFile -Value $Version -NoNewline
   Ok 'Dosyalar acildi'
 } finally { Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue }
@@ -97,7 +99,9 @@ try {
 # --- Baslatici ve kisayol ---
 $bat = Join-Path $Dir 'oyna.bat'
 Set-Content -Path $bat -Encoding ASCII -Value "@echo off`r`ncd /d `"%~dp0`"`r`nnode server.mjs app --open`r`n"
-Ok "Baslatici: $bat"
+$batLan = Join-Path $Dir 'oyna-lan.bat'
+Set-Content -Path $batLan -Encoding ASCII -Value "@echo off`r`ncd /d `"%~dp0`"`r`nnode server.mjs app --open --lan`r`n"
+Ok "Baslatici: $bat (LAN lobisi icin: $batLan)"
 try {
   $desk = [Environment]::GetFolderPath('Desktop')
   $sh = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desk 'RPG Web.lnk'))

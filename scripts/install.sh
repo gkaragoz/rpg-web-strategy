@@ -121,13 +121,16 @@ mkdir -p "$DIR/app"
 unzip -q -o "$TMP/$ASSET" -d "$DIR/app"
 [ -f "$DIR/app/index.html" ] || die "Paket beklenen icerikte degil."
 if [ -f "$DIR/app/server.mjs" ]; then mv -f "$DIR/app/server.mjs" "$DIR/server.mjs"; fi
+if [ -f "$DIR/app/lan.mjs" ]; then mv -f "$DIR/app/lan.mjs" "$DIR/lan.mjs"; fi
 echo "$VERSION" > "$DIR/VERSION"
 ok "Dosyalar acildi"
 
 # --- Baslatici ---
 printf '#!/usr/bin/env bash\ncd "$(dirname "$0")"\nexec node server.mjs app --open\n' > "$DIR/oyna.sh"
 chmod +x "$DIR/oyna.sh"
-ok "Baslatici: $DIR/oyna.sh"
+printf '#!/usr/bin/env bash\ncd "$(dirname "$0")"\nexec node server.mjs app --open --lan\n' > "$DIR/oyna-lan.sh"
+chmod +x "$DIR/oyna-lan.sh"
+ok "Baslatici: $DIR/oyna.sh (LAN lobisi icin: $DIR/oyna-lan.sh)"
 
 if [ "$PLATFORM" = "macOS" ]; then
   if [ -d "$HOME/Desktop" ]; then

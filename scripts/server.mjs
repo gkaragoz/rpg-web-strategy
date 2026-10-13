@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 // Bagimliliksiz statik sunucu: COOP/COEP basliklariyla (SharedArrayBuffer / worker sim icin) bir dizini sunar.
-// Kullanim: node server.mjs [dizin] [--port 5174] [--open]
+// Kullanim: node server.mjs [dizin] [--port 5174] [--open] [--lan]
+//   --lan: agdaki baska cihazlar baglanabilsin (0.0.0.0) ve LAN adresleri yazdirilsin; /ws yolu LAN lobi odalarini yonlendirir.
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { networkInterfaces } from 'node:os';
+import { attachLan } from './lan.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
@@ -71,6 +74,16 @@ const server = createServer(async (req, res) => {
   }
 });
 
+attachLan(server);
+
+function lanAddresses() {
+  const out = [];
+  for (const list of Object.values(networkInterfaces())) {
+    for (const n of list ?? []) if (n.family === 'IPv4' && !n.internal) out.push(n.address);
+  }
+  return out;
+}
+
 function openBrowser(url) {
   const cmd = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
   try {
@@ -90,9 +103,12 @@ function listen() {
       process.exit(1);
     }
   });
-  server.listen(port, '127.0.0.1', () => {
+  const lan = flag('--lan');
+  server.listen(port, lan ? '0.0.0.0' : '127.0.0.1', () => {
     const url = `http://localhost:${port}/`;
-    console.log(`\n  RPG Web - Savas Studyosu\n  ${url}\n  (kapatmak icin Ctrl+C)\n`);
+    console.log(`\n  RPG Web - Savas Studyosu\n  ${url}`);
+    if (lan) for (const ip of lanAddresses()) console.log(`  Ag (LAN) adresi: http://${ip}:${port}/   <- arkadaslarin bunu acsin`);
+    console.log('  (kapatmak icin Ctrl+C)\n');
     if (flag('--open')) openBrowser(url);
   });
 }

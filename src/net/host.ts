@@ -47,6 +47,8 @@ export const MAX_UNITS_PER_PLAYER = 1500;
 const MAX_PLAYER_NAME_TRIES = 20;
 
 export interface HostDeps {
+  /** Onceden belirlenmis lobi kodu (LAN odasi / PeerJS kimligi); yoksa uretilir. */
+  code?: string;
   now?: () => number;
   rnd?: () => number;
 }
@@ -101,7 +103,7 @@ export class HostLobby {
     this.now = deps.now ?? (() => Date.now());
     this.rnd = deps.rnd ?? Math.random;
     this.hostId = tp.id;
-    this.code = makeCode(this.rnd);
+    this.code = deps.code ?? makeCode(this.rnd);
     this.slots.set(this.hostId, { token: 'host', disconnectedAt: 0, lastPresence: 0, chatTimes: [] });
     this.players.push(this.newPlayer(this.hostId, hostName, hostColor, 'player'));
     this.reteam();
