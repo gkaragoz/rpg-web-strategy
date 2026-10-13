@@ -4,6 +4,8 @@ import { HostLobby } from '../../net/host';
 import { GuestSession, HostSession, type Session } from '../../net/client';
 import { LockstepSim } from '../../net/lockstepSim';
 import { battleConfig, makeCode, type GameInit, type ServerMsg } from '../../net/protocol';
+import { PeerGuestTransport, PeerHostTransport } from '../../net/peerTransport';
+import type { Transport } from '../../net/transport';
 import { NetError, WsGuestTransport, WsHostTransport, lanUrl } from '../../net/wsTransport';
 import type { Atlas } from '../../render/atlas';
 import type { TeamColors } from '../../render/unitView';
@@ -18,6 +20,8 @@ import { Placement } from './placement';
 import { LobbyScreen, MenuScreen } from './screens';
 
 const PROFILE_KEY = 'rpgweb.online.profile';
+/** Internet lobilerinin paylasilan baglanti adresi (Pages). */
+const PAGES_URL = 'https://gkaragoz.github.io/rpg-web-strategy/';
 
 export interface OnlineEnv {
   app: Application;
@@ -68,6 +72,7 @@ export class OnlineApp {
   private biome: MapSpec['biome'] = 'forest';
   private inBattle = false;
   private sim: LockstepSim | null = null;
+  private kind: 'lan' | 'net' = 'lan';
   private dead = false;
   private busy = false;
   private transition: Promise<void> = Promise.resolve();
@@ -95,7 +100,7 @@ export class OnlineApp {
         onJoin: (n, c, code2, pass, spec) => void this.join(n, c, code2, pass, spec),
         onClose: () => this.exit(),
       },
-      false,
+      true,
     );
   }
 
@@ -105,29 +110,35 @@ export class OnlineApp {
     this.busy = false;
   }
 
-  private async host(name: string, color: number, _tp: 'lan' | 'net'): Promise<void> {
+  private async host(name: string, color: number, kind: 'lan' | 'net'): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     this.menu?.setBusy(true);
     this.menu?.setError('');
     saveProfile(name, color);
     try {
-      let tp: WsHostTransport | null = null;
+      let tp: Transport | null = null;
       let code = '';
       for (let i = 0; i < 6 && !tp; i++) {
         code = makeCode();
         try {
-          tp = await WsHostTransport.create(lanUrl(code, 'host'));
+          tp = kind === 'net' ? await PeerHostTransport.create(code) : await WsHostTransport.create(lanUrl(code, 'host'));
         } catch (e) {
           if (!(e instanceof NetError) || e.code !== 'taken') throw e;
         }
       }
       if (!tp) return this.fail('Lobi kodu üretilemedi, tekrar dene.');
       const lobby = new HostLobby(tp, name, color, { code });
-      tp.onPeerJoin = () => {};
+      this.kind = kind;
       this.attach(new HostSession(lobby));
     } catch (e) {
-      this.fail(e instanceof NetError && e.code === 'failed' ? 'LAN sunucusuna bağlanılamadı. Oyunu "--lan" ile başlat (oyna-lan) ve o adresi aç.' : `Bağlantı hatası: ${(e as Error).message}`);
+      this.fail(
+        e instanceof NetError && e.code === 'failed'
+          ? kind === 'net'
+            ? 'İnternet bağlantısı kurulamadı (sinyal sunucusuna ulaşılamıyor). LAN dene ya da ağını kontrol et.'
+            : 'LAN sunucusuna bağlanılamadı. Oyunu "--lan" ile başlat (oyna-lan) ve o adresi aç.'
+          : `Bağlantı hatası: ${(e as Error).message}`,
+      );
     }
   }
 
@@ -138,7 +149,17 @@ export class OnlineApp {
     this.menu?.setError('');
     saveProfile(name, color);
     try {
-      const tp = await WsGuestTransport.create(lanUrl(code, 'guest'));
+      // Once LAN sunucusu (ayni adres), olmazsa internet (PeerJS).
+      let tp: Transport;
+      let kind: 'lan' | 'net' = 'lan';
+      try {
+        tp = await WsGuestTransport.create(lanUrl(code, 'guest'));
+      } catch (e) {
+        if (e instanceof NetError && (e.code === 'full' || e.code === 'taken')) throw e;
+        kind = 'net';
+        tp = await PeerGuestTransport.create(code);
+      }
+      this.kind = kind;
       const s = new GuestSession(tp, { name, color, pass: pass || undefined, spectator });
       const ok = await new Promise<string | null>((resolve) => {
         const timer = setTimeout(() => resolve('Lobi yanıt vermedi.'), 8000);
@@ -225,7 +246,7 @@ export class OnlineApp {
       this.cursors?.setView(null);
       this.env.setIconColors(null);
       this.env.setComedyVisual(null);
-      this.lobby = new LobbyScreen(this.root, this.session, { onLeave: () => this.exit(), link: (c) => `${location.origin}${location.pathname}#join=${c}` });
+      this.lobby = new LobbyScreen(this.root, this.session, { onLeave: () => this.exit(), link: (c) => `${this.kind === 'net' ? PAGES_URL : location.origin + location.pathname}#join=${c}` });
     } else if (want === 'placing') {
       await this.startPlacing(st.init!);
     } else {
