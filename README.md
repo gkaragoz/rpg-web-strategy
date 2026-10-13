@@ -92,7 +92,7 @@ Stüdyodaki **Çevrimiçi** düğmesi: ad + renk seç, sonra **Lobi kur**, **Kod
   Birim galerisi gibi bir panel açıksa imleç etiketi `Ad (Birim seçiyor)` olur. `Enter` ile oyun içi sohbet.
 - **Seyirci** oyun ortasında girebilir; kopan oyuncu sayfayı yenileyip menüdeki **Yeniden bağlan** ile (≈1 dk içinde) aynı takıma döner.
 
-**İnternet (varsayılan):** WebRTC (PeerJS genel sinyal sunucusu). GitHub Pages sayfasından lobi kur, **Linki kopyala** ile `#join=KOD` bağlantısını paylaş.
+**İnternet (varsayılan):** bir **WebSocket rölesi** üzerinden (`relay/`, ücretsiz Cloudflare Worker + Durable Object): iki cihaz farklı ağlarda/NAT arkasında olsa da bağlanır, TURN gerekmez. Röleye ulaşılamazsa doğrudan **WebRTC** (PeerJS) denenir. Lobide hangi yolun kullanıldığı kodun yanında yazar. Rölenin kendi adresini kullanmak için `relay/` içinde `npx wrangler deploy` çalıştırıp çıkan adresi `src/app/online/online.ts` içindeki `RELAY_URL`'e yaz.
 Host oyunu yönetir; oyun mantığı herkeste aynı deterministik simülasyonla koşar, ağdan yalnız komutlar geçer (sapma olursa kontrol toplamı yakalar, host durum görüntüsü yollar).
 **LAN:** kurulum sihirbazının `oyna-lan` başlatıcısı (ya da `node server.mjs app --open --lan`; geliştirmede `npm run dev` zaten `/ws` sunar) host'un bilgisayarında sunucuyu
 LAN'a açar; arkadaşlar yazdırılan `http://<host-ip>:5174` adresini açıp koda katılır. Menüde bağlantı türünü *LAN* seç.

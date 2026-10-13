@@ -28,7 +28,7 @@ export function lanUrl(room: string, role: 'host' | 'guest', base?: string): str
   return `${b}/ws?room=${encodeURIComponent(room)}&role=${role}`;
 }
 
-function open(url: string): Promise<{ ws: WebSocket; ack: Ack }> {
+function open(url: string, timeoutMs = WS_TIMEOUT_MS): Promise<{ ws: WebSocket; ack: Ack }> {
   return new Promise((resolve, reject) => {
     let ws: WebSocket;
     try {
@@ -38,7 +38,7 @@ function open(url: string): Promise<{ ws: WebSocket; ack: Ack }> {
       return;
     }
     let done = false;
-    const timer = setTimeout(() => fail(new NetError('failed', 'Baglanti zaman asimi')), WS_TIMEOUT_MS);
+    const timer = setTimeout(() => fail(new NetError('failed', 'Baglanti zaman asimi')), timeoutMs);
     const fail = (err: NetError): void => {
       if (done) return;
       done = true;
@@ -94,8 +94,8 @@ export class WsHostTransport implements Transport {
     ws.onclose = () => this.onClose('Sunucu baglantisi koptu');
   }
 
-  static async create(url: string): Promise<WsHostTransport> {
-    const { ws } = await open(url);
+  static async create(url: string, timeoutMs?: number): Promise<WsHostTransport> {
+    const { ws } = await open(url, timeoutMs);
     return new WsHostTransport(ws);
   }
 
@@ -142,8 +142,8 @@ export class WsGuestTransport implements Transport {
     ws.onclose = () => this.onClose('Baglanti koptu');
   }
 
-  static async create(url: string): Promise<WsGuestTransport> {
-    const { ws, ack } = await open(url);
+  static async create(url: string, timeoutMs?: number): Promise<WsGuestTransport> {
+    const { ws, ack } = await open(url, timeoutMs);
     return new WsGuestTransport(ws, ack.id ?? 'g?');
   }
 

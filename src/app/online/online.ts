@@ -49,6 +49,10 @@ function saveLast(l: LastSession | null): void {
   }
 }
 /** Internet lobilerinin paylasilan baglanti adresi (Pages). */
+/** Internet rolesi (relay/ Cloudflare Worker): NAT/TURN gerektirmez; ulasilamazsa PeerJS (WebRTC) denenir. */
+export const RELAY_URL = 'wss://rpg-web-relay.gkaragoz96tablet.workers.dev';
+/** Rolenin ilk baglantisi (TLS + Durable Object soguk baslangici) LAN'dan yavas olabilir. */
+const RELAY_TIMEOUT_MS = 12000;
 const PAGES_URL = 'https://gkaragoz.github.io/rpg-web-strategy/';
 
 export interface OnlineEnv {
@@ -102,6 +106,8 @@ export class OnlineApp {
   private inBattle = false;
   private sim: LockstepSim | null = null;
   private kind: 'lan' | 'net' = 'lan';
+  /** Kullanilan tasima: gosterim ve tani icin. */
+  private via = 'LAN';
   private lastSaved = 0;
   private dead = false;
   private busy = false;
@@ -158,7 +164,18 @@ export class OnlineApp {
       for (let i = 0; i < 6 && !tp; i++) {
         code = makeCode();
         try {
-          tp = kind === 'net' ? await PeerHostTransport.create(code) : await WsHostTransport.create(lanUrl(code, 'host'));
+          if (kind === 'net') {
+            try {
+              tp = await WsHostTransport.create(lanUrl(code, 'host', RELAY_URL), RELAY_TIMEOUT_MS);
+              this.via = 'İnternet rölesi';
+            } catch (re) {
+              if (re instanceof NetError && re.code === 'taken') throw re;
+              console.warn('[online] röle host hatası', re);
+              this.menu?.setStatus('Röle ulaşılamadı, doğrudan bağlantı (WebRTC) deneniyor…');
+              tp = await PeerHostTransport.create(code);
+              this.via = 'WebRTC';
+            }
+          } else tp = await WsHostTransport.create(lanUrl(code, 'host'));
         } catch (e) {
           if (!(e instanceof NetError) || e.code !== 'taken') throw e;
         }
@@ -194,8 +211,17 @@ export class OnlineApp {
       } catch (e) {
         if (e instanceof NetError && (e.code === 'full' || e.code === 'taken')) throw e;
         kind = 'net';
-        this.menu?.setStatus('İnternet üzerinden host’a bağlanılıyor… (kurulması 30 sn’ye kadar sürebilir)');
-        tp = await PeerGuestTransport.create(code);
+        this.menu?.setStatus('İnternet rölesi deneniyor…');
+        try {
+          tp = await WsGuestTransport.create(lanUrl(code, 'guest', RELAY_URL), RELAY_TIMEOUT_MS);
+          this.via = 'İnternet rölesi';
+        } catch (re) {
+          if (re instanceof NetError && (re.code === 'full' || re.code === 'taken')) throw re;
+          console.warn('[online] röle misafir hatası', re);
+          this.menu?.setStatus('Doğrudan bağlantı (WebRTC) deneniyor… (30 sn’ye kadar sürebilir)');
+          tp = await PeerGuestTransport.create(code);
+          this.via = 'WebRTC';
+        }
       }
       this.kind = kind;
       const s = new GuestSession(tp, { name, color, pass: pass || undefined, spectator, token });
@@ -305,7 +331,7 @@ export class OnlineApp {
       this.cursors?.setView(null);
       this.env.setIconColors(null);
       this.env.setComedyVisual(null);
-      this.lobby = new LobbyScreen(this.root, this.session, { onLeave: () => this.exit(), link: (c) => `${this.kind === 'net' ? PAGES_URL : location.origin + location.pathname}#join=${c}` });
+      this.lobby = new LobbyScreen(this.root, this.session, { onLeave: () => this.exit(), via: () => this.via, link: (c) => `${this.kind === 'net' ? PAGES_URL : location.origin + location.pathname}#join=${c}` });
     } else if (want === 'placing') {
       this.chat ??= new ChatOverlay(this.root, this.session);
       await this.startPlacing(st.init!);

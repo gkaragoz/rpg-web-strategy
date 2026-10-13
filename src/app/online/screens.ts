@@ -102,7 +102,7 @@ export class MenuScreen {
       ]
         .map((o) => `<button type="button" data-tp="${o.id}" aria-pressed="${tp === o.id}"${o.off ? ' disabled' : ''}>${o.label}${o.off ? ' (yakında)' : ''}</button>`)
         .join('');
-      q('#m-tp-note').textContent = tp === 'lan' ? 'Sunucu: sayfayı açtığın bilgisayar (LAN için oyunu "--lan" ile başlat; arkadaşların onun adresini açar).' : 'Doğrudan bağlantı (WebRTC): kod ve bağlantı paylaşılır.';
+      q('#m-tp-note').textContent = tp === 'lan' ? 'Sunucu: sayfayı açtığın bilgisayar (LAN için oyunu "--lan" ile başlat; arkadaşların onun adresini açar).' : 'İnternet rölesi (NAT/güvenlik duvarı gerekmez); ulaşılamazsa doğrudan WebRTC. Kod ve bağlantı paylaşılır.';
       q('#m-tp').querySelectorAll('button').forEach((b) =>
         b.addEventListener('click', () => {
           tp = (b as HTMLElement).dataset.tp as 'lan' | 'net';
@@ -197,6 +197,8 @@ export interface LobbyEnv {
   onLeave(): void;
   /** Baglanti tipine gore paylasilacak link (kod dahil). */
   link(code: string): string;
+  /** Kullanilan baglanti turu (LAN / Internet rolesi / WebRTC). */
+  via(): string;
 }
 
 /** Lobi: solda host ayarlari, sagda oyuncular + sohbet. */
@@ -235,7 +237,7 @@ export class LobbyScreen {
   </aside>
   <section class="on-panel on-players" aria-label="Oyuncular ve sohbet">
     <header class="on-lhead">
-      <div><span class="on-code-l">LOBİ KODU</span> <b class="on-code" id="l-code"></b></div>
+      <div><span class="on-code-l">LOBİ KODU</span> <b class="on-code" id="l-code"></b> <small class="on-code-l" id="l-via"></small></div>
       <div class="on-btnrow"><button type="button" id="l-link">Linki kopyala</button><span id="l-pass-wrap"><input id="l-pass" type="text" placeholder="Parola" maxlength="24" /><button type="button" id="l-pass-set">Ayarla</button></span><button type="button" id="l-leave">Ayrıl</button></div>
     </header>
     <h3 id="l-ptitle">Oyuncular</h3>
@@ -354,6 +356,7 @@ export class LobbyScreen {
     const q = this.q.bind(this);
     const host = this.host;
     q('#l-code').textContent = st.code;
+    q('#l-via').textContent = `Bağlantı: ${this.env.via()}`;
     q('#l-host-note').textContent = host ? '(host)' : '(yalnız host değiştirir)';
     q('#l-pass-wrap').hidden = !host;
     const s = st.settings;
