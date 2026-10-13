@@ -9,7 +9,7 @@ export const T_BLOCKED = 3;
 export const T_PATH = 4;
 
 /** On-screen height of one elevation step (pixels). */
-export const LEVEL_PX = 22;
+export const LEVEL_PX = 26;
 export const MAX_LEVEL_H = 8;
 /** Tile height units: 16 units per step; a neighbor difference >= CLIFF_UNITS makes a cliff. */
 export const H_UNITS = 16;
