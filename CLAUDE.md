@@ -24,7 +24,7 @@ Browser isometric auto-battle game (PixiJS v8 + Vite + TypeScript, Vitest). Up t
 
 ## Rules (enforced by tests, `lint:repo` and a Claude hook)
 1. **English** for code, comments, commit messages, docs. UI text only through `src/i18n/*.ts` with both `en` and `tr` entries; never hard-code UI strings.
-2. **No references to any third-party game, roster or its data** anywhere (the roster is original). Do not copy names/stats/text from other games.
+2. **No references to any third-party game or its data** anywhere (the roster is original). Do not copy names/stats/text from other games.
 3. **Determinism** (`src/sim`): no `Math.random`, `Date.now`, `performance.now`; use the `Mulberry` RNG. Online play depends on identical results on every client.
 4. **Protocol**: changing a message shape in `src/net/protocol.ts` ⇒ bump `PROTOCOL`; host sends machine codes, clients translate with `t()`.
 5. Keep the "© gkaragoz and Contributors" notice and the license files; contributions need the CLA.
