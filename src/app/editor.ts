@@ -30,6 +30,15 @@ const MIN_GAP = 0.85;
 /** Dairenin ekran elipsi: yaricap r tile -> rx = r*TILE_W/2*sqrt2, ry = rx/2. */
 const ELLIPSE_X = 45.25;
 
+/** Cevrimici/butceli yerlestirme kisitlari: bolge, birim maliyeti ve kalan gold. */
+export interface PlacementConstraint {
+  /** (x,y) yerlestirmeye izinli bolgede mi. */
+  allow(x: number, y: number): boolean;
+  cost(kind: number): number;
+  /** Kalan gold (mevcut yerlesimden hesaplanir). */
+  left(): number;
+}
+
 /** Haritaya birim yerlestirme: fircayla boyama, silme, geri al/yinele, formasyon. */
 export class Editor {
   private readonly sprites = new Map<PlacedUnit, Sprite>();
@@ -118,6 +127,7 @@ export class Editor {
   /** Yerlestirme gecerli mi: harita icinde, yurunebilir, baska birime cok yakin degil. */
   isValid(x: number, y: number, extra: PlacedUnit[] = []): boolean {
     if (!this.inMap(x, y)) return false;
+    if (this.constraint && !this.constraint.allow(x, y)) return false;
     const t = this.d.world.terrain;
     if (t && !t.walkable(x, y)) return false;
     return !this.nearUnit(x, y, MIN_GAP, extra);
@@ -183,6 +193,20 @@ export class Editor {
         const py = y + Math.sin(a) * r;
         if (this.isValid(px, py, added)) added.push({ team: s.selTeam, kind: s.selKind, x: px, y: py });
       }
+    }
+    if (this.constraint && added.length > 0) {
+      // Butce: eklenecek birimleri kalan gold'a gore kirp.
+      let left = this.constraint.left();
+      const keep: PlacedUnit[] = [];
+      for (const u of added) {
+        const c = this.constraint.cost(u.kind);
+        if (c > left) break;
+        left -= c;
+        keep.push(u);
+      }
+      if (keep.length < added.length) this.d.toast('Gold yetersiz.');
+      added.length = 0;
+      added.push(...keep);
     }
     const room = MAX_PLACED - s.units.length;
     if (added.length > room) {
@@ -421,7 +445,21 @@ export class Editor {
   /** Her cagrida farkli sonuc: sabit tohumlu uretec degil. */
   private rand = (): number => Math.random();
 
+  /** Cevrimici yerlestirme kisiti (null: serbest stüdyo). */
+  constraint: PlacementConstraint | null = null;
+
   private addMany(added: PlacedUnit[]): void {
+    if (this.constraint) {
+      let left = this.constraint.left();
+      const keep: PlacedUnit[] = [];
+      for (const u of added) {
+        const c = this.constraint.cost(u.kind);
+        if (c > left || !this.constraint.allow(u.x, u.y)) continue;
+        left -= c;
+        keep.push(u);
+      }
+      added = keep;
+    }
     if (added.length === 0) return;
     const s = this.d.state;
     for (const u of added) s.units.push(u);
