@@ -853,6 +853,32 @@ input[type='range'] {
   border: 1px solid rgba(246, 210, 122, 0.35);
   border-radius: 99px;
 }
+.ug-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 3px 0 2px;
+}
+.ug-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: #243148;
+  border-radius: 99px;
+}
+.ug-chip.area {
+  color: #ffb36b;
+  background: #3a2a1d;
+}
+.ug-chip.single {
+  opacity: 0.7;
+}
+.ug-chips .ug-role {
+  margin: 0;
+}
 .ug-role {
   display: inline-flex;
   align-items: center;

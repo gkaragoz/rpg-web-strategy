@@ -3,6 +3,7 @@ import { RACE_NAMES, RARITY_NAMES, TROOP_BY_ID, type Race, type Rarity } from '.
 import { KIND_COUNT, LEGACY_COUNT, STATS, isHealer, isMelee, unitDisplayName } from '../sim/units';
 import { unitGold } from '../net/economy';
 import { trackDialog } from '../net/act';
+import { skillParams } from '../sim/data/skills';
 import { cardIcon, type CardIcon } from './cardIcons';
 import type { UnitPreview } from './unitPreview';
 import { saveState, type AppState } from './state';
@@ -113,6 +114,13 @@ export class UnitGallery {
     const skill = skillText
       ? `<span class="ug-skill">${cardIcon('star')}<span><b>${esc(t('units.skill'))}</b> ${esc(skillText)}</span></span>`
       : `<span class="ug-skill none">${cardIcon('star')}<span>${esc(t('units.noSkill'))}</span></span>`;
+    const radius = s.splash > 0 ? s.splash : s.aoe;
+    const skillArea = !!s.skill && skillParams(s.skill).radius > 0;
+    const area =
+      (radius > 0
+        ? `<span class="ug-chip area" title="${esc(t('units.area.tip'))}">${cardIcon('burst', 14)}${esc(t('units.area.area', { r: radius.toFixed(1) }))}</span>`
+        : `<span class="ug-chip single" title="${esc(t('units.area.singleTip'))}">${cardIcon('target', 14)}${esc(t('units.area.single'))}</span>`) +
+      (skillArea ? `<span class="ug-chip area skill" title="${esc(t('units.area.skillTip'))}">${cardIcon('star', 14)}${esc(t('units.area.skill'))}</span>` : '');
     const sel = this.d.state.selKind === k;
     const gold = this.d.online ? this.d.online.cost(k) : unitGold(k);
     const price = `<span class="ug-price">${cardIcon('coin')}${esc(t('units.gold', { n: gold }))}</span>`;
@@ -125,7 +133,7 @@ export class UnitGallery {
   <span class="ug-icon" data-icon="${k}"></span>
   <span class="ug-name">${esc(unitDisplayName(k))}</span>
   <span class="ug-meta">${esc(meta)}</span>
-  <span class="ug-role">${cardIcon(roleIcon, 15)}${esc(role)}</span>
+  <span class="ug-chips"><span class="ug-role">${cardIcon(roleIcon, 15)}${esc(role)}</span>${area}</span>
   <span class="ug-stats">${stats}</span>${skill}
 </button>`;
   }
