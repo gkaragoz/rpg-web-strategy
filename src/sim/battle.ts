@@ -1180,6 +1180,11 @@ export class Battle {
   // Cevrimici: durum goruntusu (yeniden senkron / seyirci / geri baglanma) ve kontrol toplami
   // ===================================================================
 
+  /** Atilan sim adimi sayisi (lockstep zaman ekseni). */
+  get stepCount(): number {
+    return this.stepNo;
+  }
+
   /** Sim'in tum kalici durumunu kopyalar (config ayni olan baska bir Battle'a restore edilebilir). */
   serialize(): BattleSnapshot {
     const u = this.units;
