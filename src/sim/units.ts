@@ -246,6 +246,8 @@ export class Units {
   retarget: Float32Array;
   swing: Float32Array;
   hitPending: Uint8Array;
+  /** Display only: height advantage over the current target in half steps (>0: standing higher). Not used by the simulation. */
+  hgAdv: Int8Array;
   flash: Float32Array;
   deathT: Float32Array;
   facing: Int8Array;
@@ -351,6 +353,7 @@ export class Units {
     this.retarget = new Float32Array(cap);
     this.swing = new Float32Array(cap);
     this.hitPending = new Uint8Array(cap);
+    this.hgAdv = new Int8Array(cap);
     this.flash = new Float32Array(cap);
     this.deathT = new Float32Array(cap);
     this.facing = new Int8Array(cap).fill(1);
@@ -441,6 +444,7 @@ export class Units {
     this.retarget[i] = rand() * 0.5;
     this.swing[i] = 0;
     this.hitPending[i] = 0;
+    this.hgAdv[i] = 0;
     this.flash[i] = 0;
     this.deathT[i] = 0;
     this.facing[i] = team % 2 === 0 ? 1 : -1;

@@ -13,6 +13,7 @@ export interface SnapSlot {
   alive: Uint8Array;
   status: Uint8Array;
   lift: Float32Array;
+  hgAdv: Int8Array;
   pSx: Float32Array;
   pSy: Float32Array;
   pTx: Float32Array;
@@ -89,6 +90,7 @@ function build(sab: SharedArrayBuffer | null, cap: number, pcap: number): { shar
       alive: u8(cap),
       status: u8(cap),
       lift: f32(cap),
+      hgAdv: i8(cap),
       pSx: f32(pcap),
       pSy: f32(pcap),
       pTx: f32(pcap),

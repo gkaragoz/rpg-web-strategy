@@ -10,7 +10,7 @@
 - **Damage type × armor class** (`src/sim/data/combat.ts`, `TYPE_MULT`): slash beats light armor, pierce beats medium, blunt beats heavy, magic beats spirit and heavy. Every roster unit's pair is in the `TYPING` table of `troops.ts` and shown as chips on the unit card.
 - **Area damage**: basic-attack splash falls off with distance (50% at the edge) and hits at most 14 enemies; skills have their own rules. Cards show "Area r" / "Single target" and "Area skill".
 - **Crowd control**: after a stun or fear a unit is immune for 1.2 s, so many casters cannot lock an army.
-- **Terrain** (`combat.ts`): height difference gives ±9% damage per step and +0.6 / −0.4 tile range for ranged units; climbing slows by steepness; ridges block direct fire (not lobbed or magic shots).
+- **Terrain** (`combat.ts`): height difference gives ±9% damage per step and +0.6 / −0.4 tile range for ranged units; climbing slows by steepness; ridges block direct fire (not lobbed or magic shots). The renderer shows gold chevrons (1-3) above a unit standing at least 1 step above its current target (`Units.hgAdv`, display only, computed every 4th step).
 - **Gold costs** are the formula in `src/net/economy.ts` times a calibrated factor (`src/sim/data/costs.ts`, generated): equal gold buys armies of equal strength.
 
 ## Balance harness (headless, deterministic)

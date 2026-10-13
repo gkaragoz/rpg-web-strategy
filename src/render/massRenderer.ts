@@ -214,9 +214,9 @@ export class MassRenderer {
       this.fsy[i] = sy;
       if (opt.cull && (sx < view.left || sx > view.right || sy < view.top || sy > view.bottom)) continue;
       if (alive && relief) {
-        // High ground: 2+ steps above sea level (see data/combat.ts for what the height difference gives).
-        const steps = terr!.heightAt(wx, wy);
-        this.markLevel[i] = steps >= 6 ? 3 : steps >= 4 ? 2 : steps >= 2 ? 1 : 0;
+        // Standing higher than its current target (half steps): that is what earns the damage and range bonus.
+        const adv = u.hgAdv[i];
+        this.markLevel[i] = adv >= 6 ? 3 : adv >= 4 ? 2 : adv >= 2 ? 1 : 0;
         this.markSx[i] = sx;
         this.markSy[i] = sy;
       }

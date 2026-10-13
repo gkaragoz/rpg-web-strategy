@@ -65,6 +65,7 @@ export class WorkerSim implements SimBackend {
       deathT: s0.deathT,
       status: s0.status,
       lift: s0.lift,
+      hgAdv: s0.hgAdv,
     };
     this.projectiles = {
       count: 0,
@@ -122,6 +123,7 @@ export class WorkerSim implements SimBackend {
     u.deathT = c.deathT;
     u.status = c.status;
     u.lift = c.lift;
+    u.hgAdv = c.hgAdv;
     u.count = sh.ctrlI[I_COUNT];
 
     const pr = this.projectiles;

@@ -406,6 +406,7 @@ export class Battle {
       pf.units += tn - tp;
       tp = tn;
       this.separate();
+      if (this.terrain && this.terrain.hasRelief && (this.stepNo & 3) === 0) this.updateAdvantage();
       tn = performance.now();
       pf.separate += tn - tp;
       tp = tn;
@@ -636,6 +637,21 @@ export class Battle {
     if (dist > reach) return false;
     if (s.magical || s.splash >= 3 || s.skill === 'ship') return true;
     return !tr.blocksFire(u.x[i], u.y[i], u.x[t], u.y[t]);
+  }
+
+  /** Display data for the renderer: height advantage of every unit over its current target (half steps). */
+  private updateAdvantage(): void {
+    const u = this.units;
+    const tr = this.terrain!;
+    for (let i = 0; i < u.count; i++) {
+      const t = u.target[i];
+      if (!u.alive[i] || t < 0 || !u.alive[t]) {
+        u.hgAdv[i] = 0;
+        continue;
+      }
+      const dh = tr.heightAt(u.x[i], u.y[i]) - tr.heightAt(u.x[t], u.y[t]);
+      u.hgAdv[i] = Math.max(-127, Math.min(127, Math.round(dh * 2)));
+    }
   }
 
   /** Melee threat scan: 3x3 cells on the coarse grid, staggered per unit. */

@@ -4,7 +4,7 @@ import type { Units } from './units';
 /** Unit fields read by the renderer (Units and the worker snapshot share the same shape). */
 export type UnitsView = Pick<
   Units,
-  'count' | 'kind' | 'team' | 'x' | 'y' | 'px' | 'py' | 'hp' | 'maxHp' | 'facing' | 'moving' | 'swing' | 'flash' | 'alive' | 'deathT' | 'status' | 'lift'
+  'count' | 'kind' | 'team' | 'x' | 'y' | 'px' | 'py' | 'hp' | 'maxHp' | 'facing' | 'moving' | 'swing' | 'flash' | 'alive' | 'deathT' | 'status' | 'lift' | 'hgAdv'
 >;
 
 export interface ProjView {
