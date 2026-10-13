@@ -13,6 +13,7 @@ import type { SimBackend } from '../sim/backend';
 import { terrainFor, type BattleConfig } from '../sim/battle';
 import { SIM_DT } from '../sim/constants';
 import { InlineSim } from '../sim/inlineSim';
+import { LEVEL_PX } from '../sim/terrain';
 import { STATS } from '../sim/units';
 import { WorkerSim } from '../sim/workerSim';
 import type { StatsPanel } from '../ui/stats';
@@ -585,7 +586,11 @@ export class BattleScene {
       const wx = u.px[i] + (u.x[i] - u.px[i]) * alpha;
       const wy = u.py[i] + (u.y[i] - u.py[i]) * alpha;
       v.root.visible = true;
-      v.root.position.set(isoX(wx, wy), isoY(wx, wy, this.elev(wx, wy) + (u.lift ? u.lift[i] * 38 : 0)));
+      const ground = this.elev(wx, wy);
+      v.root.position.set(isoX(wx, wy), isoY(wx, wy, ground + (u.lift ? u.lift[i] * 38 : 0)));
+      // High ground (2+ steps up): gold chevrons, one more per two extra steps.
+      const steps = ground / LEVEL_PX;
+      v.setHighGround(alive ? (steps >= 6 ? 3 : steps >= 4 ? 2 : steps >= 2 ? 1 : 0) : 0);
       v.root.zIndex = wx + wy;
       const swingTotal = u.swing[i] > 0 ? STATS[u.kind[i]].swing : 0;
       v.update(

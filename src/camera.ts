@@ -138,13 +138,13 @@ export class Camera {
     this.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.zoom * f));
   }
 
-  punch(amount: number): void {
-    this.punchAmp = Math.min(0.08, Math.max(this.punchAmp, amount));
+  punch(_amount: number): void {
+    // The zoom jolt that came with impacts is switched off together with the shake.
   }
 
-  /** Adds shake (the largest value is kept; range 0-14 px). */
-  shake(amount: number): void {
-    this.shakeAmp = Math.min(14, Math.max(this.shakeAmp, amount));
+  /** Camera shake: disabled, kept as a no-op so effect code does not need to change. */
+  shake(_amount: number): void {
+    // Camera shake is switched off (impacts keep their particles, sounds and flashes).
   }
 
   /** Updates the camera bounds when the map size changes. */

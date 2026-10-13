@@ -80,6 +80,9 @@ export class UnitView {
   private readonly legL = new Graphics();
   private readonly legR = new Graphics();
   private readonly bar = new Graphics();
+  /** Gold chevrons above the head while the unit stands on high ground (0-3). */
+  private readonly mark = new Graphics();
+  private markLevel = 0;
   private readonly shadow: Graphics;
   private weapon: Container | null = null;
   private shield: Container | null = null;
@@ -131,6 +134,20 @@ export class UnitView {
     this.bar.y = -72 * this.kScale;
     this.bar.visible = false;
     this.root.addChild(this.bar);
+    this.mark.y = -84 * this.kScale;
+    this.root.addChild(this.mark);
+  }
+
+  /** High-ground marker: `level` chevrons (0 hides it); only redrawn when the level changes. */
+  setHighGround(level: number): void {
+    if (level === this.markLevel) return;
+    this.markLevel = level;
+    this.mark.clear();
+    for (let c = 0; c < level; c++) {
+      const y = -c * 5;
+      this.mark.poly([0, y, 8, y + 8, 5.5, y + 10.5, 0, y + 5, -5.5, y + 10.5, -8, y + 8]).fill(0xf2c14e).stroke({ width: 1.2, color: 0x2a1f05, alpha: 0.85 });
+    }
+    this.mark.visible = level > 0;
   }
 
   /** Roster unit: draws from the recipe table (looks.ts). */

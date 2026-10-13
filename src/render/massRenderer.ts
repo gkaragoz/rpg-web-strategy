@@ -43,6 +43,15 @@ export class MassRenderer {
   private readonly bars = new ParticleContainer({
     dynamicProperties: { vertex: true, position: true, rotation: false, uvs: false, color: true },
   });
+  /** High-ground chevrons above units that stand on elevated terrain. */
+  private readonly marks = new ParticleContainer({
+    dynamicProperties: { vertex: false, position: true, rotation: false, uvs: false, color: false },
+  });
+  private readonly chevronTex: Texture;
+  private markParticles: Particle[] = [];
+  private markSx = new Float32Array(0);
+  private markSy = new Float32Array(0);
+  private markLevel = new Uint8Array(0);
   private readonly unitTex: Texture[]; // [(kind*MAX_TEAMS + team)*2 + pose]
   private readonly unitAnchor: Array<{ ax: number; ay: number }>;
   private readonly arrowTex: Texture;
@@ -83,9 +92,17 @@ export class MassRenderer {
     this.arrowTex = atlas.arrowTex;
     this.orbTex = atlas.fx.puff.texture;
     this.pixelTex = atlas.pixelTex;
+    this.chevronTex = this.makeChevron();
     this.buildDecor(atlas);
-    this.layer.addChild(this.units, this.arrows, this.bars);
+    this.layer.addChild(this.units, this.arrows, this.bars, this.marks);
     this.rebuild();
+  }
+
+  /** Small gold chevron (^) drawn above units standing on high ground. */
+  private makeChevron(): Texture {
+    const g = new Graphics();
+    g.poly([0, 0, 8, 8, 5.5, 10.5, 0, 5, -5.5, 10.5, -8, 8]).fill(0xf2c14e).stroke({ width: 1.2, color: 0x2a1f05, alpha: 0.85 });
+    return this.app.renderer.generateTexture({ target: g, resolution: 2, frame: new Rectangle(-10, -2, 20, 16) });
   }
 
   /** Ground: two-tone diamond-pattern TilingSprite, masked to the map shape. */
@@ -144,6 +161,9 @@ export class MassRenderer {
     this.lastKey = new Int32Array(u.count).fill(-1);
     this.fsx = new Float32Array(u.count);
     this.fsy = new Float32Array(u.count);
+    this.markSx = new Float32Array(u.count);
+    this.markSy = new Float32Array(u.count);
+    this.markLevel = new Uint8Array(u.count);
     for (let i = 0; i < u.count; i++) this.phase[i] = (i * 2.399963) % 6.283185;
     this.lastTime = -1;
     this.keys = new Int32Array(u.count + this.decorParticles.length);
@@ -152,6 +172,7 @@ export class MassRenderer {
     this.units.particleChildren = [];
     this.arrows.particleChildren = [];
     this.bars.particleChildren = [];
+    this.marks.particleChildren = [];
   }
 
   sync(time: number, alpha: number, view: MassViewport, opt: MassOptions): void {
@@ -171,6 +192,7 @@ export class MassRenderer {
     const ease = 1 - Math.exp(-dt * 9);
 
     // 1) Collect visible units, write positions.
+    this.markLevel.fill(0);
     for (let i = 0; i < u.count; i++) {
       const alive = u.alive[i] === 1;
       if (!alive && (comedy.visual || u.deathT[i] > DEATH_FADE)) continue;
@@ -191,6 +213,13 @@ export class MassRenderer {
       this.fsx[i] = sx;
       this.fsy[i] = sy;
       if (opt.cull && (sx < view.left || sx > view.right || sy < view.top || sy > view.bottom)) continue;
+      if (alive && relief) {
+        // High ground: 2+ steps above sea level (see data/combat.ts for what the height difference gives).
+        const steps = terr!.heightAt(wx, wy);
+        this.markLevel[i] = steps >= 6 ? 3 : steps >= 4 ? 2 : steps >= 2 ? 1 : 0;
+        this.markSx[i] = sx;
+        this.markSy[i] = sy;
+      }
 
       const p = this.particles[i];
       const kind = u.kind[i];
@@ -276,6 +305,33 @@ export class MassRenderer {
 
     this.syncArrows(view, alpha * SIM_DT);
     this.syncBars(alpha, view, opt.bars);
+    this.syncMarks(zoom);
+  }
+
+  private syncMarks(zoom: number): void {
+    const out = this.marks.particleChildren;
+    if (!this.terrain || !this.terrain.hasRelief || zoom < 0.3) {
+      out.length = 0;
+      return;
+    }
+    const u = this.sim.units;
+    let n = 0;
+    for (let i = 0; i < u.count; i++) {
+      const lvl = this.markLevel[i];
+      if (lvl === 0) continue;
+      const k = STATS[u.kind[i]].scale;
+      for (let c = 0; c < lvl; c++) {
+        let part = this.markParticles[n];
+        if (!part) {
+          part = new Particle({ texture: this.chevronTex, anchorX: 0.5, anchorY: 0.5 });
+          this.markParticles[n] = part;
+        }
+        part.x = this.markSx[i];
+        part.y = this.markSy[i] - 84 * k - c * 5;
+        out[n++] = part;
+      }
+    }
+    out.length = n;
   }
 
   private syncArrows(view: MassViewport, advance: number): void {
