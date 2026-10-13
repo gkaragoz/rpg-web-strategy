@@ -1,6 +1,6 @@
 import { PALETTES } from './biome';
 import { comedy, hash01 } from './comedyFlag';
-import { Application, Container, Graphics, Particle, ParticleContainer, Rectangle, Texture, TilingSprite } from 'pixi.js';
+import { Application, Container, Graphics, Particle, ParticleContainer, Rectangle, Texture, TilingSprite, type IParticle } from 'pixi.js';
 import type { Terrain } from '../sim/terrain';
 import type { Atlas } from './atlas';
 import { isoX, isoY } from '../iso';
@@ -12,6 +12,8 @@ import { projStyle } from './projectileStyle';
 import { flatColorFilter, setFlatColor } from './outlineFilter';
 
 const DEPTH_SCALE = 4;
+/** Below this camera zoom units are drawn idle-pose only (no walk/strike animation math). */
+const FAR_ZOOM = 0.3;
 /** Most silhouette particles drawn for the focus outline (4 per soldier): beyond this the outline is thinned out. */
 const FOCUS_MAX = 12000;
 
@@ -85,6 +87,9 @@ export class MassRenderer {
   private fsx = new Float32Array(0);
   private fsy = new Float32Array(0);
   private lastTime = -1;
+  /** Highest on-screen rise of any terrain tile (px): lets sync() reject off-screen units before the elevation lookup. */
+  private maxRise = 0;
+  private minRise = 0;
   private keys = new Int32Array(0);
   private order = new Int32Array(0);
   private counts = new Int32Array(0);
@@ -107,6 +112,7 @@ export class MassRenderer {
     this.pixelTex = atlas.pixelTex;
     this.chevronTex = this.makeChevron();
     this.buildDecor(atlas);
+    this.maxRise = this.computeMaxRise();
     const span = this.sim.mapSize * 34 + 300;
     this.focusLayer.boundsArea = new Rectangle(-span, -400, span * 2, span + 800);
     this.focusLayer.filters = [this.focusFilter];
@@ -166,6 +172,22 @@ export class MassRenderer {
     });
   }
 
+  private computeMaxRise(): number {
+    const t = this.terrain;
+    if (!t || !t.hasRelief) return 0;
+    let hi = 0;
+    let lo = 0;
+    const n = this.sim.mapSize;
+    for (let y = 0; y <= n; y++)
+      for (let x = 0; x <= n; x++) {
+        const e = t.elevPx(Math.min(x, n - 0.01), Math.min(y, n - 0.01));
+        hi = Math.max(hi, e);
+        lo = Math.min(lo, e);
+      }
+    this.minRise = lo - 8;
+    return hi + 8;
+  }
+
   /** Rebuilds the particles when the unit count changes (restart). */
   rebuild(): void {
     const u = this.sim.units;
@@ -199,6 +221,24 @@ export class MassRenderer {
     this.focusLayer.particleChildren = [];
   }
 
+  /** Four copies shifted by ~2 px behind the unit = an outline (returns the new particle count of the focus layer). */
+  private pushOutline(fn: number, p: Particle, fOut: IParticle[], fd: number): number {
+    for (let c = 0; c < 4; c++) {
+      let f = this.focusParticles[fn];
+      if (!f) f = this.focusParticles[fn] = new Particle({ texture: p.texture, anchorX: p.anchorX, anchorY: p.anchorY });
+      f.texture = p.texture;
+      f.anchorX = p.anchorX;
+      f.anchorY = p.anchorY;
+      f.x = p.x + (c === 0 ? fd : c === 1 ? -fd : 0);
+      f.y = p.y + (c === 2 ? fd : c === 3 ? -fd : 0);
+      f.scaleX = p.scaleX;
+      f.scaleY = p.scaleY;
+      f.rotation = p.rotation;
+      fOut[fn++] = f;
+    }
+    return fn;
+  }
+
   sync(time: number, alpha: number, view: MassViewport, opt: MassOptions): void {
     const u = this.sim.units;
     const out = this.units.particleChildren;
@@ -212,6 +252,7 @@ export class MassRenderer {
     const relief = !!terr && terr.hasRelief;
     // When zoomed out (small pixels) bouncing and pose changes look like flicker: calm them.
     const calm = Math.min(1, Math.max(0, (zoom - 0.3) / 0.5));
+    const far = zoom < FAR_ZOOM;
     const follow = 1 - Math.exp(-dt * 30);
     const ease = 1 - Math.exp(-dt * 9);
 
@@ -228,6 +269,15 @@ export class MassRenderer {
       const wy = u.py[i] + (u.y[i] - u.py[i]) * alpha;
       let sx = isoX(wx, wy);
       const lift = u.lift ? u.lift[i] : 0;
+      if (opt.cull) {
+        // Cheap rejection before the terrain lookup: the on-screen y lies between y(flat) - maxRise and y(flat).
+        const flatY = isoY(wx, wy, 0);
+        if (sx < view.left || sx > view.right || flatY - this.minRise < view.top || flatY - this.maxRise - lift * 38 > view.bottom) {
+          this.fsx[i] = sx;
+          this.fsy[i] = flatY;
+          continue;
+        }
+      }
       let sy = isoY(wx, wy, (relief ? terr!.elevPx(wx, wy) : 0) + lift * 38);
       // Slight low-pass position filter: tiny jitters inside the sim are not visible (teleport: direct).
       if (this.lastKey[i] >= 0 && dt > 0) {
@@ -251,6 +301,26 @@ export class MassRenderer {
 
       const p = this.particles[i];
       const kind = u.kind[i];
+      if (far && alive && !comedy.visual) {
+        // Zoomed far out nobody can see poses or bobbing: idle pose, facing, hit flash / status tint only.
+        p.x = sx;
+        p.y = sy;
+        p.scaleX = u.facing[i];
+        p.scaleY = 1;
+        p.rotation = 0;
+        p.texture = this.unitTex[(kind * MAX_TEAMS + u.team[i]) * POSES];
+        p.tint = u.flash[i] > 0 ? 0xff9a9a : u.status[i] !== 0 ? statusTint(u.status[i]) : 0xffffff;
+        p.alpha = 1;
+        if (focus >= 0 && u.team[i] === focus && fn < FOCUS_MAX) fn = this.pushOutline(fn, p, fOut, fd);
+        let key = Math.min(this.counts.length - 2, Math.max(0, ((wx + wy) * DEPTH_SCALE) | 0));
+        const lk = this.lastKey[i];
+        if (lk >= 0 && Math.abs(key - lk) < 2) key = lk;
+        this.lastKey[i] = key;
+        keys[n] = key;
+        order[n] = i;
+        n++;
+        continue;
+      }
       // Movement amount is smoothed (hysteresis): a unit that stops and starts does not change pose every frame.
       const target = u.moving[i] === 1 ? 1 : 0;
       this.moveAmt[i] += (target - this.moveAmt[i]) * ease;
@@ -295,22 +365,7 @@ export class MassRenderer {
       }
       // In the air (comedy physics): spins fast.
       if (alive && lift > 0.04) p.rotation = (time * 13 + i) * u.facing[i];
-      if (focus >= 0 && alive && u.team[i] === focus && fn < FOCUS_MAX) {
-        // Four copies shifted by ~2 px in the outline colour behind the unit = an outline.
-        for (let c = 0; c < 4; c++) {
-          let f = this.focusParticles[fn];
-          if (!f) f = this.focusParticles[fn] = new Particle({ texture: p.texture, anchorX: p.anchorX, anchorY: p.anchorY });
-          f.texture = p.texture;
-          f.anchorX = p.anchorX;
-          f.anchorY = p.anchorY;
-          f.x = p.x + (c === 0 ? fd : c === 1 ? -fd : 0);
-          f.y = p.y + (c === 2 ? fd : c === 3 ? -fd : 0);
-          f.scaleX = p.scaleX;
-          f.scaleY = p.scaleY;
-          f.rotation = p.rotation;
-          fOut[fn++] = f;
-        }
-      }
+      if (focus >= 0 && alive && u.team[i] === focus && fn < FOCUS_MAX) fn = this.pushOutline(fn, p, fOut, fd);
       // Depth key hysteresis: on small changes the order stays the same (overlapping units do not flicker).
       let key = Math.min(this.counts.length - 2, Math.max(0, ((wx + wy) * DEPTH_SCALE) | 0));
       const lk = this.lastKey[i];

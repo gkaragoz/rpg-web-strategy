@@ -18,3 +18,16 @@ Goal: 20 000 – 30 000 soldiers in an online battle.
 | 3 000 | 11.5 | 9.1 |
 | 10 000 | 14.7 | 13.3 |
 | 30 000 | 25.1 | 25.4 |
+
+## Browser benchmark (`?bench=15000&auto=12`, 30 000 units, whole map in view, worker sim)
+| | before | after |
+|---|---|---|
+| render ms/frame | 9.8 | 7.1 |
+| fps | 99 | 137 |
+| sim ms/step (browser) | 36 | 34 (realtime factor 0.84 → 0.90) |
+
+Render changes (`src/render/massRenderer.ts`): units outside the view are rejected before the terrain elevation lookup (`maxRise`/`minRise` bound the on-screen y), and below zoom 0.3 (`FAR_ZOOM`) units use an idle-pose fast path without walk/strike animation math.
+
+## What is left (ideas, measured profile is flat at 30 000 units)
+`updateUnit` 12 %, `moveToward` 11 %, `separate` 9 %, `pickTarget` 7 %, terrain `walkable`/`lineWalkable` 11 %, A* ~4 %. Next candidates: time-slice route/path refresh per unit, an alive-index list instead of scanning dead slots, shared flow fields instead of per-unit line-of-sight checks, a lower sim rate for huge armies. Each changes results (still deterministic) and needs a balance re-check.
+
