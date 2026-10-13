@@ -95,6 +95,7 @@ export class Placement {
       });
       this.editor.constraint = {
         allow: (x, y) => !this.locked && zone.contains(x, y),
+        canEdit: () => !this.locked,
         cost: (k) => init.costs[k] ?? 0,
         left: () => init.gold - spent(this.state.units, init.costs),
       };
@@ -208,6 +209,23 @@ export class Placement {
         }
         if (bad.length && this.editor) this.editor.removeSilently(bad);
         this.env.toast(t(`online.reason.${msg.reason}`));
+        break;
+      }
+      case 'unplaceFail': {
+        // The host kept these units (we were ready): restore them locally so what we see is what will fight.
+        let back = 0;
+        for (const id of msg.ids) {
+          const it = this.session.model.placed.get(id);
+          if (!it || it.team !== this.myTeam || !this.editor || this.state.units.some((x) => x.id === id)) continue;
+          this.state.units.push({ team: it.team, kind: it.kind, x: it.x, y: it.y, id: it.id });
+          back++;
+        }
+        if (back) {
+          this.ensureKinds();
+          this.editor?.refreshSprites();
+          this.refreshUi();
+        }
+        this.env.toast(t('online.place.locked'));
         break;
       }
       case 'state':
@@ -342,7 +360,12 @@ export class Placement {
     q('#pg-clear').addEventListener('click', () => this.editor!.clear());
     q('#pg-ready').addEventListener('click', () => {
       const me = this.session.model.me;
-      if (me) this.session.send({ t: 'ready', ready: !me.ready });
+      if (me) {
+        // Lock immediately when becoming ready (the confirmation comes with the next state message).
+        this.locked = !me.ready;
+        this.session.send({ t: 'ready', ready: !me.ready });
+        this.refreshUi();
+      }
     });
   }
 

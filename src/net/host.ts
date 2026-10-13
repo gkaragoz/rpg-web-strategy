@@ -571,7 +571,11 @@ export class HostLobby {
   }
 
   private onUnplace(p: PlayerInfo, ids: number[]): void {
-    if (this.phase !== 'placing' || p.role !== 'player' || p.ready) return;
+    if (this.phase !== 'placing' || p.role !== 'player' || p.ready) {
+      // Never ignore silently: the client already removed the sprites and must put them back.
+      if (p.role === 'player') this.sendTo(p.id, { t: 'unplaceFail', ids: ids.filter((id) => Number.isInteger(id)).slice(0, 400) });
+      return;
+    }
     const set = new Set(ids);
     const removed = this.units.filter((u) => set.has(u.id) && u.team === p.team).map((u) => u.id);
     if (!removed.length) return;

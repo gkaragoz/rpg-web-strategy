@@ -38,6 +38,8 @@ export interface PlacementConstraint {
   cost(kind: number): number;
   /** Remaining gold (computed from the current placement). */
   left(): number;
+  /** Online: false while the player is ready (the host ignores edits then), so erase/undo/redo/clear must not change anything. */
+  canEdit?(): boolean;
 }
 
 /** Unit placement on the map: brush painting, erasing, undo/redo, formations. */
@@ -162,7 +164,17 @@ export class Editor {
     this.beginStroke(e.button === 2 || this.d.state.tool === 'erase', e.button, e.clientX, e.clientY, e.shiftKey);
   }
 
+  /** Online lock: while ready the host ignores edits, so every edit path is refused here (with a hint). */
+  private editable(): boolean {
+    if (this.constraint?.canEdit && !this.constraint.canEdit()) {
+      this.d.toast(t('online.place.locked'));
+      return false;
+    }
+    return true;
+  }
+
   private beginStroke(erase: boolean, button: number, cx: number, cy: number, teamOnly: boolean): void {
+    if (!this.editable()) return;
     this.strokeButton = button;
     this.stroke = { type: erase ? 'remove' : 'add', units: [] };
     this.lastStamp = { x: -999, y: -999 };
@@ -381,6 +393,7 @@ export class Editor {
   // ---- undo / redo ----
 
   undo(): void {
+    if (!this.editable()) return;
     const op = this.undoStack.pop();
     if (!op) return;
     this.revert(op);
@@ -388,6 +401,7 @@ export class Editor {
   }
 
   redo(): void {
+    if (!this.editable()) return;
     const op = this.redoStack.pop();
     if (!op) return;
     this.revert({ type: op.type === 'add' ? 'remove' : 'add', units: op.units });
@@ -424,6 +438,7 @@ export class Editor {
 
   /** Removes the soldiers of a team (or all of them); can be undone. */
   clear(team?: number): number {
+    if (!this.editable()) return 0;
     const s = this.d.state;
     const removed = s.units.filter((u) => team === undefined || u.team === team);
     if (removed.length === 0) return 0;
@@ -443,6 +458,7 @@ export class Editor {
    * If `army` is omitted, the classic mix (Warrior/Archer/Priest + tanks) is used.
    */
   formation(team: number, army?: Record<Lane, number[]>): PlacedUnit[] {
+    if (!this.editable()) return [];
     const s = this.d.state;
     const n = this.d.world.mapSize;
     const c = n / 2;

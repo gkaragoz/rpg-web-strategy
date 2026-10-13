@@ -3,7 +3,7 @@ import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
 
 /** Protocol version: a client with a different version cannot join the lobby. */
-export const PROTOCOL = 5;
+export const PROTOCOL = 6;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;
@@ -140,6 +140,8 @@ export type ServerMsg =
   | { t: 'placed'; owner: string; items: PlacedItem[] }
   | { t: 'placeFail'; cids: number[]; reason: PlaceFailReason }
   | { t: 'unplaced'; owner: string; ids: number[] }
+  /** The host refused to remove these units (the player is ready or placement is over): the client restores them. */
+  | { t: 'unplaceFail'; ids: number[] }
   | { t: 'start'; start: BattleStart }
   | { t: 'tick'; step: number; speed: number; paused: boolean }
   | { t: 'resync'; step: number; data: string }

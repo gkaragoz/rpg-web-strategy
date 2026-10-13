@@ -237,6 +237,27 @@ describe('placement', () => {
     }
   });
 
+  it('removing units while ready is refused and reported (the client must put them back), gold is not refunded', () => {
+    const { r, a } = placing(true);
+    const ma = spots(r, a.model.me!.team, 3);
+    a.send({ t: 'place', items: [item(1, 0, ma[0]), item(2, 0, ma[1])] });
+    const ids = [...a.model.placed.keys()];
+    expect(ids.length).toBe(2);
+    const seen: string[] = [];
+    a.model.listeners.push((m) => {
+      if (m.t === 'unplaceFail') seen.push(...m.ids.map(String));
+    });
+    a.send({ t: 'ready', ready: true });
+    a.send({ t: 'unplace', ids });
+    expect(seen.sort()).toEqual(ids.map(String).sort());
+    expect(a.model.placed.size).toBe(2);
+    expect(r.hs.model.state!.players[a.model.me!.team].units).toBe(2);
+    // After cancelling ready the removal works again.
+    a.send({ t: 'ready', ready: false });
+    a.send({ t: 'unplace', ids });
+    expect(a.model.placed.size).toBe(0);
+  });
+
   it('placement locks when ready; everyone ready -> battle starts, same layout for everyone', () => {
     const { r, a, b } = placing(true);
     const ma = spots(r, a.model.me!.team, 2);
