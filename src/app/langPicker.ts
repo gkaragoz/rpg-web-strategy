@@ -22,16 +22,16 @@ export interface LangPickerOptions {
   beforeSwitch?: () => boolean;
 }
 
-/** Bottom-right language dropdown (flag + country name). Mounted once on <body>; switching reloads the page. */
+/** Bottom-right language dropdown (flag + language name). Mounted once on <body>; switching reloads the page. */
 export function mountLangPicker(opts: LangPickerOptions = {}): () => void {
   const root = document.createElement('div');
   root.className = 'lang-picker';
   const cur = getLang();
-  const country = (id: Lang): string => t(`sys.lang.country.${id}`);
+  const label = (id: Lang): string => LANGS.find((l) => l.id === id)!.label;
   root.innerHTML = `
-<button type="button" class="lp-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="${t('sys.lang.aria')}">${FLAGS[cur]}<span class="lp-name">${country(cur)}</span><span class="lp-caret" aria-hidden="true">▾</span></button>
+<button type="button" class="lp-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="${t('sys.lang.aria')}">${FLAGS[cur]}<span class="lp-name">${label(cur)}</span><span class="lp-caret" aria-hidden="true">▾</span></button>
 <ul class="lp-list" role="listbox" tabindex="-1" aria-label="${t('sys.lang.aria')}" hidden>${LANGS.map(
-    (l) => `<li role="option" tabindex="-1" data-lang="${l.id}" aria-selected="${l.id === cur}">${FLAGS[l.id]}<span class="lp-opt"><b>${country(l.id)}</b><small>${l.label}</small></span></li>`,
+    (l) => `<li role="option" tabindex="-1" data-lang="${l.id}" aria-selected="${l.id === cur}">${FLAGS[l.id]}<span class="lp-opt"><b>${l.label}</b></span></li>`,
   ).join('')}</ul>`;
   document.body.appendChild(root);
   const btn = root.querySelector('.lp-btn') as HTMLButtonElement;

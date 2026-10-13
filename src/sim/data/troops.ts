@@ -66,11 +66,11 @@ export interface TroopDef {
   skillText: Localized;
   /** Only arrives through summoning/reviving; not in the placement list. */
   summoned?: boolean;
-  /** Levels 1..10: [hp, attack, defense]. */
-  levels: Array<[number, number, number]>;
+  /** Base stats: [hp, attack, defense]. */
+  base: [number, number, number];
 }
 
-/** Role archetypes: share of the rarity budget spent on hp / attack and the level-1 defense. */
+/** Role archetypes: share of the rarity budget spent on hp / attack and the base defense. */
 type Role = 'tank' | 'bruiser' | 'skirmisher' | 'archer' | 'mage' | 'support' | 'siege' | 'glass';
 const ROLE: Record<Role, { hp: number; atk: number; def: number }> = {
   tank: { hp: 0.62, atk: 0.12, def: 60 },
@@ -83,19 +83,11 @@ const ROLE: Record<Role, { hp: number; atk: number; def: number }> = {
   glass: { hp: 0.2, atk: 0.6, def: 6 },
 };
 const BUDGET: Record<Rarity, number> = { common: 1000, rare: 1450, epic: 2250, legendary: 3500 };
-/** Level multipliers (level 1 = 1). Health grows faster than damage; the last two levels are star-ups. */
-const HP_CURVE = [1, 1.7, 2.6, 3.7, 5, 6.6, 8.5, 10.8, 17, 26];
-const ATK_CURVE = [1, 1.45, 2.1, 2.9, 3.8, 4.9, 6.1, 7.5, 11.5, 17];
-
-/** Builds the 10 level rows from a role, a rarity and per-unit tweaks (hp x, attack x, defense +). */
-function levelsFor(rarity: Rarity, role: Role, hpX = 1, atkX = 1, defAdd = 0): Array<[number, number, number]> {
+/** Builds the base [hp, attack, defense] row from a role, a rarity and per-unit tweaks (hp x, attack x, defense +). */
+function baseFor(rarity: Rarity, role: Role, hpX = 1, atkX = 1, defAdd = 0): [number, number, number] {
   const b = BUDGET[rarity];
   const r = ROLE[role];
-  const hp1 = b * r.hp * 1.6 * hpX;
-  const atk1 = b * r.atk * 0.2 * atkX;
-  const def1 = r.def + defAdd;
-  const def10 = def1 * 2.4;
-  return HP_CURVE.map((_, i) => [Math.round((hp1 * HP_CURVE[i]) / 10) * 10, Math.round((atk1 * ATK_CURVE[i]) / 5) * 5, Math.round(def1 + ((def10 - def1) * i) / 9)]);
+  return [Math.round((b * r.hp * 1.6 * hpX) / 10) * 10, Math.round((b * r.atk * 0.2 * atkX) / 5) * 5, Math.round(r.def + defAdd)];
 }
 
 const L = (en: string, tr: string): Localized => ({ en, tr });
@@ -135,7 +127,7 @@ const T = (s: Spec): TroopDef => ({
   skill: s.skill ?? null,
   skillText: s.text ?? NONE,
   summoned: s.summoned,
-  levels: levelsFor(s.rarity, s.role, ...(s.tweak ?? [1, 1, 0])),
+  base: baseFor(s.rarity, s.role, ...(s.tweak ?? [1, 1, 0])),
 });
 
 // Reach: short 1.0, medium 1.8, long 2.6; ranged: bows/spells 8-9, siege 10-13.

@@ -5,10 +5,9 @@ import { DEFAULT_MAP } from '../mapSpec';
 import { TROOPS } from '../data/troops';
 import { KIND_OF_TROOP, STATS } from '../units';
 
-// BALANCE=1 LEVEL=6 npx vitest run src/sim/__tests__/balance.test.ts
+// BALANCE=1 npx vitest run src/sim/__tests__/balance.test.ts
 // Every roster unit (n of them) fights every other (n of them); win rates are written to test-results/balance.txt.
 const ON = process.env.BALANCE === '1';
-const LEVEL = Number(process.env.LEVEL ?? 6);
 const N = Number(process.env.N ?? 5);
 
 function fight(a: number, b: number, seed: number): number {
@@ -17,7 +16,7 @@ function fight(a: number, b: number, seed: number): number {
     layout.push(0, a, 20 + (i % 3) * 1.2, 28 + Math.floor(i / 3) * 1.2);
     layout.push(1, b, 29 + (i % 3) * 1.2, 28 + Math.floor(i / 3) * 1.2);
   }
-  const config: BattleConfig = { mode: 'custom', perTeam: 0, teamCount: 2, mapSize: 56, env: false, kite: true, map: DEFAULT_MAP, level: LEVEL, layout: new Float32Array(layout) };
+  const config: BattleConfig = { mode: 'custom', perTeam: 0, teamCount: 2, mapSize: 56, env: false, kite: true, map: DEFAULT_MAP, layout: new Float32Array(layout) };
   const bt = new Battle(seed, config);
   for (let s = 0; s < 30 * 200 && bt.winner === -1; s++) bt.step(1 / 30);
   return bt.winner; // 0, 1, -2 (draw), -1 (unfinished)

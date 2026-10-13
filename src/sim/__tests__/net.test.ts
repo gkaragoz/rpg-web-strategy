@@ -103,13 +103,12 @@ describe('lobby', () => {
     expect(r.hs.model.state!.players[1].ready).toBe(true);
     g.send({ t: 'settings', settings: { gold: 99999 } });
     expect(r.hs.model.state!.settings.gold).toBe(2000);
-    r.hs.send({ t: 'settings', settings: { gold: 5000, placeSecs: 60, level: 7, openPlacement: false, comedyPhysics: true } });
+    r.hs.send({ t: 'settings', settings: { gold: 5000, placeSecs: 60, openPlacement: false, comedyPhysics: true } });
     const s = g.model.state!.settings;
-    expect([s.gold, s.placeSecs, s.level, s.openPlacement, s.comedyPhysics]).toEqual([5000, 60, 7, false, true]);
+    expect([s.gold, s.placeSecs, s.openPlacement, s.comedyPhysics]).toEqual([5000, 60, false, true]);
     expect(g.model.state!.players[1].ready).toBe(false);
-    r.hs.send({ t: 'settings', settings: { gold: 5, level: 99 } });
+    r.hs.send({ t: 'settings', settings: { gold: 5 } });
     expect(g.model.state!.settings.gold).toBe(100);
-    expect(g.model.state!.settings.level).toBe(10);
   });
 
   it('kick: the kicked player is told, leaves the list, and cannot rejoin with the same token', () => {

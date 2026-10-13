@@ -11,7 +11,7 @@ import { NetError, WsGuestTransport, WsHostTransport, lanUrl } from '../../net/w
 import type { Atlas } from '../../render/atlas';
 import type { TeamColors } from '../../render/unitView';
 import type { MapSpec } from '../../sim/mapSpec';
-import { KIND_OF_TROOP, LEGACY_COUNT, STATS, setUnitLevel } from '../../sim/units';
+import { KIND_OF_TROOP, LEGACY_COUNT, STATS } from '../../sim/units';
 import { STATS_DEFAULT_SHOWN, type StatsPanel } from '../../ui/stats';
 import type { BattleOptions, BattleScene } from '../battle';
 import { makeTeamColor } from '../state';
@@ -412,12 +412,11 @@ export class OnlineApp {
   }
 
   private mapConfig(init: GameInit) {
-    return { mode: 'custom' as const, perTeam: 0, teamCount: init.teams, mapSize: init.size, env: true, kite: true, terrainSeed: init.seed, map: init.spec, level: init.level, comedy: init.comedyPhysics };
+    return { mode: 'custom' as const, perTeam: 0, teamCount: init.teams, mapSize: init.size, env: true, kite: true, terrainSeed: init.seed, map: init.spec, comedy: init.comedyPhysics };
   }
 
   private async startPlacing(init: GameInit): Promise<void> {
     const { env } = this;
-    setUnitLevel(init.level);
     this.colors = this.teamColorsFor(init);
     this.biome = init.spec.biome;
     env.setIconColors(this.colors);
@@ -461,7 +460,6 @@ export class OnlineApp {
     const start = m.start!;
     const { env } = this;
     const init = start.init;
-    setUnitLevel(init.level);
     this.colors = this.teamColorsFor(init);
     this.biome = init.spec.biome;
     env.setIconColors(this.colors);

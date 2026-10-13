@@ -140,7 +140,7 @@ export function makeScenario(id: number): Scenario {
 
 /**
  * Roster-unit scenario: keeps makeScenario's layout/map, replaces the kinds with 1-3 random
- * roster units per team and picks the level at random.
+ * roster units per team
  */
 export function makeRosterScenario(id: number): Scenario {
   const sc = makeScenario(id);
@@ -157,5 +157,5 @@ export function makeRosterScenario(id: number): Scenario {
     }
     L[k + 1] = pool[Math.floor(rng() * pool.length)];
   }
-  return { ...sc, desc: `${sc.desc} ROSTER L${(sc.config.level = 1 + Math.floor(rng() * 10))}`, config: { ...sc.config, stats: undefined } };
+  return { ...sc, desc: `${sc.desc} ROSTER`, config: { ...sc.config, stats: undefined } };
 }

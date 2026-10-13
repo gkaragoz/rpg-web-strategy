@@ -6,11 +6,11 @@ import { F_REVIVED, KIND_OF_TROOP, STATS } from '../units';
 const K = (id: string): number => KIND_OF_TROOP[id];
 
 /** Team A gets units `a`, team B gets units `b`; clean (no environment) map, close formation. */
-function arena(a: string[], b: string[], level = 6, gap = 5): Battle {
+function arena(a: string[], b: string[], gap = 5): Battle {
   const layout: number[] = [];
   a.forEach((id, i) => layout.push(0, K(id), 20 + (i % 3) * 1.2, 28 + Math.floor(i / 3) * 1.2));
   b.forEach((id, i) => layout.push(1, K(id), 20 + gap + (i % 3) * 1.2, 28 + Math.floor(i / 3) * 1.2));
-  const config: BattleConfig = { mode: 'custom', perTeam: 0, teamCount: 2, mapSize: 56, env: false, kite: true, map: DEFAULT_MAP, level, layout: new Float32Array(layout) };
+  const config: BattleConfig = { mode: 'custom', perTeam: 0, teamCount: 2, mapSize: 56, env: false, kite: true, map: DEFAULT_MAP, layout: new Float32Array(layout) };
   return new Battle(5, config);
 }
 
@@ -23,7 +23,7 @@ function run(b: Battle, seconds: number, each?: (b: Battle) => void): void {
 
 describe('skills', () => {
   it('Bone Caller summons bone soldiers (wakes them from the pool), they attack the enemy', () => {
-    const b = arena(['bone-caller'], ['militia', 'militia', 'militia'], 8, 14);
+    const b = arena(['bone-caller'], ['militia', 'militia', 'militia'], 14);
     const u = b.units;
     const skel = K('bone-soldier');
     let peak = 0;
@@ -37,7 +37,7 @@ describe('skills', () => {
   });
 
   it('Undead Soldier revives once', () => {
-    const b = arena(['risen-guard'], ['longbowmen', 'longbowmen', 'longbowmen', 'longbowmen'], 3, 6);
+    const b = arena(['risen-guard'], ['longbowmen', 'longbowmen', 'longbowmen', 'longbowmen'], 6);
     const u = b.units;
     let revived = false;
     run(b, 40, () => {
@@ -47,14 +47,14 @@ describe('skills', () => {
   });
 
   it('Blast Imps explode on contact with the enemy: they die and deal area damage', () => {
-    const b = arena(['blast-imps', 'blast-imps'], ['militia', 'militia', 'militia'], 4, 4);
+    const b = arena(['blast-imps', 'blast-imps'], ['militia', 'militia', 'militia'], 4);
     run(b, 15);
     expect(b.units.alive[0] === 0 || b.units.alive[1] === 0).toBe(true);
     expect(b.counters.damage).toBeGreaterThan(0);
   });
 
   it('Ice Mage slows the enemy', () => {
-    const b = arena(['frost-adept', 'frost-adept', 'frost-adept'], ['bulwark-guard', 'bulwark-guard'], 6, 8);
+    const b = arena(['frost-adept', 'frost-adept', 'frost-adept'], ['bulwark-guard', 'bulwark-guard'], 8);
     const u = b.units;
     let slowed = false;
     run(b, 30, () => {
@@ -64,7 +64,7 @@ describe('skills', () => {
   });
 
   it('Nun heals an ally and clears crowd-control effects', () => {
-    const b = arena(['mender', 'militia'], ['longbowmen', 'longbowmen'], 6, 7);
+    const b = arena(['mender', 'militia'], ['longbowmen', 'longbowmen'], 7);
     const u = b.units;
     let healed = false;
     run(b, 20, () => {
@@ -74,7 +74,7 @@ describe('skills', () => {
   });
 
   it('Scarecrow Sentinel taunts: nearby enemies target the guard', () => {
-    const b = arena(['scarecrow', 'militia'], ['militia', 'militia', 'militia'], 6, 3);
+    const b = arena(['scarecrow', 'militia'], ['militia', 'militia', 'militia'], 3);
     const u = b.units;
     let taunted = false;
     run(b, 12, () => {
@@ -84,7 +84,7 @@ describe('skills', () => {
   });
 
   it('Dread Totem frightens the enemy', () => {
-    const b = arena(['dread-totem'], ['militia', 'militia', 'militia'], 6, 3);
+    const b = arena(['dread-totem'], ['militia', 'militia', 'militia'], 3);
     const u = b.units;
     let feared = false;
     run(b, 12, () => {
@@ -94,7 +94,7 @@ describe('skills', () => {
   });
 
   it('Hex Poppets: when one takes damage, the linked enemies take damage too', () => {
-    const b = arena(['hex-poppets', 'militia'], ['longbowmen', 'longbowmen', 'longbowmen'], 6, 6);
+    const b = arena(['hex-poppets', 'militia'], ['longbowmen', 'longbowmen', 'longbowmen'], 6);
     const u = b.units;
     let mirrored = false;
     const start = Array.from({ length: u.count }, (_, i) => u.hp[i]);
@@ -106,7 +106,7 @@ describe('skills', () => {
 
   it('roster units do not produce NaN/negative hp in a mixed 2x2 battle', () => {
     const ids = ['pyre-sling', 'bolt-thrower', 'war-barge', 'sand-king', 'sun-priest', 'horned-seer', 'ash-fiend', 'dawn-blade', 'rime-archers', 'cinder-golem'];
-    const b = arena(ids, ids.slice().reverse(), 10, 7);
+    const b = arena(ids, ids.slice().reverse(), 7);
     run(b, 90);
     const u = b.units;
     for (let i = 0; i < u.count; i++) {

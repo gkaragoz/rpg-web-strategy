@@ -8,7 +8,7 @@ describe('large battle resync size', () => {
   it('a 9000-unit snapshot is split, reassembled and restored to the same state', () => {
     const layout: number[] = [];
     for (let t = 0; t < 6; t++) for (let i = 0; i < 1500; i++) layout.push(t, i % 5, 5 + (i % 40) * 1.2 + t * 0.1, 5 + Math.floor(i / 40) * 1.2 + t * 0.2);
-    const cfg = { mode: 'custom' as const, perTeam: 0, teamCount: 6, mapSize: 120, env: true, kite: true, terrainSeed: 9, level: 5, layout: new Float32Array(layout) };
+    const cfg = { mode: 'custom' as const, perTeam: 0, teamCount: 6, mapSize: 120, env: true, kite: true, terrainSeed: 9, layout: new Float32Array(layout) };
     const a = new Battle(7, cfg);
     for (let i = 0; i < 20; i++) a.step(1 / 30);
     const data = b64encode(packSnapshot(a.serialize()));

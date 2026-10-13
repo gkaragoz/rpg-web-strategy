@@ -25,8 +25,6 @@ export interface StudioDeps {
   icon: (kind: number, team: number) => HTMLCanvasElement;
   /** Animated attack previews for the unit gallery. */
   preview?: UnitPreview;
-  /** Roster unit level changed. */
-  onLevel: () => void;
   /** A new type was picked: the atlas is baked if needed. */
   onKindPick: (kind: number) => void;
 }
@@ -53,10 +51,6 @@ export class Studio {
       state: d.state,
       icon: d.icon,
       preview: d.preview,
-      onLevel: () => {
-        d.onLevel();
-        this.render();
-      },
       onPick: (k) => {
         d.onKindPick(k);
         this.render();

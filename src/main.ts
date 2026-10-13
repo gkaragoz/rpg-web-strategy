@@ -16,7 +16,7 @@ import { AudioSystem } from './render/audio';
 import { comedy } from './render/comedy';
 import { POSE_STATES, UnitView, type TeamColors } from './render/unitView';
 import type { BattleConfig } from './sim/battle';
-import { KIND_OF_TROOP, LEGACY_COUNT, STATS, setUnitLevel } from './sim/units';
+import { KIND_OF_TROOP, LEGACY_COUNT, STATS } from './sim/units';
 import { STATS_DEFAULT_SHOWN, StatsPanel } from './ui/stats';
 
 // Benchmark and debug parameters (they skip the studio):
@@ -110,8 +110,6 @@ const banner = document.getElementById('banner')!;
 const studioRoot = document.getElementById('studio')!;
 const hudRoot = document.getElementById('hud')!;
 
-setUnitLevel(state.level);
-
 /** Types that need a texture in the atlas: the classics, placed ones, the selected type and its dependencies (Bone Caller -> Bone Soldier). */
 function neededKinds(): Set<number> {
   const set = new Set<number>(Array.from({ length: LEGACY_COUNT }, (_, i) => i));
@@ -181,7 +179,7 @@ let online: OnlineApp | null = null;
 let iconColors: TeamColors[] | null = null;
 
 function studioConfig(): BattleConfig {
-  return { mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, terrainSeed: state.seed, map: state.map, level: state.level, comedy: comedyPhysicsOn(), stats: state.stats };
+  return { mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, terrainSeed: state.seed, map: state.map, comedy: comedyPhysicsOn(), stats: state.stats };
 }
 
 function layoutArray(): Float32Array {
@@ -251,7 +249,7 @@ function ensureAtlas(): void {
 }
 
 const iconCache = new Map<string, HTMLCanvasElement>();
-/** Drops cached unit icons and animated preview sheets (palette, level or team colours changed). */
+/** Drops cached unit icons and animated preview sheets (palette or team colours changed). */
 function clearIcons(): void {
   iconCache.clear();
   preview.clear();
@@ -307,7 +305,7 @@ const preview = new UnitPreview({ begin: beginFrameJob });
 /** Unit icon: drawn once from UnitView and cached; a copy is returned on every call. */
 function renderIcon(kind: number, team: number): HTMLCanvasElement {
   const colors = iconColors ?? teamColors(state.palette, state.teamCount);
-  const key = `${kind}:${team}:${iconColors ? iconColors.map((c) => c.main).join('.') : state.palette}:${state.level}`;
+  const key = `${kind}:${team}:${iconColors ? iconColors.map((c) => c.main).join('.') : state.palette}`;
   let src = iconCache.get(key);
   if (!src) {
     const W = 120;
@@ -347,11 +345,6 @@ studio = new Studio(studioRoot, {
   onOptions: applyOptions,
   icon: renderIcon,
   preview,
-  onLevel: () => {
-    setUnitLevel(state.level);
-    clearIcons();
-    saveState(state);
-  },
   onKindPick: () => {
     ensureAtlas();
     saveState(state);
@@ -465,7 +458,6 @@ function startOnline(joinCode?: string): void {
       iconColors = null;
       rebakeAtlas();
       applyOptions();
-      setUnitLevel(state.level);
       mode = 'studio';
       rebuildWorld(false);
       camera.fit(app.screen.width, app.screen.height);

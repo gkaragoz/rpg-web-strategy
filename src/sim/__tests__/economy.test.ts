@@ -2,32 +2,26 @@ import { describe, expect, it } from 'vitest';
 import { MAX_COST, MIN_COST, buyable, costTable, mapSizeForPlayers, spent, teamZones, unitGold } from '../../net/economy';
 import { PRESETS } from '../mapSpec';
 import { Terrain } from '../terrain';
-import { KIND_COUNT, STATS, Kind, setUnitLevel } from '../units';
+import { KIND_COUNT, STATS, Kind } from '../units';
 
 describe('gold cost', () => {
   it('the basic unit costs 10 gold; all costs are in range and multiples of 5', () => {
-    for (const lv of [1, 5, 10]) {
-      const c = costTable(lv);
-      expect(c[Kind.Warrior]).toBe(10);
-      for (let k = 0; k < KIND_COUNT; k++) {
-        expect(c[k], `${STATS[k].name} L${lv}`).toBeGreaterThanOrEqual(MIN_COST);
-        expect(c[k]).toBeLessThanOrEqual(MAX_COST);
-        expect(c[k] % 5).toBe(0);
-      }
+    const c = costTable();
+    expect(c[Kind.Warrior]).toBe(10);
+    for (let k = 0; k < KIND_COUNT; k++) {
+      expect(c[k], STATS[k].name).toBeGreaterThanOrEqual(MIN_COST);
+      expect(c[k]).toBeLessThanOrEqual(MAX_COST);
+      expect(c[k] % 5).toBe(0);
     }
-    setUnitLevel(5);
   });
 
-  it('cost of roster units never decreases as the level rises; tanks are expensive', () => {
-    const lo = costTable(1);
-    const hi = costTable(10);
-    for (let k = 5; k < KIND_COUNT; k++) expect(hi[k], STATS[k].name).toBeGreaterThanOrEqual(lo[k]);
-    expect(hi[Kind.Shield]).toBeGreaterThan(hi[Kind.Warrior] * 2);
-    setUnitLevel(5);
+  it('tanks are expensive', () => {
+    const c = costTable();
+    expect(c[Kind.Shield]).toBeGreaterThan(c[Kind.Warrior] * 2);
   });
 
   it('budget calculation and buyability', () => {
-    const c = costTable(5);
+    const c = costTable();
     expect(spent([{ kind: 0 }, { kind: 0 }, { kind: 3 }], c)).toBe(c[0] * 2 + c[3]);
     expect(buyable(0)).toBe(true);
     expect(unitGold(0)).toBe(10);

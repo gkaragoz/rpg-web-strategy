@@ -53,7 +53,7 @@ export const STATS: KindStats[] = [
   classic({ name: 'Hammer Tank', role: Role.Tank, hp: 460, speed: 2.1, range: 1.8, power: 22, cooldown: 2.0, swing: 0.6, hitAt: 0.35, armor: 0.2, scale: 2, aoe: 2.2, knockback: 1.5 }),
 ];
 
-// ---- Roster units: level-dependent, normalized to the game scale ----
+// ---- Roster units: normalized to the game scale ----
 
 /** Divisors that scale the roster HP/attack values down to the game scale. */
 export const HP_DIV = 5;
@@ -61,15 +61,13 @@ export const ATK_DIV = 6.5;
 /** Defense to armor ratio: def / (def + ARMOR_K). */
 export const ARMOR_K = 220;
 export const MOVE_SPEED: Record<MoveClass, number> = { 0: 2.2, 1: 2.6, 2: 3.0, 3: 3.6, 4: 4.4 };
-export const DEFAULT_LEVEL = 5;
-export const MAX_LEVEL = 10;
 
 /** Roster unit id to kind number. */
 export const KIND_OF_TROOP: Record<string, number> = {};
 
-function troopStats(t: TroopDef, level: number): KindStats {
-  const [hp, atk, def] = t.levels[Math.min(MAX_LEVEL, Math.max(1, level)) - 1];
-  const big = t.id === 'granite-colossus' || t.id === 'cinder-golem' || t.id === 'war-barge' || t.id === 'hill-brute' ? 1.8 : t.levels[0][0] >= 2000 ? 1.4 : 1;
+function troopStats(t: TroopDef): KindStats {
+  const [hp, atk, def] = t.base;
+  const big = t.id === 'granite-colossus' || t.id === 'cinder-golem' || t.id === 'war-barge' || t.id === 'hill-brute' ? 1.8 : hp >= 2000 ? 1.4 : 1;
   const heal = t.skill === 'cleanse';
   return {
     name: t.name,
@@ -95,7 +93,7 @@ function troopStats(t: TroopDef, level: number): KindStats {
 
 TROOPS.forEach((t, i) => {
   KIND_OF_TROOP[t.id] = LEGACY_COUNT + i;
-  STATS.push(troopStats(t, DEFAULT_LEVEL));
+  STATS.push(troopStats(t));
 });
 
 export const KIND_COUNT = STATS.length;
@@ -155,29 +153,11 @@ export const TUNABLE: Array<{ key: StatKey; label: string; hint: string; min: nu
   { key: 'knockback', get label() { return t('units.stat.knockback.label'); }, get hint() { return t('units.stat.knockback.hint'); }, min: 0, max: 8, step: 0.5, tankOnly: true },
 ];
 
-/** Default values (for the UI "reset"); roster units are refreshed when the level changes. */
+/** Default values (for the UI "reset"); used by the settings dialog. */
 export const DEFAULT_STATS: KindStats[] = STATS.map((s) => ({ ...s }));
 
-let currentLevel = DEFAULT_LEVEL;
-
-/** Sets the stats of roster units to the given level (STATS and DEFAULT_STATS). */
-export function setUnitLevel(level: number): void {
-  const lv = Math.min(MAX_LEVEL, Math.max(1, Math.round(level)));
-  currentLevel = lv;
-  TROOPS.forEach((t, i) => {
-    const k = LEGACY_COUNT + i;
-    Object.assign(STATS[k], troopStats(t, lv));
-    Object.assign(DEFAULT_STATS[k], troopStats(t, lv));
-  });
-}
-
-export function unitLevel(): number {
-  return currentLevel;
-}
-
 /** Applies user overrides to STATS; missing fields fall back to defaults. Called before the sim starts. */
-export function applyStats(overrides: StatOverrides | undefined, level: number = DEFAULT_LEVEL): void {
-  setUnitLevel(level);
+export function applyStats(overrides: StatOverrides | undefined): void {
   for (let k = 0; k < STATS.length; k++) {
     const o = overrides?.[k] ?? {};
     for (const t of TUNABLE) {

@@ -36,7 +36,6 @@ export const DEFAULT_SETTINGS: LobbySettings = {
   mapSize: 0,
   gold: 2000,
   placeSecs: 120,
-  level: 5,
   openPlacement: true,
   comedyPhysics: false,
   comedyVisual: false,
@@ -387,7 +386,6 @@ export class HostLobby {
     if (typeof patch.mapSize === 'number') s.mapSize = [0, 40, 56, 80, 100, 120].includes(patch.mapSize) ? patch.mapSize : s.mapSize;
     if (typeof patch.gold === 'number' && Number.isFinite(patch.gold)) s.gold = Math.min(100000, Math.max(100, Math.round(patch.gold)));
     if (typeof patch.placeSecs === 'number' && Number.isFinite(patch.placeSecs)) s.placeSecs = Math.min(600, Math.max(0, Math.round(patch.placeSecs)));
-    if (typeof patch.level === 'number' && Number.isFinite(patch.level)) s.level = Math.min(10, Math.max(1, Math.round(patch.level)));
     if (typeof patch.openPlacement === 'boolean') s.openPlacement = patch.openPlacement;
     if (typeof patch.comedyPhysics === 'boolean') s.comedyPhysics = patch.comedyPhysics;
     if (typeof patch.comedyVisual === 'boolean') s.comedyVisual = patch.comedyVisual;
@@ -482,14 +480,13 @@ export class HostLobby {
       spec,
       seed,
       size,
-      level: this.settings.level,
       gold: this.settings.gold,
       teams,
       openPlacement: this.settings.openPlacement,
       comedyPhysics: this.settings.comedyPhysics,
       comedyVisual: this.settings.comedyVisual,
       banned: [...this.settings.banned],
-      costs: costTable(this.settings.level),
+      costs: costTable(),
       teamPlayers: pl.map((p) => p.id),
     };
     this.phase = 'placing';

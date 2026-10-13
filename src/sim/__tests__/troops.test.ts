@@ -6,18 +6,18 @@ import { runScenario } from '../testing/stall';
 import { KIND_OF_TROOP, LEGACY_COUNT, STATS, applyStats } from '../units';
 import type { Scenario } from '../testing/scenarios';
 
-/** Single-kind setup: team A has 6 of the given unit, team B has 6 Militia; at the given level. */
-function duel(kind: number, foe: number, level: number, n = 6): Scenario {
+/** Single-kind setup: team A has 6 of the given unit, team B has 6 Militia. */
+function duel(kind: number, foe: number, n = 6): Scenario {
   const layout: number[] = [];
   for (let i = 0; i < n; i++) {
     layout.push(0, kind, 12 + (i % 3) * 1.3, 38 + Math.floor(i / 3) * 1.3);
     layout.push(1, foe, 40 + (i % 3) * 1.3, 14 + Math.floor(i / 3) * 1.3);
   }
   return {
-    id: kind * 100 + level,
-    desc: `${STATS[kind].name} x${n} L${level} vs ${STATS[foe].name}`,
+    id: kind * 100,
+    desc: `${STATS[kind].name} x${n} vs ${STATS[foe].name}`,
     simSeed: 7 + kind,
-    config: { mode: 'custom', perTeam: 0, teamCount: 2, mapSize: 56, env: true, kite: true, terrainSeed: 3, map: DEFAULT_MAP, level, layout: new Float32Array(layout) },
+    config: { mode: 'custom', perTeam: 0, teamCount: 2, mapSize: 56, env: true, kite: true, terrainSeed: 3, map: DEFAULT_MAP, layout: new Float32Array(layout) },
   };
 }
 
@@ -35,11 +35,11 @@ describe('roster birimleri', () => {
 
   const foe = KIND_OF_TROOP.militia;
   for (const t of TROOPS) {
-    for (const level of [1, 10]) {
-      it(`${t.name} level ${level}: no stall/loop, reaches a result`, () => {
-        applyStats(undefined, level);
+    {
+      it(`${t.name}: no stall/loop, reaches a result`, () => {
+        applyStats(undefined);
         const kind = KIND_OF_TROOP[t.id];
-        const r = runScenario(duel(kind, foe, level), 240);
+        const r = runScenario(duel(kind, foe), 240);
         expect(r.flags.map((f) => `${f.type} t=${f.t}: ${f.info}`), r.scenario.desc).toEqual([]);
       });
     }

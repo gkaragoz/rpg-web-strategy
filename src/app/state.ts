@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { DEFAULT_LEVEL, KIND_COUNT, MAX_LEVEL, MAX_TEAMS, TUNABLE, type StatOverrides } from '../sim/units';
+import { KIND_COUNT, MAX_TEAMS, TUNABLE, type StatOverrides } from '../sim/units';
 import type { TeamColors } from '../render/unitView';
 import { DEFAULT_MAP, PRESETS, sanitizeSpec, type MapSpec } from '../sim/mapSpec';
 
@@ -79,8 +79,6 @@ export interface AppState {
   /** Erasing only affects the selected team's units (the touch equivalent of Shift). */
   eraseTeamOnly: boolean;
   benchPerTeam: number;
-  /** Level of the roster units (1-10). */
-  level: number;
   /** Unit stat overrides (only the changed ones). */
   stats: StatOverrides;
   options: Options;
@@ -116,7 +114,6 @@ export function defaultState(): AppState {
     tool: 'place',
     eraseTeamOnly: false,
     benchPerTeam: 10000,
-    level: DEFAULT_LEVEL,
     stats: Array.from({ length: KIND_COUNT }, () => ({})),
     options: defaultOptions(),
     units: [],
@@ -183,7 +180,6 @@ export function loadState(): AppState {
       tool: 'place',
       eraseTeamOnly: false,
       benchPerTeam: [1000, 3000, 10000].includes(o.benchPerTeam as number) ? (o.benchPerTeam as number) : d.benchPerTeam,
-      level: Math.floor(num(o.level, 1, MAX_LEVEL, d.level)),
       stats: Array.from({ length: KIND_COUNT }, () => ({})),
       options: defaultOptions(),
       units: [],

@@ -20,7 +20,7 @@ describe('online battle setup (random map + placement)', () => {
       const n = 2 + Math.floor(rnd() * 5); // 2..6 players
       const guests: GuestSession[] = [];
       for (let i = 1; i < n; i++) guests.push(new GuestSession(hub.connect(), { name: `G${i}`, color: i }));
-      hs.send({ t: 'settings', settings: { mapMode: 'random', gold: 2000, level: 1 + Math.floor(rnd() * 10), comedyPhysics: rnd() < 0.3, openPlacement: rnd() < 0.5, placeSecs: 60, mapSize: [0, 0, 40, 56, 80][Math.floor(rnd() * 5)] } });
+      hs.send({ t: 'settings', settings: { mapMode: 'random', gold: 2000, comedyPhysics: rnd() < 0.3, openPlacement: rnd() < 0.5, placeSecs: 60, mapSize: [0, 0, 40, 56, 80][Math.floor(rnd() * 5)] } });
       for (const g of guests) g.send({ t: 'ready', ready: true });
       hs.send({ t: 'start' });
       const init = hs.model.state!.init!;

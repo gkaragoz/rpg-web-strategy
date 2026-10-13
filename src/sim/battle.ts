@@ -1,7 +1,7 @@
 import { Grid } from './grid';
 import { Terrain, T_BLOCKED, T_WATER } from './terrain';
 import type { MapSpec } from './mapSpec';
-import { DEFAULT_LEVEL, PROJ_TAG, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides } from './units';
+import { PROJ_TAG, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides } from './units';
 import { PF_PIERCE, PF_SKILL, Projectiles } from './projectiles';
 import { SKILL_ELEMENT, skillParams, type SkillParams } from './data/skills';
 import type { SkillId } from './data/troops';
@@ -101,8 +101,6 @@ export interface BattleConfig {
   stats?: StatOverrides;
   /** false: no environment (river, obstacles), the old bare map. Default true. */
   env?: boolean;
-  /** Level of roster units (1-10). */
-  level?: number;
   /** Map recipe (biome, river, forest, village, pass); the default forest map if absent. */
   map?: MapSpec;
   /** Comedy physics: hits launch units, some fall into water and die (sim only; visuals are separate). */
@@ -184,7 +182,7 @@ export class Battle {
 
   constructor(seed = 1, config: BattleConfig = { mode: 'demo', perTeam: 10 }) {
     this.config = config;
-    applyStats(config.stats, config.level);
+    applyStats(config.stats);
     const total = unitCapacity(config);
     this.mapSize = mapSizeFor(config);
     this.terrain = terrainFor(config);
@@ -1288,7 +1286,7 @@ export class Battle {
   }
 
   private sp(id: SkillId): SkillParams {
-    return (this.skillCache[id] ??= skillParams(id, this.config.level ?? DEFAULT_LEVEL));
+    return (this.skillCache[id] ??= skillParams(id));
   }
 
   /** Damage multiplier: weaken, rage, spear stacks. */

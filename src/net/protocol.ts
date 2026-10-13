@@ -3,7 +3,7 @@ import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
 
 /** Protocol version: a client with a different version cannot join the lobby. */
-export const PROTOCOL = 3;
+export const PROTOCOL = 4;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;
@@ -40,7 +40,6 @@ export interface LobbySettings {
   gold: number;
   /** Placement time (s); 0: until everyone is ready. */
   placeSecs: number;
-  level: number;
   openPlacement: boolean;
   comedyPhysics: boolean;
   comedyVisual: boolean;
@@ -52,7 +51,6 @@ export interface GameInit {
   spec: MapSpec;
   seed: number;
   size: number;
-  level: number;
   gold: number;
   teams: number;
   openPlacement: boolean;
@@ -161,7 +159,6 @@ export function battleConfig(s: BattleStart): BattleConfig {
     kite: true,
     terrainSeed: s.init.seed,
     map: s.init.spec,
-    level: s.init.level,
     comedy: s.init.comedyPhysics,
     layout: new Float32Array(s.layout),
   };

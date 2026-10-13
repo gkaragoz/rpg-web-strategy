@@ -1,6 +1,6 @@
 import { loc, t } from '../i18n';
 import { RACE_NAMES, RARITY_NAMES, TROOP_BY_ID, type Race, type Rarity } from '../sim/data/troops';
-import { KIND_COUNT, LEGACY_COUNT, MAX_LEVEL, STATS, isHealer, isMelee, unitDisplayName } from '../sim/units';
+import { KIND_COUNT, LEGACY_COUNT, STATS, isHealer, isMelee, unitDisplayName } from '../sim/units';
 import { trackDialog } from '../net/act';
 import type { UnitPreview } from './unitPreview';
 import { saveState, type AppState } from './state';
@@ -17,17 +17,15 @@ export interface GalleryDeps {
   state: AppState;
   /** Unit icon (in the selected team color). */
   icon: (kind: number, team: number) => HTMLCanvasElement;
-  /** Level changed: STATS was refreshed, the UI must be updated. */
-  onLevel: () => void;
   /** A unit was picked (the atlas is baked if needed). */
   onPick: (kind: number) => void;
-  /** Online: unit gold cost and disabled rarities; the level picker is hidden. */
+  /** Online: unit gold cost and disabled rarities; price shown on the cards. */
   online?: { cost(kind: number): number; banned(): string[] };
   /** Animated attack previews (optional): attached after every render, detached when the dialog closes. */
   preview?: UnitPreview;
 }
 
-/** Unit gallery: card list with rarity/race filters, search and icons, plus a level picker. */
+/** Unit gallery: card list with rarity/race filters, search and icons. */
 export class UnitGallery {
   private readonly dlg: HTMLDialogElement;
   private rarity: RarityFilter = 'all';
@@ -113,7 +111,6 @@ export class UnitGallery {
       ...RARITIES.map((r) => this.chip('data-r', r, loc(RARITY_NAMES[r]), this.rarity === r)),
     ].join('');
     const raceChips = [this.chip('data-c', 'all', t('units.gallery.allRaces'), this.race === 'all'), ...RACES.map((r) => this.chip('data-c', r, loc(RACE_NAMES[r]), this.race === r))].join('');
-    const levels = Array.from({ length: MAX_LEVEL }, (_, i) => `<option value="${i + 1}"${i + 1 === s.level ? ' selected' : ''}>${i + 1}</option>`).join('');
     const list = this.kinds();
     this.dlg.innerHTML = `
 <form method="dialog">
@@ -121,7 +118,6 @@ export class UnitGallery {
   <div class="ug-bar">
     <div class="seg" role="group" aria-label="${esc(t('units.gallery.rarity'))}">${rarityChips}</div>
     <div class="seg" role="group" aria-label="${esc(t('units.gallery.race'))}">${raceChips}</div>
-    ${this.d.online ? '' : `<label class="ug-field">${esc(t('units.gallery.level'))} <select id="ug-level">${levels}</select></label>`}
     <input id="ug-search" type="search" placeholder="${esc(t('units.gallery.search'))}" value="${esc(this.query)}" aria-label="${esc(t('units.gallery.searchAria'))}" />
   </div>
   <div class="ug-grid">${list.map((k) => this.card(k)).join('') || `<p class="note">${esc(t('units.gallery.none'))}</p>`}</div>
@@ -148,12 +144,6 @@ export class UnitGallery {
       const again = this.dlg.querySelector<HTMLInputElement>('#ug-search')!;
       again.focus();
       again.setSelectionRange(pos, pos);
-    });
-    this.dlg.querySelector('#ug-level')?.addEventListener('change', (e) => {
-      s.level = Number((e.target as HTMLSelectElement).value);
-      saveState(s);
-      this.d.onLevel();
-      this.render();
     });
     this.dlg.querySelectorAll<HTMLElement>('.ug-card').forEach((b) =>
       b.addEventListener('click', () => {

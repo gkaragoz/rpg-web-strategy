@@ -4,8 +4,6 @@ import type { StringTable } from './types';
 export const system: StringTable = {
   en: {
     'sys.lang.aria': 'Language',
-    'sys.lang.country.en': 'United Kingdom',
-    'sys.lang.country.tr': 'Türkiye',
     'sys.lang.confirmLeave': 'Changing the language reloads the page and leaves the online lobby. Continue?',
     'sys.title': 'RPG Web - Battle Studio',
     'sys.loading': 'Loading…',
@@ -19,8 +17,6 @@ export const system: StringTable = {
   },
   tr: {
     'sys.lang.aria': 'Dil',
-    'sys.lang.country.en': 'Birleşik Krallık',
-    'sys.lang.country.tr': 'Türkiye',
     'sys.lang.confirmLeave': 'Dili değiştirmek sayfayı yeniler ve çevrimiçi lobiden çıkarır. Devam edilsin mi?',
     'sys.title': 'RPG Web - Savaş Stüdyosu',
     'sys.loading': 'Yükleniyor…',

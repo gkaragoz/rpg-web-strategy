@@ -196,7 +196,6 @@ export class LobbyScreen {
     </div>
     <div class="on-field"><span>${t('online.lobby.gold')}</span><div class="seg" id="l-gold"></div><input id="l-gold-n" type="number" min="100" max="100000" step="100" aria-label="${esc(t('online.lobby.goldCustom'))}" /></div>
     <div class="on-field"><span>${t('online.lobby.placeTime')}</span><select id="l-time"></select></div>
-    <div class="on-field"><span>${t('online.lobby.level')}</span><select id="l-level"></select></div>
     <div class="on-field"><span>${t('online.lobby.mapSize')}</span><select id="l-size"></select></div>
     <label class="row"><span>${t('online.lobby.openPlace')} <small>${t('online.lobby.openPlaceHint')}</small></span><input type="checkbox" id="l-open" role="switch" /></label>
     <label class="row"><span>${t('online.lobby.comedyPhys')} <small>${t('online.lobby.comedyPhysHint')}</small></span><input type="checkbox" id="l-cp" role="switch" /></label>
@@ -259,8 +258,6 @@ export class LobbyScreen {
     q<HTMLInputElement>('#l-gold-n').addEventListener('change', (e) => this.patch({ gold: Number((e.target as HTMLInputElement).value) }));
     q<HTMLSelectElement>('#l-time').innerHTML = TIMES.map((v) => `<option value="${v}">${t(`online.time.${v}`)}</option>`).join('');
     q<HTMLSelectElement>('#l-time').addEventListener('change', (e) => this.patch({ placeSecs: Number((e.target as HTMLSelectElement).value) }));
-    q<HTMLSelectElement>('#l-level').innerHTML = Array.from({ length: 10 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
-    q<HTMLSelectElement>('#l-level').addEventListener('change', (e) => this.patch({ level: Number((e.target as HTMLSelectElement).value) }));
     q<HTMLSelectElement>('#l-size').innerHTML = SIZES.map((v) => `<option value="${v}">${t(`online.size.${v}`)}</option>`).join('');
     q<HTMLSelectElement>('#l-size').addEventListener('change', (e) => this.patch({ mapSize: Number((e.target as HTMLSelectElement).value) }));
     q<HTMLInputElement>('#l-open').addEventListener('change', (e) => this.patch({ openPlacement: (e.target as HTMLInputElement).checked }));
@@ -350,7 +347,6 @@ export class LobbyScreen {
         el.disabled = dis;
       };
       set('#l-time', String(s.placeSecs));
-      set('#l-level', String(s.level));
       set('#l-size', String(s.mapSize));
       for (const [id, v] of [['#l-open', s.openPlacement], ['#l-cp', s.comedyPhysics], ['#l-cv', s.comedyVisual]] as const) {
         const el = q<HTMLInputElement>(id);

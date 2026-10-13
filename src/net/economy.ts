@@ -1,6 +1,6 @@
 import type { Terrain } from '../sim/terrain';
 import { T_GRASS, T_PATH } from '../sim/terrain';
-import { KIND_COUNT, STATS, setUnitLevel } from '../sim/units';
+import { KIND_COUNT, STATS } from '../sim/units';
 import { TROOP_BY_ID } from '../sim/data/troops';
 
 /** Warrior (classic) = 10 gold; the others scale with power: proportional to sqrt(effective HP x damage per second). */
@@ -15,7 +15,7 @@ export function buyable(kind: number): boolean {
 }
 
 /**
- * Gold cost of a unit (based on the current STATS level; setUnitLevel must be called first).
+ * Gold cost of a unit (based on the current STATS).
  * Effective HP (including armor) x power per second, with range/area/skill multipliers; rounded to the nearest 5.
  */
 export function unitGold(kind: number): number {
@@ -35,9 +35,8 @@ export function unitGold(kind: number): number {
   return Math.min(MAX_COST, Math.max(MIN_COST, Math.round(raw / 5) * 5));
 }
 
-/** Cost table of all kinds at the given level (sets the STATS level). */
-export function costTable(level: number): number[] {
-  setUnitLevel(level);
+/** Cost table of all kinds. */
+export function costTable(): number[] {
   return Array.from({ length: KIND_COUNT }, (_, k) => unitGold(k));
 }
 

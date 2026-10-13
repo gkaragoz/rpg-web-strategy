@@ -109,7 +109,7 @@ export class UnitPreview {
     this.entries = [];
   }
 
-  /** Drops all cached sheets (palette / level / team colours changed). */
+  /** Drops all cached sheets (palette / team colours changed). */
   clear(): void {
     this.cache.clear();
     for (const e of this.entries) e.sheet = null;

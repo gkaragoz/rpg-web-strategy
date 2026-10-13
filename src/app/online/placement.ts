@@ -107,7 +107,6 @@ export class Placement {
         state: this.state,
         icon: env.icon,
         preview: env.preview,
-        onLevel: () => {},
         onPick: () => {
           this.ensureKinds();
           this.refreshUi();
