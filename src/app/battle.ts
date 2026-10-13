@@ -55,6 +55,11 @@ export interface BattleDeps {
   /** Hata ayiklama katmanini ac/kapat (savasi ayni dizilimle yeniden baslatir). */
   isDebugOn: () => boolean;
   toggleDebug: () => void;
+  /** Komedi gorunumu (canli) ve komedi fizigi (savasi yeniden baslatir). */
+  isComedyVisual: () => boolean;
+  toggleComedyVisual: () => boolean;
+  isComedyPhysics: () => boolean;
+  toggleComedyPhysics: () => void;
 }
 
 /** Savas sahnesi: sim (worker) + cizim (ayrintili veya toplu) + HUD + benchmark olcumu. */
@@ -80,6 +85,7 @@ export class BattleScene {
   private resultShown = false;
   private hiddenPaused = false;
   private debug: DebugOverlay | null = null;
+  private paintComedy: ((on: boolean) => void) | null = null;
   private initialAlive: number[] = [];
   private initialHp: number[] = [];
   private visHandler: (() => void) | null = null;
@@ -219,6 +225,8 @@ export class BattleScene {
   <div class="seg" id="hud-speed" role="group" aria-label="Hız"></div>
   <button type="button" id="hud-pause">Duraklat</button>
   <button type="button" id="hud-sound" aria-pressed="true">Ses</button>
+  <button type="button" id="hud-cv" aria-pressed="false" title="Komedi görünümü (K)">Komedi görünümü</button>
+  <button type="button" id="hud-cp" aria-pressed="false" title="Komedi fiziği (savaş yeniden başlar)">Komedi fiziği</button>
   <button type="button" id="hud-debug" aria-pressed="false" title="Takılma izleme katmanı (savaş yeniden başlar)">Debug</button>
   <button type="button" id="hud-full">Tam ekran</button>
   <button type="button" id="hud-restart">Yeniden başlat</button>
@@ -228,6 +236,18 @@ export class BattleScene {
 <div class="result" id="hud-result" hidden></div>`;
     const q = (s: string) => root.querySelector(s) as HTMLElement;
     q('#hud-pause').addEventListener('click', () => this.togglePause());
+    const cv = q('#hud-cv');
+    const paintCv = (on: boolean): void => {
+      cv.textContent = on ? 'Komedi görünümü: açık' : 'Komedi görünümü: kapalı';
+      cv.setAttribute('aria-pressed', String(on));
+    };
+    paintCv(this.d.isComedyVisual());
+    cv.addEventListener('click', () => paintCv(this.d.toggleComedyVisual()));
+    this.paintComedy = paintCv;
+    const cp = q('#hud-cp');
+    cp.textContent = this.d.isComedyPhysics() ? 'Komedi fiziği: açık' : 'Komedi fiziği: kapalı';
+    cp.setAttribute('aria-pressed', String(this.d.isComedyPhysics()));
+    cp.addEventListener('click', () => this.d.toggleComedyPhysics());
     const dbg = q('#hud-debug');
     dbg.textContent = this.d.isDebugOn() ? 'Debug: açık' : 'Debug: kapalı';
     dbg.setAttribute('aria-pressed', String(this.d.isDebugOn()));
@@ -319,6 +339,7 @@ export class BattleScene {
     else if (e.code === 'Digit3') this.setSpeed(4);
     else if (e.code === 'Escape' && !bench) this.opts.onEdit();
     else if (e.code === 'KeyV' && !bench) this.d.toggleDebug();
+    else if (e.code === 'KeyK' && !bench) this.paintComedy?.(this.d.toggleComedyVisual());
     else if (bench && e.code === 'KeyB') this.massOpts.bars = !this.massOpts.bars;
     else if (bench && e.code === 'KeyO') this.massOpts.sort = !this.massOpts.sort;
     else if (bench && e.code === 'KeyC') this.massOpts.cull = !this.massOpts.cull;

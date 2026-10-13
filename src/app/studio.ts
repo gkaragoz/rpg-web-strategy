@@ -107,6 +107,9 @@ export class Studio {
     <div class="row stack"><span>Efektler</span><div class="seg" id="fxq" role="group" aria-label="Efekt kalitesi"></div></div>
     <label class="row"><span>Hasar sayıları</span><input type="checkbox" id="nums" role="switch" /></label>
     <div class="row stack"><span>Can çubuğu</span><div class="seg" id="bars" role="group" aria-label="Can çubuğu"></div></div>
+    <h3>Komedi modu</h3>
+    <label class="row"><span>Komedi görünümü <small>ragdoll ölüm, abartılı animasyon ve ses</small></span><input type="checkbox" id="cv" role="switch" /></label>
+    <label class="row"><span>Komedi fiziği <small>vuruşlar uçurur, suya düşen ölür</small></span><input type="checkbox" id="cp" role="switch" /></label>
     <label class="row"><span>Hata ayıklama <small>takılma izleme, savaş yavaşlar</small></span><input type="checkbox" id="dbg" role="switch" /></label>
   </section>
   <section>
@@ -229,6 +232,14 @@ export class Studio {
       s.options.volume = Number((e.target as HTMLInputElement).value) / 100;
       this.optionsChanged(false);
     });
+    $in('#cv').addEventListener('change', (e) => {
+      s.options.comedyVisual = (e.target as HTMLInputElement).checked;
+      this.optionsChanged();
+    });
+    $in('#cp').addEventListener('change', (e) => {
+      s.options.comedyPhysics = (e.target as HTMLInputElement).checked;
+      this.optionsChanged();
+    });
     $in('#dbg').addEventListener('change', (e) => {
       s.options.debug = (e.target as HTMLInputElement).checked;
       this.optionsChanged();
@@ -314,6 +325,8 @@ export class Studio {
     if (document.activeElement !== $in('#vol')) $in('#vol').value = String(Math.round(op.volume * 100));
     $in('#nums').checked = op.numbers;
     $in('#dbg').checked = op.debug;
+    $in('#cv').checked = op.comedyVisual;
+    $in('#cp').checked = op.comedyPhysics;
     this.seg(this.$('#fxq'), [{ id: 'auto', label: 'Otomatik' }, { id: 'high', label: 'Yüksek' }, { id: 'low', label: 'Düşük' }, { id: 'off', label: 'Kapalı' }], op.fx, (id) => {
       op.fx = id as typeof op.fx;
       this.optionsChanged();

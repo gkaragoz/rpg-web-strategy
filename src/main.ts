@@ -8,6 +8,7 @@ import { WorldView } from './app/world';
 import { Camera } from './camera';
 import { bakeAtlas, type Atlas } from './render/atlas';
 import { AudioSystem } from './render/audio';
+import { comedy } from './render/comedy';
 import { POSE_STATES, UnitView } from './render/unitView';
 import type { BattleConfig } from './sim/battle';
 import { KIND_OF_TROOP, LEGACY_COUNT, STATS, setUnitLevel } from './sim/units';
@@ -17,6 +18,7 @@ import { StatsPanel } from './ui/stats';
 //   ?bench=10000&auto=30  -> takim basina birim, otomatik rapor
 //   ?sim=main             -> sim'i worker yerine ana thread'de calistir
 //   ?debug=1              -> takilma izleme katmani (H/T/P/G tuslari)
+//   ?comedy=1             -> komedi modu (gorunum + fizik)
 //   ?env=off  ?kite=off  ?seed=3  -> stüdyo ayarlarini gecici olarak ezer
 const loading = document.getElementById('loading');
 
@@ -44,6 +46,10 @@ const isBench = benchPer > 0;
 const canUseWorker = typeof SharedArrayBuffer !== 'undefined' && self.crossOriginIsolated;
 // ?debug=1: takilma izleme katmani sim'e dogrudan erisim ister, bu yuzden sim ana thread'de calisir.
 const debugParam = params.get('debug') === '1';
+// ?comedy=1: komedi gorunumu + komedi fizigi birlikte acik.
+const comedyParam = params.get('comedy') === '1';
+const comedyVisualOn = (): boolean => comedyParam || state.options.comedyVisual;
+const comedyPhysicsOn = (): boolean => comedyParam || state.options.comedyPhysics;
 /** Debug acik mi (URL veya secenek) ve sim worker'da mi calisacak. */
 const debugOn = (): boolean => debugParam || state.options.debug;
 const workerOk = (): boolean => params.get('sim') !== 'main' && canUseWorker && !debugOn();
@@ -100,6 +106,7 @@ const getAtlas = (): Atlas => atlas;
 
 const audio = new AudioSystem();
 function applyOptions(): void {
+  comedy.visual = comedyVisualOn();
   audio.enabled = state.options.sound;
   audio.setVolume(state.options.volume);
   UnitView.barMode = state.options.bars;
@@ -119,6 +126,21 @@ const battle = new BattleScene({
   audio,
   isSoundOn: () => state.options.sound,
   isDebugOn: debugOn,
+  isComedyVisual: comedyVisualOn,
+  toggleComedyVisual: () => {
+    state.options.comedyVisual = !comedyVisualOn();
+    saveState(state);
+    applyOptions();
+    studio.render();
+    return comedyVisualOn();
+  },
+  isComedyPhysics: comedyPhysicsOn,
+  toggleComedyPhysics: () => {
+    state.options.comedyPhysics = !comedyPhysicsOn();
+    saveState(state);
+    studio.render();
+    void restartBattle();
+  },
   toggleDebug: () => {
     state.options.debug = !debugOn();
     saveState(state);
@@ -135,7 +157,7 @@ const battle = new BattleScene({
 let mode: 'studio' | 'battle' = 'studio';
 
 function studioConfig(): BattleConfig {
-  return { mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, terrainSeed: state.seed, map: state.map, level: state.level, stats: state.stats };
+  return { mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, terrainSeed: state.seed, map: state.map, level: state.level, comedy: comedyPhysicsOn(), stats: state.stats };
 }
 
 function layoutArray(): Float32Array {

@@ -102,6 +102,8 @@ export interface BattleConfig {
   level?: number;
   /** Harita tarifi (biyom, nehir, orman, koy, gecit); yoksa varsayilan orman haritasi. */
   map?: MapSpec;
+  /** Komedi fizigi: vuruslar birimleri firlatir, suya dusen olur (yalniz sim; gorunum ayri). */
+  comedy?: boolean;
   /** Harita tohumu. */
   terrainSeed?: number;
   /** false: okcu/priest vur-kac ve cizgi siniri kapali (eski davranis, karsilastirma icin). */

@@ -47,10 +47,13 @@ export interface Options {
   bars: 'damaged' | 'always' | 'never';
   /** Hata ayiklama katmani (sim ana thread'de calisir). */
   debug: boolean;
+  /** Komedi gorunumu (ragdoll olum, abartili animasyon/efekt/ses) ve komedi fizigi (sim: firlatma). */
+  comedyVisual: boolean;
+  comedyPhysics: boolean;
 }
 
 export function defaultOptions(): Options {
-  return { sound: true, volume: 0.6, fx: 'auto', numbers: true, bars: 'damaged', debug: false };
+  return { sound: true, volume: 0.6, fx: 'auto', numbers: true, bars: 'damaged', debug: false, comedyVisual: false, comedyPhysics: false };
 }
 
 export interface AppState {
@@ -173,6 +176,8 @@ export function loadState(): AppState {
       if (op.fx === 'auto' || op.fx === 'high' || op.fx === 'low' || op.fx === 'off') s.options.fx = op.fx;
       if (typeof op.numbers === 'boolean') s.options.numbers = op.numbers;
       if (typeof op.debug === 'boolean') s.options.debug = op.debug;
+      if (typeof op.comedyVisual === 'boolean') s.options.comedyVisual = op.comedyVisual;
+      if (typeof op.comedyPhysics === 'boolean') s.options.comedyPhysics = op.comedyPhysics;
       if (op.bars === 'damaged' || op.bars === 'always' || op.bars === 'never') s.options.bars = op.bars;
     }
     const stale = (o as { kindsVer?: number }).kindsVer !== KINDS_VER;
