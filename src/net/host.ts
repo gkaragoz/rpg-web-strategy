@@ -288,7 +288,13 @@ export class HostLobby {
         if (isHost) this.start();
         break;
       case 'cmd':
-        if (isHost && this.phase === 'battle') this.emit({ t: 'tick', step: -1, speed: msg.speed ?? 1, paused: !!msg.paused });
+        if (!isHost || this.phase !== 'battle') break;
+        // Comedy view (look only): only the host decides, everybody follows, late joiners start with the current value.
+        if (typeof msg.comedyVisual === 'boolean') {
+          if (this.init) this.init.comedyVisual = msg.comedyVisual;
+          this.emit({ t: 'comedyView', on: msg.comedyVisual });
+        }
+        if (msg.speed !== undefined || msg.paused !== undefined) this.emit({ t: 'tick', step: -1, speed: msg.speed ?? 1, paused: !!msg.paused });
         break;
       case 'rematch':
         if (isHost && (this.phase === 'result' || this.phase === 'battle')) this.toLobby();

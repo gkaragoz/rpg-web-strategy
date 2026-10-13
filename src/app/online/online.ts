@@ -322,6 +322,11 @@ export class OnlineApp {
     this.lobby?.update();
     this.chat?.update();
     this.placement?.onMessage(msg);
+    if (msg.t === 'comedyView' && this.inBattle) {
+      // The host changed the comedy look: every client follows.
+      this.env.setComedyVisual(msg.on);
+      this.env.battle.showComedyView(msg.on);
+    }
   }
 
   /** Builds the right screen for the session phase. */
@@ -494,6 +499,7 @@ export class OnlineApp {
         teamNames: names,
         getSpeed: () => m.speed,
         getPaused: () => m.paused,
+        onComedyView: s.isHost ? (on) => s.send({ t: 'cmd', comedyVisual: on }) : undefined,
         onLeave: () => this.exit(),
         onRematch: s.isHost ? () => s.send({ t: 'rematch' }) : undefined,
       },

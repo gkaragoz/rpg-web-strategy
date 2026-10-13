@@ -44,6 +44,8 @@ export class OnlineModel {
   chat: ChatLine[] = [];
   private chatN = 0;
   result: { winner: number; alive: number[] } | null = null;
+  /** Comedy look chosen by the host during the battle (null: still the lobby value). */
+  comedyVisual: boolean | null = null;
   /** Latest speed/pause info from the host. */
   speed = 1;
   paused = false;
@@ -120,6 +122,9 @@ export class OnlineModel {
         break;
       case 'result':
         this.result = { winner: msg.winner, alive: msg.alive };
+        break;
+      case 'comedyView':
+        this.comedyVisual = msg.on;
         break;
       case 'reject':
         this.rejected = msg.reason;

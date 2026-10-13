@@ -399,6 +399,39 @@ describe('lockstep battle', () => {
     expect(b.model.paused).toBe(true);
   });
 
+  it('only the host changes the comedy look during a battle and everybody follows; a speed command does not reset it', () => {
+    const { r, a, b } = battleRig();
+    const lobby = r.hs.model.start!.init;
+    a.send({ t: 'cmd', comedyVisual: true });
+    expect(a.model.comedyVisual).toBe(null);
+    expect(b.model.comedyVisual).toBe(null);
+    r.hs.send({ t: 'cmd', comedyVisual: true });
+    expect(a.model.comedyVisual).toBe(true);
+    expect(b.model.comedyVisual).toBe(true);
+    expect(r.hs.model.comedyVisual).toBe(true);
+    // The speed/pause path is independent.
+    r.hs.send({ t: 'cmd', speed: 4 });
+    expect(a.model.speed).toBe(4);
+    expect(a.model.comedyVisual).toBe(true);
+    // A late joiner receives the current look through the battle start.
+    expect(r.hs.model.start!.init.comedyVisual).toBe(true);
+    expect(lobby.comedyVisual).toBe(true);
+    r.hs.send({ t: 'cmd', comedyVisual: false });
+    expect(b.model.comedyVisual).toBe(false);
+  });
+
+  it('guests cannot change the comedy lobby settings', () => {
+    const r = rig(5);
+    const a = join(r, 'A');
+    a.send({ t: 'settings', settings: { comedyPhysics: true, comedyVisual: true } });
+    const s = r.hs.model.state!.settings;
+    expect(s.comedyPhysics).toBe(false);
+    expect(s.comedyVisual).toBe(false);
+    r.hs.send({ t: 'settings', settings: { comedyPhysics: true, comedyVisual: true } });
+    expect(r.hs.model.state!.settings.comedyPhysics).toBe(true);
+    expect(r.hs.model.state!.settings.comedyVisual).toBe(true);
+  });
+
   it('a spectator joins mid-battle and catches up with a state snapshot', () => {
     const { r, a, b } = battleRig();
     const start = r.hs.model.start!;

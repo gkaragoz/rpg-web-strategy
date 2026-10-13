@@ -48,6 +48,8 @@ export interface BattleOptions {
     teamNames: string[];
     getSpeed: () => number;
     getPaused: () => boolean;
+    /** Host only: tells everybody to switch the comedy look. */
+    onComedyView?: (on: boolean) => void;
     onLeave: () => void;
     onRematch?: () => void;
   };
@@ -305,8 +307,13 @@ export class BattleScene {
       cv.setAttribute('aria-pressed', String(on));
     };
     paintCv(this.d.isComedyVisual());
-    cv.addEventListener('click', () => paintCv(this.d.toggleComedyVisual()));
+    cv.addEventListener('click', () => this.toggleComedyView());
     this.paintComedy = paintCv;
+    if (this.opts.online && !this.opts.online.isHost) {
+      // Online: only the host changes the comedy look (guests follow the host).
+      (cv as HTMLButtonElement).disabled = true;
+      cv.title = t('battle.cv.hostOnly');
+    }
     const cp = q('#hud-cp');
     cp.textContent = this.d.isComedyPhysics() ? t('battle.cp.on') : t('battle.cp.off');
     cp.setAttribute('aria-pressed', String(this.d.isComedyPhysics()));
@@ -478,6 +485,20 @@ export class BattleScene {
     }
   }
 
+  /** Comedy view toggle (button / K). Online it is host-only and the host's choice goes to everybody. */
+  private toggleComedyView(): void {
+    const on = this.opts.online;
+    if (on && !on.isHost) return;
+    const next = this.d.toggleComedyVisual();
+    this.paintComedy?.(next);
+    on?.onComedyView?.(next);
+  }
+
+  /** Repaints the comedy view button (the host changed the look). */
+  showComedyView(on: boolean): void {
+    this.paintComedy?.(on);
+  }
+
   private setSpeed(v: number): void {
     if (this.opts.online && !this.opts.online.isHost) return;
     this.speed = v;
@@ -504,7 +525,7 @@ export class BattleScene {
       if (e.code === 'F3') {
         e.preventDefault();
         this.d.stats.toggle();
-      } else if (e.code === 'KeyK') this.paintComedy?.(this.d.toggleComedyVisual());
+      } else if (e.code === 'KeyK') this.toggleComedyView();
       else if (on.isHost && e.code === 'Space') {
         e.preventDefault();
         this.togglePause();
@@ -525,7 +546,7 @@ export class BattleScene {
     else if (e.code === 'Digit3') this.setSpeed(4);
     else if (e.code === 'Escape' && !bench) this.opts.onEdit();
     else if (e.code === 'KeyV' && !bench) this.d.toggleDebug();
-    else if (e.code === 'KeyK' && !bench) this.paintComedy?.(this.d.toggleComedyVisual());
+    else if (e.code === 'KeyK' && !bench) this.toggleComedyView();
     else if (bench && e.code === 'KeyB') this.massOpts.bars = !this.massOpts.bars;
     else if (bench && e.code === 'KeyO') this.massOpts.sort = !this.massOpts.sort;
     else if (bench && e.code === 'KeyC') this.massOpts.cull = !this.massOpts.cull;

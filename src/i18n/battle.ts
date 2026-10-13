@@ -44,6 +44,7 @@ export const battle: StringTable = {
 
     // Team chips and result overlay
     'battle.team.name': 'Team {n}',
+    'battle.cv.hostOnly': 'Only the host can change the comedy look',
     'battle.team.title': 'Team {n}: {alive} soldiers, strength {pct}%',
     'battle.team.tip': '{alive} alive · health {pct}% · {share}% of all health',
     'battle.teams.aria': 'Remaining health of every team (hover a team to outline its enemies)',
@@ -137,6 +138,7 @@ export const battle: StringTable = {
     'battle.hint.solo': 'Space: duraklat · R: yeniden başlat · Esc: düzenle · 1-2-3: hız · F3: istatistik · WASD / orta tuş: kaydır · tekerlek: yakınlaş',
 
     'battle.team.name': 'Takım {n}',
+    'battle.cv.hostOnly': 'Komedi görünümünü yalnızca host değiştirebilir',
     'battle.team.title': 'Takım {n}: {alive} asker, güç %{pct}',
     'battle.team.tip': '{alive} canlı · can %{pct} · toplam canın %{share} kadarı',
     'battle.teams.aria': 'Her takımın kalan canı (düşmanlarını çerçevelemek için bir takımın üzerine gel)',

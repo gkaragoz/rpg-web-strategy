@@ -3,7 +3,7 @@ import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
 
 /** Protocol version: a client with a different version cannot join the lobby. */
-export const PROTOCOL = 6;
+export const PROTOCOL = 7;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;
@@ -114,7 +114,7 @@ export type ClientMsg =
   | { t: 'kick'; id: string }
   | { t: 'mute'; id: string; on: boolean }
   | { t: 'start' }
-  | { t: 'cmd'; speed?: number; paused?: boolean }
+  | { t: 'cmd'; speed?: number; paused?: boolean; comedyVisual?: boolean }
   | { t: 'rematch' }
   | { t: 'leave' };
 
@@ -144,6 +144,8 @@ export type ServerMsg =
   | { t: 'unplaceFail'; ids: number[] }
   | { t: 'start'; start: BattleStart }
   | { t: 'tick'; step: number; speed: number; paused: boolean }
+  /** The host switched the comedy look during the battle (look only; every client follows). */
+  | { t: 'comedyView'; on: boolean }
   | { t: 'resync'; step: number; data: string }
   | { t: 'result'; winner: number; alive: number[] }
   | { t: 'closed' };
