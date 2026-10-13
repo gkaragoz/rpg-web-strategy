@@ -15,6 +15,7 @@ import type { StatsPanel } from '../../ui/stats';
 import type { BattleOptions, BattleScene } from '../battle';
 import { makeTeamColor } from '../state';
 import type { WorldView } from '../world';
+import { ConnBadge } from './badge';
 import { ChatOverlay } from './chat';
 import { CursorLayer, playerColor } from './cursors';
 import { Placement } from './placement';
@@ -99,6 +100,7 @@ export class OnlineApp {
   private lobby: LobbyScreen | null = null;
   private placement: Placement | null = null;
   private chat: ChatOverlay | null = null;
+  private badge: ConnBadge | null = null;
   private session: Session | null = null;
   private cursors: CursorLayer | null = null;
   private colors: TeamColors[] = [];
@@ -328,17 +330,32 @@ export class OnlineApp {
     if (want === 'lobby') {
       this.chat?.destroy();
       this.chat = null;
+      this.badge?.destroy();
+      this.badge = null;
       this.cursors?.setView(null);
       this.env.setIconColors(null);
       this.env.setComedyVisual(null);
-      this.lobby = new LobbyScreen(this.root, this.session, { onLeave: () => this.exit(), via: () => this.via, link: (c) => `${this.kind === 'net' ? PAGES_URL : location.origin + location.pathname}#join=${c}` });
+      this.lobby = new LobbyScreen(this.root, this.session, { onLeave: () => this.exit(), via: () => this.via, link: (c) => this.linkFor(c) });
     } else if (want === 'placing') {
       this.chat ??= new ChatOverlay(this.root, this.session);
+      this.badge ??= this.makeBadge();
       await this.startPlacing(st.init!);
     } else {
       this.chat ??= new ChatOverlay(this.root, this.session);
+      this.badge ??= this.makeBadge();
       await this.startBattle();
     }
+  }
+
+  private linkFor(code: string): string {
+    return `${this.kind === 'net' ? PAGES_URL : location.origin + location.pathname}#join=${code}`;
+  }
+
+  private makeBadge(): ConnBadge {
+    return new ConnBadge(this.root, () => {
+      const code = this.session?.model.state?.code ?? '';
+      return { via: this.via, code, link: this.linkFor(code) };
+    });
   }
 
   private teamColorsFor(init: GameInit): TeamColors[] {
@@ -483,6 +500,7 @@ export class OnlineApp {
     this.lobby?.destroy();
     this.placement?.destroy();
     this.chat?.destroy();
+    this.badge?.destroy();
     this.leaveBattle();
     this.cursors?.destroy();
     this.root.remove();

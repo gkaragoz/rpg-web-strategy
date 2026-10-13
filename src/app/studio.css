@@ -1372,3 +1372,17 @@ button.on {
   padding: 6px 10px;
   margin-bottom: 10px;
 }
+.on-badge {
+  position: fixed;
+  right: calc(10px + env(safe-area-inset-right, 0px));
+  bottom: 12px;
+  z-index: 25;
+  pointer-events: auto;
+  padding: 3px 10px;
+  font-size: 12px;
+  border-radius: 999px;
+  background: rgba(16, 22, 32, 0.78);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  letter-spacing: 0.3px;
+}
