@@ -1,4 +1,4 @@
-import { loc, t } from '../i18n';
+import { getLang, loc, t } from '../i18n';
 import { RACE_NAMES, RARITY_NAMES, TROOP_BY_ID, type Race, type Rarity } from '../sim/data/troops';
 import { KIND_COUNT, LEGACY_COUNT, STATS, isHealer, isMelee, unitDisplayName } from '../sim/units';
 import { unitGold } from '../net/economy';
@@ -7,6 +7,7 @@ import { skillParams } from '../sim/data/skills';
 import { ARM_IDS, DMG_IDS, TYPE_MULT } from '../sim/data/combat';
 import { cardIcon, type CardIcon } from './cardIcons';
 import type { UnitPreview } from './unitPreview';
+import { SORT_KEYS, sortKinds, type SortDir, type SortKey } from './gallerySort';
 import { saveState, type AppState } from './state';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -35,6 +36,8 @@ export class UnitGallery {
   private rarity: RarityFilter = 'all';
   private race: RaceFilter = 'all';
   private query = '';
+  private sortKey: SortKey = 'default';
+  private sortDir: SortDir = 'desc';
   private readonly actTrack: { open(): void };
 
   constructor(private readonly d: GalleryDeps) {
@@ -83,7 +86,29 @@ export class UnitGallery {
       if (q && !unitDisplayName(k).toLocaleLowerCase('tr').includes(q)) continue;
       out.push(k);
     }
-    return out;
+    return sortKinds(out, this.sortKey, this.sortDir, (k, key) => this.sortValue(k, key));
+  }
+
+  private sortValue(k: number, key: SortKey): number | string {
+    const s = STATS[k];
+    switch (key) {
+      case 'cost':
+        return this.d.online ? this.d.online.cost(k) : unitGold(k);
+      case 'hp':
+        return s.hp;
+      case 'power':
+        return s.power;
+      case 'dps':
+        return s.power / Math.max(0.05, s.cooldown);
+      case 'range':
+        return s.range;
+      case 'speed':
+        return s.speed;
+      case 'name':
+        return unitDisplayName(k).toLocaleLowerCase(getLang());
+      default:
+        return k;
+    }
   }
 
   /** Largest value of every stat among the listed units (bar scale). */
@@ -135,11 +160,12 @@ export class UnitGallery {
     const sel = this.d.state.selKind === k;
     const gold = this.d.online ? this.d.online.cost(k) : unitGold(k);
     const price = `<span class="ug-price">${cardIcon('coin')}${esc(t('units.gold', { n: gold }))}</span>`;
+    const hot = (id: string): string => (({ hp: 'hp', power: 'pw', dps: 'pw', range: 'rg', speed: 'sp' } as Record<string, string>)[this.sortKey] === id ? ' hot' : '');
     const stats =
-      this.stat('hp', 'heart', t('units.stat.hp.label'), Math.sqrt(s.hp / mx.hp), String(Math.round(s.hp))) +
-      this.stat('pw', 'flame', t('units.stat.power.label'), Math.sqrt(s.power / mx.power), String(Math.round(s.power))) +
-      this.stat('rg', 'range', t('units.stat.range.label'), s.range / mx.range, s.range.toFixed(1)) +
-      this.stat('sp', 'bolt', t('units.stat.speed.label'), s.speed / mx.speed, s.speed.toFixed(1));
+      this.stat('hp' + hot('hp'), 'heart', t('units.stat.hp.label'), Math.sqrt(s.hp / mx.hp), String(Math.round(s.hp))) +
+      this.stat('pw' + hot('pw'), 'flame', t('units.stat.power.label'), Math.sqrt(s.power / mx.power), String(Math.round(s.power))) +
+      this.stat('rg' + hot('rg'), 'range', t('units.stat.range.label'), s.range / mx.range, s.range.toFixed(1)) +
+      this.stat('sp' + hot('sp'), 'bolt', t('units.stat.speed.label'), s.speed / mx.speed, s.speed.toFixed(1));
     return `<button type="button" class="ug-card r-${tr ? tr.rarity : 'legacy'}${sel ? ' sel' : ''}" data-kind="${k}" aria-pressed="${sel}">${price}
   <span class="ug-icon" data-icon="${k}"></span>
   <span class="ug-name">${esc(unitDisplayName(k))}</span>
@@ -169,6 +195,8 @@ export class UnitGallery {
   <div class="ug-bar">
     <div class="seg" role="group" aria-label="${esc(t('units.gallery.rarity'))}">${rarityChips}</div>
     <div class="seg" role="group" aria-label="${esc(t('units.gallery.race'))}">${raceChips}</div>
+    <label class="ug-field"><span>${esc(t('units.sort.label'))}</span><select id="ug-sort">${SORT_KEYS.map((k) => `<option value="${k}"${k === this.sortKey ? ' selected' : ''}>${esc(t(`units.sort.${k}`))}</option>`).join('')}</select></label>
+    <button type="button" id="ug-dir" class="ug-dir" aria-label="${esc(t(`units.sort.${this.sortDir}`))}" title="${esc(t(`units.sort.${this.sortDir}`))}"${this.sortKey === 'default' ? ' disabled' : ''}>${this.sortDir === 'asc' ? '↑' : '↓'}</button>
     <input id="ug-search" type="search" placeholder="${esc(t('units.gallery.search'))}" value="${esc(this.query)}" aria-label="${esc(t('units.gallery.searchAria'))}" />
   </div>
   <div class="ug-grid">${list.map((k) => this.card(k, mx)).join('') || `<p class="note">${esc(t('units.gallery.none'))}</p>`}</div>
@@ -187,6 +215,14 @@ export class UnitGallery {
         this.render();
       }),
     );
+    this.dlg.querySelector<HTMLSelectElement>('#ug-sort')!.addEventListener('change', (e) => {
+      this.sortKey = (e.target as HTMLSelectElement).value as SortKey;
+      this.render();
+    });
+    this.dlg.querySelector<HTMLElement>('#ug-dir')!.addEventListener('click', () => {
+      this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+      this.render();
+    });
     const search = this.dlg.querySelector<HTMLInputElement>('#ug-search')!;
     search.addEventListener('compositionend', () => search.dispatchEvent(new Event('input')));
     search.addEventListener('input', (e) => {

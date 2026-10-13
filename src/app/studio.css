@@ -2391,3 +2391,16 @@ dialog {
 .res-col .dps-nm { flex: 1; min-width: 0; }
 .res-col .dps-v { text-align: right; }
 #res-details.on { background: rgba(255, 255, 255, 0.16); }
+.ug-dir {
+  min-width: 34px;
+  padding: 4px 8px;
+}
+.ug-dir:disabled {
+  opacity: 0.4;
+}
+.ug-stat.hot {
+  font-weight: 700;
+}
+.ug-stat.hot .ug-meter {
+  outline: 1px solid currentColor;
+}
