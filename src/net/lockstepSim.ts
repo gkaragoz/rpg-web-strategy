@@ -1,6 +1,6 @@
 import type { FrameInfo, SimBackend, SimStats } from '../sim/backend';
 import { Battle, DBG_KEYS, type BattleConfig, type SimEvent } from '../sim/battle';
-import { SIM_DT } from '../sim/constants';
+import { SIM_DT, simDtFor } from '../sim/constants';
 import type { OnlineModel } from './client';
 import type { HostLobby } from './host';
 import { LockstepRunner } from './lockstep';
@@ -12,6 +12,7 @@ import type { ClientMsg } from './protocol';
  */
 export class LockstepSim implements SimBackend {
   readonly kind = 'inline' as const;
+  readonly stepDt: number;
   readonly battle: Battle;
   readonly runner: LockstepRunner;
   private steps = 0;
@@ -25,6 +26,7 @@ export class LockstepSim implements SimBackend {
     opts: { host?: HostLobby; send?: (m: ClientMsg) => void },
   ) {
     this.battle = new Battle(seed, config);
+    this.stepDt = simDtFor(config);
     this.runner = new LockstepRunner(this.battle, model, opts);
   }
 

@@ -5,6 +5,7 @@ import { Terrain } from '../terrain';
 import { KIND_COUNT } from '../units';
 
 export interface BenchResult {
+  dt: number;
   units: number;
   size: number;
   teams: number;
@@ -39,20 +40,21 @@ export function benchBattle(perTeam: number, teams: number, size: number, seed =
 }
 
 /** Runs `steps` simulation steps and reports the cost per step and per phase (Battle.prof). */
-export function runBench(perTeam: number, teams: number, size: number, steps: number): BenchResult {
+export function runBench(perTeam: number, teams: number, size: number, steps: number, dtOverride = 0): BenchResult {
   const { battle, units } = benchBattle(perTeam, teams, size);
-  for (let i = 0; i < 20; i++) battle.step(1 / 30); // warm-up
+  const dt = dtOverride > 0 ? dtOverride : battle.dt;
+  for (let i = 0; i < 20; i++) battle.step(dt); // warm-up
   const prof = battle.prof as unknown as Record<string, number>;
   for (const k of Object.keys(prof)) prof[k] = 0;
   let max = 0;
   const t0 = performance.now();
   for (let i = 0; i < steps; i++) {
     const a = performance.now();
-    battle.step(1 / 30);
+    battle.step(dt);
     max = Math.max(max, performance.now() - a);
   }
   const total = performance.now() - t0;
   const phases: Record<string, number> = {};
   for (const k of Object.keys(prof)) if (k !== 'steps') phases[k] = Math.round((prof[k] / steps) * 100) / 100;
-  return { units, size, teams, msPerStep: Math.round((total / steps) * 100) / 100, maxStepMs: Math.round(max * 10) / 10, phases, alive: battle.alivePerTeam.slice(0, teams), dbg: { ...(battle.dbg as unknown as Record<string, number>) }, hash: battle.hash() };
+  return { dt, units, size, teams, msPerStep: Math.round((total / steps) * 100) / 100, maxStepMs: Math.round(max * 10) / 10, phases, alive: battle.alivePerTeam.slice(0, teams), dbg: { ...(battle.dbg as unknown as Record<string, number>) }, hash: battle.hash() };
 }

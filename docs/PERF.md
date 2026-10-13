@@ -36,3 +36,6 @@ Two browser pages on one machine (LAN lobby, map 256, 1 000 000 gold, `__session
 
 Wire changes (protocol 10): the start layout is packed (10 bytes per unit, base64: ~13 bytes instead of ~45 characters of JSON per unit); snapshots (`resync`) travel as `[header byte][packed]` and are gzip-compressed when produced by a worker host (1.9 MB → 0.34 MB for 6 000 units after 20 steps); the worker gzips/gunzips off the main thread and handles its commands strictly in arrival order. `placed` lists are sent in batches of 400.
 
+## Adaptive simulation rate (v1.17.0)
+Armies of 12 000 soldiers or more run at 20 Hz instead of 30 Hz (`simDtFor` in `src/sim/constants.ts`, derived from the config only so online clients agree). Per-step constants that were tuned at 30 Hz (movement braking, separation decay/gain/step limit, line-of-sight and kite scan intervals) are scaled by `tk = dt * 30` in `Battle.step`; at 30 Hz every factor is exactly 1, so smaller battles are bit-identical to before (bench hashes unchanged). Browser benchmark, 30 000 units: realtime factor 0.90 → 1.00 (20 Hz needs one third less CPU per second of battle). A 20 Hz battle plays out in the same ballpark as a 30 Hz one (`simrate.test.ts`).
+

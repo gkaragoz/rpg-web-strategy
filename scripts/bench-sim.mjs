@@ -17,6 +17,7 @@ const teams = Number(opt('teams', 2));
 const size = Number(opt('size', 256));
 const steps = Number(opt('steps', 200));
 const name = opt('name', 'latest');
+const dtOverride = Number(opt('dt', 0));
 
 const outDir = path.join(root, '.bench', '.build');
 await build({
@@ -30,10 +31,10 @@ const lib = await import(pathToFileURL(path.join(outDir, 'bench.mjs')).href);
 
 const rows = [];
 for (const total of totals) {
-  const r = lib.runBench(Math.round(total / teams), teams, size, steps);
+  const r = lib.runBench(Math.round(total / teams), teams, size, steps, dtOverride);
   rows.push(r);
   const ph = Object.entries(r.phases).map(([k, v]) => `${k} ${v}`).join('  ');
-  console.log(`${String(r.units).padStart(6)} units  map ${r.size}  ${r.msPerStep.toFixed(2).padStart(7)} ms/step  (max ${r.maxStepMs} ms)  ${ph}  hash ${r.hash}`);
+  console.log(`${String(r.units).padStart(6)} units  dt 1/${Math.round(1 / r.dt)}  map ${r.size}  ${r.msPerStep.toFixed(2).padStart(7)} ms/step  (max ${r.maxStepMs} ms)  ${ph}  hash ${r.hash}`);
   if (args.includes('--dbg')) console.log('        dbg', JSON.stringify(r.dbg));
 }
 mkdirSync(path.join(root, '.bench'), { recursive: true });

@@ -1,6 +1,6 @@
 import type { FrameInfo, SimBackend, SimStats } from './backend';
 import { Battle, DBG_KEYS, type BattleConfig, type SimEvent } from './battle';
-import { SIM_DT } from './constants';
+import { simDtFor } from './constants';
 
 const MAX_STEPS_PER_FRAME = 5;
 /** Per-frame sim budget in bench mode: if exceeded, the sim slows down while rendering stays smooth. */
@@ -9,6 +9,7 @@ const SIM_BUDGET_MS = 12;
 /** Runs the sim on the main thread (for comparison and for environments without workers). */
 export class InlineSim implements SimBackend {
   readonly kind = 'inline' as const;
+  readonly stepDt: number;
   /** Debugging: direct Battle access and a hook called after every step. */
   readonly battle: Battle;
   onStep: (() => void) | null = null;
@@ -24,6 +25,7 @@ export class InlineSim implements SimBackend {
     seed: number,
   ) {
     this.battle = new Battle(seed, config);
+    this.stepDt = simDtFor(config);
   }
 
   get mapSize(): number {
@@ -63,25 +65,25 @@ export class InlineSim implements SimBackend {
     if (!this.paused) {
       this.acc += dt * this.speed;
       const bench = this.config.mode === 'bench';
-      while (this.acc >= SIM_DT && steps < MAX_STEPS_PER_FRAME) {
+      while (this.acc >= this.stepDt && steps < MAX_STEPS_PER_FRAME) {
         const s0 = performance.now();
-        this.battle.step(SIM_DT);
+        this.battle.step(this.stepDt);
         this.onStep?.();
         const ms = performance.now() - s0;
         this.totalMs += ms;
         this.steps++;
         if (ms > this.maxMs) this.maxMs = ms;
-        this.acc -= SIM_DT;
+        this.acc -= this.stepDt;
         steps++;
         if (bench && performance.now() - t0 > SIM_BUDGET_MS) break;
       }
       // If the sim cannot keep up, drop the accumulated time: the sim slows down but frames stay smooth.
-      if (this.acc > SIM_DT && (bench || steps === MAX_STEPS_PER_FRAME)) this.acc = 0;
+      if (this.acc > this.stepDt && (bench || steps === MAX_STEPS_PER_FRAME)) this.acc = 0;
     }
     return {
       steps,
       mainSimMs: performance.now() - t0,
-      alpha: this.paused ? 1 : Math.min(1, this.acc / SIM_DT),
+      alpha: this.paused ? 1 : Math.min(1, this.acc / this.stepDt),
     };
   }
 

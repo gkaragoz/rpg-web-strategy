@@ -11,6 +11,7 @@ function asyncSim() {
   let cb: ((step: number, hash: number) => void) | null = null;
   const restored: Array<{ step: number; len: number }> = [];
   const sim: SimLike = {
+    dt: 1 / 30,
     step: () => {
       steps++;
       if (steps % CHECK_EVERY === 0) cb?.(steps, 1000 + steps);

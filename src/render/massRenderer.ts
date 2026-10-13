@@ -34,6 +34,8 @@ export interface MassOptions {
   /** Team whose soldiers are outlined (-1: none) and the outline colour. */
   focusTeam?: number;
   focusColor?: number;
+  /** Seconds per sim step (arrows are extrapolated by alpha * stepDt). */
+  stepDt?: number;
 }
 
 /**
@@ -409,7 +411,7 @@ export class MassRenderer {
     this.drawnUnits = nUnits;
     this.drawnDecor = n - nUnits;
 
-    this.syncArrows(view, alpha * SIM_DT);
+    this.syncArrows(view, alpha * (opt.stepDt ?? SIM_DT));
     this.syncBars(alpha, view, opt.bars);
     this.syncMarks(zoom);
   }

@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import { Battle, DBG_KEYS, type BattleConfig, type SimEvent, projectileCapacity, unitCapacity } from './battle';
-import { SIM_DT } from './constants';
+import { SIM_DT, simDtFor } from './constants';
 import { packSnapshot, unpackSnapshot, unwire, wireGzip } from './snapshot';
 import {
   F_ALIVE_BASE,
@@ -58,6 +58,7 @@ let totalMs = 0;
 let steps = 0;
 let maxMs = 0;
 let checkEvery = 60;
+let stepDt = SIM_DT;
 
 const epochNow = () => performance.timeOrigin + performance.now();
 
@@ -117,7 +118,7 @@ function publish(): void {
 
 function runStep(doPublish = true): void {
   const t0 = performance.now();
-  battle.step(SIM_DT);
+  battle.step(stepDt);
   const ms = performance.now() - t0;
   step++;
   if (doPublish) publish();
@@ -140,7 +141,7 @@ function runStep(doPublish = true): void {
 
 function tick(): void {
   const now = performance.now();
-  const interval = (SIM_DT * 1000) / speed;
+  const interval = (stepDt * 1000) / speed;
   if (paused) {
     next = now;
   } else {
@@ -178,6 +179,7 @@ function handle(m: WorkerCommand): void | Promise<void> {
   switch (m.type) {
     case 'init': {
       config = m.config;
+      stepDt = simDtFor(config);
       battle = new Battle(m.seed, config);
       sh = bindShared(m.sab, unitCapacity(config), projectileCapacity(config));
       sh.pActive.fill(1);
@@ -191,6 +193,7 @@ function handle(m: WorkerCommand): void | Promise<void> {
     case 'initLock': {
       config = m.config;
       checkEvery = m.checkEvery;
+      stepDt = simDtFor(config);
       battle = new Battle(m.seed, config);
       sh = bindShared(m.sab, unitCapacity(config), projectileCapacity(config));
       sh.pActive.fill(1);

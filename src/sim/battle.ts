@@ -1,6 +1,7 @@
 import { Grid } from './grid';
 import { Terrain, T_BLOCKED, T_WATER } from './terrain';
 import type { MapSpec } from './mapSpec';
+import { simDtFor } from './constants';
 import { PROJ_TAG, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides, KIND_COUNT } from './units';
 import { PF_PIERCE, PF_SKILL, Projectiles } from './projectiles';
 import { SKILL_ELEMENT, skillParams, type SkillParams } from './data/skills';
@@ -162,6 +163,12 @@ export class Battle {
     return this.config.kite !== false;
   }
   private stepNo = 0;
+  /** Time scale of the current step relative to 30 Hz (1 at 30 Hz): per-step constants are scaled by it so a 20 Hz battle behaves alike. */
+  private tk = 1;
+  private brakeK = MOTION.brake;
+  private sepDecayK = SEP_DECAY;
+  private losEvery = 20;
+  private scanEveryK = KITE.scanEvery;
   /** A* paths for stuck units (unit -> waypoints) and the per-frame path computation budget. */
   private readonly paths = new Map<number, { pts: number[]; k: number; gx: number; gy: number; t: number }>();
   private pathBudget = 0;
@@ -318,6 +325,14 @@ export class Battle {
     this.time += dt;
     this.stepNo++;
     this.pathBudget = 24;
+    const tk = dt * 30;
+    if (tk !== this.tk) {
+      this.tk = tk;
+      this.brakeK = Math.pow(MOTION.brake, tk);
+      this.sepDecayK = Math.pow(SEP_DECAY, tk);
+      this.losEvery = Math.max(1, Math.round(20 / tk));
+      this.scanEveryK = Math.max(1, Math.round(KITE.scanEvery / tk));
+    }
     const pf = this.prof;
     let tp = performance.now();
 
@@ -339,7 +354,7 @@ export class Battle {
       u.py[i] = u.y[i];
       u.vx[i] = u.vy[i] = 0;
       // If the unit did not move in the previous step, its speed decays quickly (a short brake instead of stopping abruptly).
-      if (u.moving[i] === 0) u.spd[i] *= MOTION.brake;
+      if (u.moving[i] === 0) u.spd[i] *= this.brakeK;
       u.moving[i] = 0;
       u.flash[i] = Math.max(0, u.flash[i] - dt);
       const t = u.target[i];
@@ -663,7 +678,7 @@ export class Battle {
 
   /** Melee threat scan: 3x3 cells on the coarse grid, staggered per unit. */
   private updateThreat(i: number): void {
-    if ((i + this.stepNo) % KITE.scanEvery !== 0) return;
+    if ((i + this.stepNo) % this.scanEveryK !== 0) return;
     const u = this.units;
     const danger = isRanged(u.kind[i]) ? KITE.archerDanger : KITE.priestDanger;
     const d2max = danger * danger;
@@ -1223,6 +1238,11 @@ export class Battle {
   // ===================================================================
   // Online: state snapshot (resync / spectator / reconnect) and checksum
   // ===================================================================
+
+  /** Seconds per step of this battle (what the drivers pass to step()). */
+  get dt(): number {
+    return simDtFor(this.config);
+  }
 
   /** Number of sim steps taken (lockstep time axis). */
   get stepCount(): number {
@@ -2064,7 +2084,7 @@ export class Battle {
       u.hy[i] = uy;
     } else {
       const dot = u.hx[i] * ux + u.hy[i] * uy;
-      if (dot < -0.3) u.spd[i] *= MOTION.brake;
+      if (dot < -0.3) u.spd[i] *= this.brakeK;
       const k = Math.min(1, MOTION.turn * dt);
       let hx = u.hx[i] + (ux - u.hx[i]) * k;
       let hy = u.hy[i] + (uy - u.hy[i]) * k;
@@ -2186,7 +2206,7 @@ export class Battle {
     // Every ~0.6 s (staggered per unit) a line-of-sight check: if the target/waypoint is not visible, request a path,
     // if it is visible, drop the current path.
     let blocked = false;
-    if ((i + this.stepNo) % 20 === 0) {
+    if ((i + this.stepNo) % this.losEvery === 0) {
       const dx0 = gx - u.x[i];
       const dy0 = gy - u.y[i];
       const far = dx0 * dx0 + dy0 * dy0 > 6;
@@ -2363,7 +2383,8 @@ export class Battle {
     // Soft separation: each step accumulates push velocity from 1/SEP_STRIDE of the neighbor pairs (j > i)
     // (+ to i, - to j); all units apply the push velocity EVERY step and the velocity decays. This avoids
     // the frame-to-frame jitter caused by hard mutual pushing.
-    const maxStep = SEP_MAX_STEP;
+    const maxStep = SEP_MAX_STEP * this.tk;
+    const gain = SEP_GAIN * this.tk;
     const sx = u.sepX;
     const sy = u.sepY;
     for (let i = 0; i < u.count; i++) {
@@ -2400,10 +2421,10 @@ export class Battle {
                 fy = dy * f;
               }
               const wj = u.swing[j] > 0 ? 0.35 : 1;
-              sx[i] += fx * SEP_GAIN * wi;
-              sy[i] += fy * SEP_GAIN * wi;
-              sx[j] -= fx * SEP_GAIN * wj;
-              sy[j] -= fy * SEP_GAIN * wj;
+              sx[i] += fx * gain * wi;
+              sy[i] += fy * gain * wi;
+              sx[j] -= fx * gain * wj;
+              sy[j] -= fy * gain * wj;
             }
           }
         }
@@ -2438,8 +2459,8 @@ export class Battle {
       }
       u.x[i] = nx;
       u.y[i] = ny;
-      sx[i] *= SEP_DECAY;
-      sy[i] *= SEP_DECAY;
+      sx[i] *= this.sepDecayK;
+      sy[i] *= this.sepDecayK;
     }
     this.pushAroundTanks(bad);
   }

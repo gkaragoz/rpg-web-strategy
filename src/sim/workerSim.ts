@@ -1,6 +1,6 @@
 import type { FrameInfo, MeterView, ProjView, SimBackend, SimStats, UnitsView } from './backend';
 import { DBG_KEYS, mapSizeFor, projectileCapacity, unitCapacity, type BattleConfig, type SimEvent } from './battle';
-import { SIM_DT } from './constants';
+import { simDtFor } from './constants';
 import {
   F_ALIVE_BASE,
   F_DBG,
@@ -28,6 +28,7 @@ import type { WorkerCommand, WorkerEvent } from './worker';
 export class WorkerSim implements SimBackend {
   readonly kind = 'worker' as const;
   readonly mapSize: number;
+  readonly stepDt: number;
   readonly events: SimEvent[] = [];
   readonly alivePerTeam: number[] = [0, 0, 0, 0, 0, 0];
   winner = -1;
@@ -48,6 +49,7 @@ export class WorkerSim implements SimBackend {
     this.worker = worker;
     this.sh = sh;
     this.mapSize = mapSizeFor(config);
+    this.stepDt = simDtFor(config);
     this.meter = { dmg: sh.meter.subarray(0, METER_DMG_LEN), kills: sh.meter.subarray(METER_DMG_LEN) };
     const s0 = sh.slots[0];
     this.units = {
@@ -176,7 +178,7 @@ export class WorkerSim implements SimBackend {
     // Interpolate using the real interval between the last two publishes: one step behind but smooth.
     const interval = Math.max(1, f[F_PUBLISH] - f[F_PREV_PUBLISH]);
     const now = performance.timeOrigin + performance.now();
-    const alpha = Math.min(1, Math.max(0, (now - f[F_PUBLISH]) / Math.min(interval, SIM_DT * 1000 * 4)));
+    const alpha = Math.min(1, Math.max(0, (now - f[F_PUBLISH]) / Math.min(interval, this.stepDt * 1000 * 4)));
     return { steps: 0, mainSimMs: 0, alpha };
   }
 

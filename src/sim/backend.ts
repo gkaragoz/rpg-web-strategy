@@ -42,6 +42,8 @@ export interface FrameInfo {
 export interface SimBackend {
   readonly kind: 'inline' | 'worker';
   readonly mapSize: number;
+  /** Seconds per simulation step of this battle (30 Hz, or 20 Hz for huge armies; see `simDtFor`). */
+  readonly stepDt: number;
   readonly config: BattleConfig;
   readonly units: UnitsView;
   readonly projectiles: ProjView;

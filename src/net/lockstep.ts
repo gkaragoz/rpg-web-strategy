@@ -1,4 +1,3 @@
-import { SIM_DT } from '../sim/constants';
 import { packSnapshot, unpackSnapshot, unwire, unwireRaw, wireIsCompressed, wireRaw, type BattleSnapshot } from '../sim/snapshot';
 import { CHECK_EVERY, type HostLobby } from './host';
 import type { OnlineModel } from './client';
@@ -7,6 +6,8 @@ import { b64decode, b64encode, type ClientMsg } from './protocol';
 /** The sim surface lockstep needs (Battle provides it; a worker wrapper could too). */
 export interface SimLike {
   step(dt: number): void;
+  /** Seconds per simulation step. */
+  readonly dt: number;
   readonly stepCount: number;
   hash(): number;
   serialize(): BattleSnapshot;
@@ -46,7 +47,7 @@ export class LockstepRunner {
   resyncs = 0;
   /** Step fraction for render interpolation (0..1). */
   get alpha(): number {
-    return this.paused || (!this.opts.host && this.model.paused) ? 1 : Math.min(1, this.acc / SIM_DT);
+    return this.paused || (!this.opts.host && this.model.paused) ? 1 : Math.min(1, this.acc / this.sim.dt);
   }
 
   constructor(
@@ -112,12 +113,12 @@ export class LockstepRunner {
       return 0;
     }
     this.acc += Math.min(dt, 0.1) * speed;
-    let n = Math.min(MAX_STEPS_PER_FRAME, Math.floor(this.acc / SIM_DT));
-    this.acc -= Math.floor(this.acc / SIM_DT) * SIM_DT;
+    let n = Math.min(MAX_STEPS_PER_FRAME, Math.floor(this.acc / this.sim.dt));
+    this.acc -= Math.floor(this.acc / this.sim.dt) * this.sim.dt;
     if (!host && this.model.hostStep >= 0) {
       // Host step estimate: last tick + elapsed time.
       // The estimate advances at most 1.5 s: if the host goes silent (background tab, dropped network) the guest must not run forever.
-      const est = this.model.hostStep + Math.round((Math.min(1500, this.now() - this.model.hostStepAt) / 1000) * 30 * speed);
+      const est = this.model.hostStep + Math.round((Math.min(1500, this.now() - this.model.hostStepAt) / 1000) / this.sim.dt * speed);
       const lag = est - this.sim.stepCount;
       if (lag > LAG_TOLERANCE) n = Math.min(MAX_STEPS_PER_FRAME, Math.max(n, lag - 1));
       else if (lag < -LAG_TOLERANCE) n = 0;
@@ -125,7 +126,7 @@ export class LockstepRunner {
     if (this.sim.pending !== undefined) n = Math.min(n, Math.max(0, MAX_PENDING - this.sim.pending));
     let ran = 0;
     for (let i = 0; i < n && this.sim.winner === -1; i++) {
-      this.sim.step(SIM_DT);
+      this.sim.step(this.sim.dt);
       ran++;
       const step = this.sim.stepCount;
       if (!this.sim.onHash && step % CHECK_EVERY === 0) {

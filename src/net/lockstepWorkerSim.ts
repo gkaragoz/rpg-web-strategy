@@ -36,6 +36,7 @@ export class LockstepWorkerSim extends WorkerSim {
   private adapter(): SimLike {
     const me = this;
     return {
+      dt: me.stepDt,
       step: () => {
         me.queued++;
         me.batch++;

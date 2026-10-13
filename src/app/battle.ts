@@ -12,7 +12,6 @@ import { MassRenderer, type MassOptions, type MassViewport } from '../render/mas
 import { DEATH_FADE, UnitView, type TeamColors } from '../render/unitView';
 import type { SimBackend } from '../sim/backend';
 import { terrainFor, type BattleConfig } from '../sim/battle';
-import { SIM_DT } from '../sim/constants';
 import { InlineSim } from '../sim/inlineSim';
 import { KIND_COUNT, STATS, unitDisplayName } from '../sim/units';
 import { WorkerSim } from '../sim/workerSim';
@@ -741,7 +740,7 @@ export class BattleScene {
     const stepMs = st.totalMs / Math.max(1, st.steps);
     const extra: string[] = [
       `${t('battle.stats.simThread')} ${this.sim.kind === 'worker' ? t('battle.stats.worker') : t('battle.stats.mainThread')}`,
-      `${t('battle.stats.simPerStep').padEnd(11)}${stepMs.toFixed(2)} ms (max ${st.maxMs.toFixed(1)})  ${t('battle.stats.load', { pct: ((stepMs / (SIM_DT * 1000)) * 100).toFixed(0) })}`,
+      `${t('battle.stats.simPerStep').padEnd(11)}${stepMs.toFixed(2)} ms (max ${st.maxMs.toFixed(1)})  ${t('battle.stats.load', { pct: ((stepMs / (this.sim.stepDt * 1000)) * 100).toFixed(0) })}`,
       `${t('battle.stats.timeX').padEnd(11)}${((this.sim.time - this.simTimeBase) / Math.max(0.001, wall)).toFixed(2)} ${t('battle.stats.realtime')}`,
     ];
     if (this.opts.bench) {
@@ -780,6 +779,7 @@ export class BattleScene {
     const ft = this.focusTeam;
     this.massOpts.focusTeam = ft;
     this.massOpts.focusColor = FOCUS_OUTLINE;
+    this.massOpts.stepDt = this.sim.stepDt;
     this.mass!.sync(this.time, alpha, this.viewRect(), this.massOpts);
     this.activeProjectiles = this.mass!.drawnArrows;
     this.drawnLine = `${t('battle.stats.drawn').padEnd(11)}${t('battle.stats.drawnLine', { units: this.mass!.drawnUnits, decor: this.mass!.drawnDecor, arrows: this.mass!.drawnArrows })}`;
@@ -855,7 +855,7 @@ export class BattleScene {
     }
 
     const p = this.sim.projectiles;
-    const advance = alpha * SIM_DT;
+    const advance = alpha * this.sim.stepDt;
     this.activeProjectiles = 0;
     for (let i = 0; i < p.count; i++) {
       const v = this.arrowView(i);
