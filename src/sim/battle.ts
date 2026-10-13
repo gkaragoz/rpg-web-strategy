@@ -5,7 +5,8 @@ import { DEFAULT_LEVEL, PROJ_TAG, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, 
 import { PF_PIERCE, PF_SKILL, Projectiles } from './projectiles';
 import { SKILL_ELEMENT, skillParams, type SkillParams } from './data/skills';
 import type { SkillId } from './data/troops';
-import { mulberry32 } from './random';
+import { Mulberry } from './random';
+import { copyTyped, fnv, pasteTyped, type BattleSnapshot, type Typed } from './snapshot';
 
 export const MAP_SIZE = 56;
 const ARROW_SPEED = 13;
@@ -147,7 +148,8 @@ export class Battle {
   private lastDamageT = 0;
   private noDamagerSince = -1;
   readonly alivePerTeam: number[] = new Array(MAX_TEAMS).fill(0);
-  private rng: () => number = Math.random;
+  private rngObj = new Mulberry(1);
+  private rng: () => number = this.rngObj.next;
   private get kiteOn(): boolean {
     return this.config.kite !== false;
   }
@@ -202,7 +204,8 @@ export class Battle {
   }
 
   reset(seed: number): void {
-    this.rng = mulberry32(seed);
+    this.rngObj = new Mulberry(seed);
+    this.rng = this.rngObj.next;
     this.units.clear();
     this.projectiles.clear();
     this.events.length = 0;
@@ -1171,6 +1174,93 @@ export class Battle {
     const dy = u.y[j] - u.y[src];
     const l = Math.hypot(dx, dy);
     this.launch(j, l > 0.01 ? dx / l : 1, l > 0.01 ? dy / l : 0, dist);
+  }
+
+  // ===================================================================
+  // Cevrimici: durum goruntusu (yeniden senkron / seyirci / geri baglanma) ve kontrol toplami
+  // ===================================================================
+
+  /** Sim'in tum kalici durumunu kopyalar (config ayni olan baska bir Battle'a restore edilebilir). */
+  serialize(): BattleSnapshot {
+    const u = this.units;
+    return {
+      v: 1,
+      scalars: {
+        count: u.count,
+        pcount: this.projectiles.count,
+        pcursor: this.projectiles.cursor,
+        rng: this.rngObj.a,
+        time: this.time,
+        winner: this.winner,
+        stepNo: this.stepNo,
+        sepTick: this.sepTick,
+        lastDeathTime: this.lastDeathTime,
+        lastDamageSeen: this.lastDamageSeen,
+        lastDamageT: this.lastDamageT,
+        noDamagerSince: this.noDamagerSince,
+        damage: this.counters.damage,
+        heal: this.counters.heal,
+        kills: this.counters.kills,
+        ...Object.fromEntries(Object.entries(this.dbg)),
+      },
+      units: copyTyped(u, u.count),
+      projectiles: copyTyped(this.projectiles, this.projectiles.cap),
+      extra: {
+        zones: this.zones.map((z) => ({ ...z })),
+        links: [...this.links.entries()].map(([k, v]) => [k, v.slice()]),
+        pools: [...this.pools.entries()].map(([k, v]) => [k, v.slice()]),
+        paths: [...this.paths.entries()].map(([k, v]) => [k, { pts: v.pts.slice(), k: v.k, gx: v.gx, gy: v.gy, t: v.t }]),
+      },
+    };
+  }
+
+  /** serialize() ciktisini bu Battle'a yukler (ayni config ve kapasite varsayilir). */
+  restore(s: BattleSnapshot): void {
+    const u = this.units;
+    const sc = s.scalars;
+    u.count = sc.count;
+    pasteTyped(u, s.units);
+    pasteTyped(this.projectiles, s.projectiles);
+    this.projectiles.count = sc.pcount;
+    this.projectiles.cursor = sc.pcursor;
+    this.rngObj.a = sc.rng >>> 0;
+    this.time = sc.time;
+    this.winner = sc.winner;
+    this.stepNo = sc.stepNo;
+    this.sepTick = sc.sepTick;
+    this.lastDeathTime = sc.lastDeathTime;
+    this.lastDamageSeen = sc.lastDamageSeen;
+    this.lastDamageT = sc.lastDamageT;
+    this.noDamagerSince = sc.noDamagerSince;
+    this.counters.damage = sc.damage;
+    this.counters.heal = sc.heal;
+    this.counters.kills = sc.kills;
+    for (const k of Object.keys(this.dbg)) (this.dbg as Record<string, number>)[k] = sc[k] ?? 0;
+    this.zones.length = 0;
+    for (const z of s.extra.zones) this.zones.push({ ...(z as Zone) });
+    this.links.clear();
+    for (const [k, v] of s.extra.links) this.links.set(k, v.slice());
+    this.pools.clear();
+    for (const [k, v] of s.extra.pools) this.pools.set(k, v.slice());
+    this.paths.clear();
+    for (const [k, v] of s.extra.paths) this.paths.set(k, { pts: v.pts.slice(), k: v.k, gx: v.gx, gy: v.gy, t: v.t });
+    this.events.length = 0;
+    this.countAlive();
+  }
+
+  /** Durum kontrol toplami (FNV-1a): konum, can, yasam, hedef, rng ve adim sayaci. */
+  hash(): number {
+    const u = this.units;
+    const n = u.count;
+    let h = 2166136261;
+    for (const arr of [u.x, u.y, u.hp, u.cooldown, u.stunT, u.lift] as Typed[]) h = fnv(h, arr, n, 4);
+    for (const arr of [u.alive, u.team, u.kind] as Typed[]) h = fnv(h, arr, n, 1);
+    h = fnv(h, u.target, n, 4);
+    h ^= this.rngObj.a;
+    h = Math.imul(h, 16777619) >>> 0;
+    h ^= this.stepNo;
+    h = Math.imul(h, 16777619) >>> 0;
+    return h;
   }
 
   /** Gorsel durum maskesini yazar (renderer renklendirir). */

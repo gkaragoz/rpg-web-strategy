@@ -21,7 +21,7 @@ export class Projectiles {
   flags: Uint8Array;
   /** Gorunum etiketi (units.ts PROJ_TAG). */
   tag: Uint8Array;
-  private cursor = 0;
+  cursor = 0;
 
   constructor(cap: number) {
     this.cap = cap;
