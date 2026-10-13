@@ -1,4 +1,5 @@
 import { PALETTES } from './biome';
+import { comedy, hash01 } from './comedyFlag';
 import { Application, Container, Graphics, Particle, ParticleContainer, Rectangle, Texture, TilingSprite } from 'pixi.js';
 import type { Terrain } from '../sim/terrain';
 import type { Atlas } from './atlas';
@@ -172,7 +173,7 @@ export class MassRenderer {
     // 1) Gorunur birimleri topla, konumlari yaz.
     for (let i = 0; i < u.count; i++) {
       const alive = u.alive[i] === 1;
-      if (!alive && u.deathT[i] > DEATH_FADE) continue;
+      if (!alive && (comedy.visual || u.deathT[i] > DEATH_FADE)) continue;
       const wx = u.px[i] + (u.x[i] - u.px[i]) * alpha;
       const wy = u.py[i] + (u.y[i] - u.py[i]) * alpha;
       let sx = isoX(wx, wy);
@@ -211,7 +212,18 @@ export class MassRenderer {
       if (swing) pose = prog < 0.4 ? 3 : prog < 0.7 ? 4 : 0;
       else if (moving && calm > 0.25) pose = Math.sin(this.phase[i]) >= 0 ? 1 : 2;
       p.texture = this.unitTex[(kind * MAX_TEAMS + u.team[i]) * POSES + pose];
-      if (alive) {
+      if (alive && comedy.visual) {
+        // Komedi: yalpalayan yuruyus, yaylanan govde, vurusta squash-stretch, ara sira tokezleme.
+        const wob = Math.sin(this.phase[i] * 0.5 + i) * 0.22 * amt * calm;
+        const trip = hash01(i * 31 + Math.floor(time * 0.35)) < 0.012 ? 0.9 * Math.sin((time * 0.35 % 1) * Math.PI) : 0;
+        p.rotation = (moving ? 0.1 * calm * amt : 0) * u.facing[i] + wob + trip * u.facing[i];
+        const hit = u.flash[i] > 0 ? 1 : 0;
+        const spring = 1 + 0.12 * Math.sin(this.phase[i] * 2) * amt * calm;
+        p.scaleX = u.facing[i] * (spring * (1 - 0.08 * Math.sin(this.phase[i] * 2) * amt) + hit * 0.35);
+        p.scaleY = spring - hit * 0.3;
+        p.tint = u.flash[i] > 0 ? 0xff9a9a : u.status[i] !== 0 ? statusTint(u.status[i]) : 0xffffff;
+        p.alpha = 1;
+      } else if (alive) {
         p.scaleY = 1;
         p.rotation = moving ? 0.08 * u.facing[i] * calm * amt : 0;
         p.tint = u.flash[i] > 0 ? 0xff9a9a : u.status[i] !== 0 ? statusTint(u.status[i]) : 0xffffff;

@@ -1,15 +1,16 @@
+import { comedy } from './comedyFlag';
 import type { Camera } from '../camera';
 import { isoX, isoY } from '../iso';
 import type { SimEvent } from '../sim/battle';
 import { isTank } from '../sim/units';
 
-type Sfx = 'hit' | 'shot' | 'land' | 'heal' | 'bash' | 'slam' | 'death' | 'fire' | 'ice' | 'holy' | 'dark' | 'nature' | 'zap';
+type Sfx = 'hit' | 'shot' | 'land' | 'heal' | 'bash' | 'slam' | 'death' | 'fire' | 'ice' | 'holy' | 'dark' | 'nature' | 'zap' | 'bonk' | 'boing' | 'wail' | 'splat' | 'whoosh';
 
-const SFX_LIST: Sfx[] = ['hit', 'shot', 'land', 'heal', 'bash', 'slam', 'death', 'fire', 'ice', 'holy', 'dark', 'nature', 'zap'];
+const SFX_LIST: Sfx[] = ['hit', 'shot', 'land', 'heal', 'bash', 'slam', 'death', 'fire', 'ice', 'holy', 'dark', 'nature', 'zap', 'bonk', 'boing', 'wail', 'splat', 'whoosh'];
 const zeroed = (): Record<Sfx, number> => Object.fromEntries(SFX_LIST.map((k) => [k, 0])) as Record<Sfx, number>;
 
 /** Ses basina en kisa tekrar araligi (ms): kalabalikta ses yagmuru olmasin. */
-const MIN_GAP: Record<Sfx, number> = { hit: 40, shot: 55, land: 110, heal: 120, bash: 130, slam: 160, death: 70, fire: 150, ice: 150, holy: 170, dark: 160, nature: 170, zap: 150 };
+const MIN_GAP: Record<Sfx, number> = { hit: 40, shot: 55, land: 110, heal: 120, bash: 130, slam: 160, death: 70, fire: 150, ice: 150, holy: 170, dark: 160, nature: 170, zap: 150, bonk: 45, boing: 90, wail: 110, splat: 90, whoosh: 120 };
 const MAX_VOICES = 14;
 
 /**
@@ -82,6 +83,15 @@ export class AudioSystem {
   }
 
   private map(t: SimEvent['type'], element?: number): Sfx | null {
+    if (comedy.visual) {
+      // Komedi gorunumu: kartun sesleri.
+      if (t === 'hit') return 'bonk';
+      if (t === 'shot') return 'boing';
+      if (t === 'death') return 'wail';
+      if (t === 'bash' || t === 'slam') return 'bonk';
+      if (t === 'burst' && element === 7) return 'splat';
+      if (t === 'burst' && element === 8) return 'whoosh';
+    }
     switch (t) {
       case 'hit':
         return 'hit';
@@ -209,6 +219,39 @@ export class AudioSystem {
         this.tone(out, now, 'square', 900 * r, 220, 0.22, 0.1);
         this.tone(out, now + 0.02, 'sawtooth', 1500 * r, 300, 0.18, 0.08);
         this.burst(out, now, 0.14, 3600, 1.1, 0.16);
+        break;
+      }
+      case 'bonk': {
+        dur = 0.2;
+        this.tone(out, now, 'sine', (heavy ? 210 : 360) * r, heavy ? 70 : 120, 0.16, 0.34);
+        this.burst(out, now, 0.04, 1100, 1.2, 0.2);
+        if (heavy) this.tone(out, now + 0.05, 'sine', 150, 60, 0.22, 0.3);
+        break;
+      }
+      case 'boing': {
+        dur = 0.4;
+        this.tone(out, now, 'sine', 170 * r, 720 * r, 0.14, 0.18);
+        this.tone(out, now + 0.13, 'sine', 720 * r, 190 * r, 0.24, 0.16);
+        break;
+      }
+      case 'wail': {
+        // "Aaaah!": perde yukselip duser; ikinci katman uyumlu.
+        dur = 0.7;
+        this.tone(out, now, 'triangle', 380 * r, 1050 * r, 0.26, 0.15);
+        this.tone(out, now + 0.25, 'triangle', 1050 * r, 240 * r, 0.34, 0.14);
+        this.tone(out, now, 'sine', 570 * r, 1500 * r, 0.26, 0.05);
+        break;
+      }
+      case 'splat': {
+        dur = 0.24;
+        this.burst(out, now, 0.16, 650, 0.7, 0.36);
+        this.tone(out, now, 'sine', 160, 55, 0.15, 0.3);
+        break;
+      }
+      case 'whoosh': {
+        dur = 0.3;
+        this.burst(out, now, 0.26, 2100 * r, 0.5, 0.13);
+        this.tone(out, now, 'sine', 300, 900, 0.22, 0.05);
         break;
       }
       case 'death': {

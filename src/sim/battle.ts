@@ -1718,12 +1718,12 @@ export class Battle {
         const lk = this.links.get(j);
         if (lk) for (const e of lk) if (u.alive[e]) this.damage(e, this.sp('destinyBond').dmg, -1, false, true);
       }
-      this.killUnit(j);
+      this.killUnit(j, src, amount);
     }
     return dealt;
   }
 
-  private killUnit(j: number): void {
+  private killUnit(j: number, src = -1, dmg = 0): void {
     const u = this.units;
     u.hp[j] = 0;
     this.lastDeathTime = this.time;
@@ -1735,7 +1735,11 @@ export class Battle {
       this.dbg.archerDeaths++;
       if (u.kiteState[j] === 1) this.dbg.archerDeathsKiting++;
     }
-    if (this.emitEvents) this.pushEvent({ type: 'death', x: u.x[j], y: u.y[j], unit: j, kind: u.kind[j] });
+    if (this.emitEvents) {
+      // Vurustan uzaga yon ve son vurus siddeti (komedi gorunumu ragdoll firlatmasi icin).
+      const ang = src >= 0 && src !== j ? Math.atan2(u.y[j] - u.y[src], u.x[j] - u.x[src]) : u.facing[j] > 0 ? Math.PI : 0;
+      this.pushEvent({ type: 'death', x: u.x[j], y: u.y[j], unit: j, kind: u.kind[j], angle: ang, value: dmg });
+    }
   }
 
   /**

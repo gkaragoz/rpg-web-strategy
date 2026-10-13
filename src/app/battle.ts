@@ -5,6 +5,7 @@ import { isoX, isoY } from '../iso';
 import type { Atlas } from '../render/atlas';
 import { AudioSystem } from '../render/audio';
 import { DebugOverlay } from '../render/debugOverlay';
+import { ComedySystem, comedy } from '../render/comedy';
 import { FxSystem, type FxQuality } from '../render/fx';
 import { MassRenderer, type MassOptions, type MassViewport } from '../render/massRenderer';
 import { DEATH_FADE, UnitView, type TeamColors } from '../render/unitView';
@@ -85,6 +86,7 @@ export class BattleScene {
   private resultShown = false;
   private hiddenPaused = false;
   private debug: DebugOverlay | null = null;
+  private comedySys: ComedySystem | null = null;
   private paintComedy: ((on: boolean) => void) | null = null;
   private initialAlive: number[] = [];
   private initialHp: number[] = [];
@@ -150,7 +152,9 @@ export class BattleScene {
       // Kalabalikta yuzen sayilar okunmaz: yalniz az birimde goster.
       this.fx = new FxSystem(atlas, camera, quality, opts.numbers && unitCount <= 200);
       this.fx.elev = this.elev;
-      world.fxLayer.addChild(this.fx.layer, this.fx.numbers);
+      this.fx.comicOn = opts.numbers && unitCount <= 400;
+      this.comedySys = new ComedySystem(atlas, world.terrain, this.elev);
+      world.fxLayer.addChild(this.comedySys.layer, this.fx.layer, this.fx.numbers);
     }
 
     if (opts.debug && this.sim instanceof InlineSim) {
@@ -194,6 +198,10 @@ export class BattleScene {
     if (this.debug) {
       this.debug.destroy();
       this.debug = null;
+    }
+    if (this.comedySys) {
+      this.comedySys.layer.destroy();
+      this.comedySys = null;
     }
     if (this.fx) {
       this.fx.layer.destroy();
@@ -360,6 +368,7 @@ export class BattleScene {
     if (this.mass) this.mass.rebuild();
     else this.buildViews();
     this.fx?.clear();
+    this.comedySys?.clear();
     this.d.banner.style.display = 'none';
     this.resetting = false;
   }
@@ -382,6 +391,19 @@ export class BattleScene {
     if (this.simTimeBase < 0) this.simTimeBase = this.sim.time;
 
     const t1 = performance.now();
+    if (this.comedySys) {
+      if (comedy.visual) {
+        // Komedi gorunumu: olumler ragdoll olarak ucar; sentetik olaylar (inis, whoosh) ses/efekte eklenir.
+        const u = this.sim.units;
+        const evs = this.sim.events;
+        for (const ev of evs) {
+          if (ev.type === 'death' && ev.unit >= 0) this.comedySys.spawnDeath(ev.x, ev.y, ev.angle ?? 0, ev.value ?? 10, ev.kind ?? 0, u.team[ev.unit], u.facing[ev.unit], u.count);
+        }
+        this.comedySys.update(this.paused ? 0 : dt);
+        for (const e of this.comedySys.events) evs.push(e);
+        this.comedySys.events.length = 0;
+      } else if (this.comedySys.active > 0) this.comedySys.clear();
+    }
     if (!this.opts.bench) this.d.audio.handle(this.sim.events, camera, app.screen.width, app.screen.height);
     if (this.fx) {
       this.fx.handle(this.sim.events, this.viewRect());
@@ -488,7 +510,7 @@ export class BattleScene {
       const v = this.views[i];
       if (!v) continue;
       const alive = u.alive[i] === 1;
-      if (!alive && u.deathT[i] > DEATH_FADE) {
+      if (!alive && (comedy.visual || u.deathT[i] > DEATH_FADE)) {
         v.root.visible = false;
         continue;
       }

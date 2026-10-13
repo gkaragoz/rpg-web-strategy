@@ -1,5 +1,6 @@
 import { Container, Graphics } from 'pixi.js';
 import { Kind, LEGACY_COUNT, STATS } from '../sim/units';
+import { comedy } from './comedyFlag';
 import { LOOKS, type Anim, type Rig } from './looks';
 
 const SCALE = 1.25;
@@ -313,7 +314,8 @@ export class UnitView {
       this.legL.y = this.legR.y = this.legL.x = this.legR.x = 0;
     }
 
-    let bob = s.moving ? Math.abs(sw) * 2.8 : Math.sin(time * 2.2 + this.seed) * 0.5;
+    const cz = comedy.visual && alive;
+    let bob = (s.moving ? Math.abs(sw) * 2.8 : Math.sin(time * 2.2 + this.seed) * 0.5) * (cz ? 1.9 : 1);
     let lean = s.moving ? 0.09 + sw * 0.025 : 0;
     let ox = 0;
     let sx = 1;
@@ -475,12 +477,19 @@ export class UnitView {
     if (this.hurtT > 0) {
       this.hurtT -= dt;
       const k = clamp01(this.hurtT / 0.2);
-      sx *= 1 + 0.14 * k;
-      sy *= 1 - 0.12 * k;
+      const m = cz ? 3 : 1;
+      sx *= 1 + 0.14 * m * k;
+      sy *= 1 - 0.12 * m * k;
     }
     // Bekleme nefesi.
     if (!s.moving && p < 0) sy *= 1 + Math.sin(time * 2.2 + this.seed) * 0.012;
 
+    // Komedi: yalpalayan govde, devrilip kalkma, ara sira tokezleme.
+    if (cz) {
+      lean += (s.moving ? Math.sin(this.phase * 0.5) * 0.2 : Math.sin(time * 2.4 + this.seed) * 0.05);
+      const tripT = (time * 0.33 + this.seed * 0.137) % 1;
+      if (Math.floor(time * 0.33 + this.seed * 0.137 + 7) % 53 === 0 && tripT < 0.25) lean += Math.sin((tripT / 0.25) * Math.PI) * 0.8;
+    }
     this.torso.position.set(ox, 15 - bob);
     this.torso.rotation = lean;
     this.torso.scale.set(sx, sy);

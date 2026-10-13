@@ -1,3 +1,4 @@
+import { comedy, hash01 } from './comedyFlag';
 import { Container, Particle, ParticleContainer, Text, type TextStyleOptions } from 'pixi.js';
 import type { Camera } from '../camera';
 import { isoX, isoY } from '../iso';
@@ -30,6 +31,10 @@ export class FxSystem {
   readonly numbers = new Container();
   quality: FxQuality;
   numbersOn: boolean;
+  /** Komedi yazilari (BONK!, AAAH!...) acik mi: az birimde ve sayilar aciksa. */
+  comicOn = false;
+  private comicLast = 0;
+  private comicN = 1;
 
   private readonly parts: Particle[] = [];
   private readonly free: number[] = [];
@@ -165,6 +170,21 @@ export class FxSystem {
     }
   }
 
+  /** Komedi gorunumunde efekt buyuklugu carpani. */
+  private big(): number {
+    return comedy.visual ? 1.8 : 1;
+  }
+
+  /** Komik yazi: hiz sinirli, sadece uygun oldugunda (komedi gorunumu + az birim + yakinlastirma). */
+  private comic(sx: number, sy: number, words: string[], color: number, size = 22): void {
+    if (!comedy.visual || !this.comicOn || this.camera.zoom < 0.45) return;
+    const now = performance.now();
+    if (now - this.comicLast < 110) return;
+    this.comicLast = now;
+    const w = words[Math.floor(hash01(this.comicN++ * 13) * words.length) % words.length];
+    this.number(sx, sy - 52, w, color, size);
+  }
+
   private hit(sx: number, sy: number, dmg: number, kind: number, high: boolean): void {
     const n = high ? 2 + Math.min(4, Math.floor(dmg / 7)) : 2;
     const cy = sy - 20;
@@ -176,12 +196,24 @@ export class FxSystem {
         grav: 150,
       });
     }
-    if (high) this.spawn('ring', sx, cy, 0, 0, 0.18, 0.16, isTank(kind) ? 0.7 : 0.45, 0xffffff, 0.75);
+    if (high) this.spawn('ring', sx, cy, 0, 0, 0.18, 0.16, (isTank(kind) ? 0.7 : 0.45) * this.big(), 0xffffff, 0.75);
+    if (dmg >= 30) this.comic(sx, sy, ['BONK!', 'POW!', 'BAM!', 'OOF!', 'WHAM!'], 0xffd84a);
+    else if (dmg >= 14 && hash01(this.comicN * 3) < 0.25) this.comic(sx, sy, ['bop', 'pok', 'BIFF!', 'tak'], 0xffffff, 18);
     if (high && this.numbersOn && this.camera.zoom >= 0.5) this.number(sx, sy - 44 * (isTank(kind) ? 2 : 1), String(Math.max(1, Math.round(dmg))), dmg >= 18 ? 0xffb347 : 0xffffff, dmg >= 18 ? 18 : 15);
   }
 
   private death(sx: number, sy: number, kind: number, high: boolean): void {
     const k = isTank(kind) ? 1.8 : 1;
+    if (comedy.visual) {
+      // Konfeti ve komik yazi (ragdoll ayri sistemde ucar).
+      const cols = [0xff4fa0, 0x4fd0ff, 0xffe04a, 0x7aff7a, 0xb04fff];
+      const m = high ? 9 : 4;
+      for (let i = 0; i < m; i++) {
+        const a = Math.random() * Math.PI * 2;
+        this.spawn('star', sx, sy - 22, Math.cos(a) * 90, -70 - Math.random() * 90, 0.9, 0.55 * k, 0.1, cols[i % cols.length], 1, { vrot: 7, grav: 220 });
+      }
+      this.comic(sx, sy, ['AAAH!', 'NOOO!', 'POOF!', 'ÖLDÜM!', 'YAPMAAA!', 'bye~'], 0xff9ad0, 24);
+    }
     const n = high ? 8 : 3;
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
@@ -217,27 +249,44 @@ export class FxSystem {
       const dy = d.x * sa + d.y * ca;
       this.spawn('puff', sx + dx * 36, sy - 12 + dy * 36, dx * 140, dy * 140, 0.38, 0.6, 1.6, 0xffffff, 0.75);
     }
-    if (high) this.spawn('ring', sx + d.x * 34, sy - 10 + d.y * 34, d.x * 40, d.y * 40, 0.3, 0.2, 1.1, 0xdff1ff, 0.7);
-    this.camera.shake(3.5);
+    if (high) this.spawn('ring', sx + d.x * 34, sy - 10 + d.y * 34, d.x * 40, d.y * 40, 0.3, 0.2, 1.1 * this.big(), 0xdff1ff, 0.7);
+    this.camera.shake(3.5 * (comedy.visual ? 2 : 1));
+    if (comedy.visual) this.camera.punch(0.022);
+    this.comic(sx, sy, ['BAAM!', 'WHOOSH!', 'BONK!'], 0xffb347, 24);
   }
 
   private slam(sx: number, sy: number, high: boolean): void {
-    this.spawn('ring', sx, sy - 4, 0, 0, 0.5, 0.35, 2.7, 0xffe9b0, 0.95);
-    this.spawn('ring', sx, sy - 4, 0, 0, 0.75, 0.2, 1.8, 0xffffff, 0.5);
+    this.spawn('ring', sx, sy - 4, 0, 0, 0.5, 0.35, 2.7 * this.big(), 0xffe9b0, 0.95);
+    this.spawn('ring', sx, sy - 4, 0, 0, 0.75, 0.2, 1.8 * this.big(), 0xffffff, 0.5);
     const n = high ? 12 : 6;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + Math.random() * 0.4;
       this.spawn('puff', sx + Math.cos(a) * 20, sy - 4 + Math.sin(a) * 10, Math.cos(a) * 110, Math.sin(a) * 55, 0.55 + Math.random() * 0.2, 0.7, 1.9, 0xc7b497, 0.7);
     }
-    this.camera.shake(8);
+    this.camera.shake(8 * (comedy.visual ? 2 : 1));
+    if (comedy.visual) this.camera.punch(0.05);
+    this.comic(sx, sy, ['KABOOM!', 'BOOM!', 'SMASH!', 'KABLAM!'], 0xff8a2a, 28);
   }
 
   /** Yetenek patlamasi/halkasi: unsura gore renkli halka ve parcaciklar (yaricap tile). */
   private burstFx(sx: number, sy: number, radius: number, element: number, high: boolean): void {
+    if (element === 8) return; // whoosh: yalniz ses
     const COLORS = [0xe9e1c8, 0xff8a2a, 0x9ae0ff, 0xffe27a, 0xb04fff, 0x7aff9a, 0x4fc3ff];
+    if (element === 7) {
+      // Ragdoll yere carpti: konfeti toz bulutu + komik yazi.
+      const cols = [0xff4fa0, 0x4fd0ff, 0xffe04a, 0x7aff7a, 0xb04fff];
+      for (let i = 0; i < (high ? 8 : 3); i++) {
+        const a = Math.random() * Math.PI * 2;
+        this.spawn(i % 2 ? 'star' : 'puff', sx, sy - 6, Math.cos(a) * 70, Math.sin(a) * 34 - 30, 0.6, 0.6, 0.2, cols[i % cols.length], 0.95, { vrot: 5, grav: 160 });
+      }
+      this.spawn('puff', sx, sy - 4, 0, -10, 0.5, 0.6, 1.8, 0xd8cdb6, 0.6);
+      this.comic(sx, sy, ['SPLAT!', 'THUD!', 'BOING!', 'POF!'], 0xffffff, 20);
+      this.camera.shake(2);
+      return;
+    }
     const col = COLORS[element] ?? 0xffffff;
     const r = Math.max(0.8, Math.min(5, radius));
-    this.spawn('ring', sx, sy - 4, 0, 0, 0.45, 0.25, r * 1.15, col, 0.9);
+    this.spawn('ring', sx, sy - 4, 0, 0, 0.45, 0.25, r * 1.15 * this.big(), col, 0.9);
     if (high) this.spawn('ring', sx, sy - 4, 0, 0, 0.65, 0.15, r * 0.8, 0xffffff, 0.45);
     const n = high ? 9 : 4;
     for (let i = 0; i < n; i++) {

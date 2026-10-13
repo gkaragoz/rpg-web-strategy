@@ -14,6 +14,8 @@ export class Camera {
   enabled = true;
   /** Kamera sarsintisi genligi (px); hizla soner. */
   private shakeAmp = 0;
+  /** Kisa zoom darbesi (komedi modu): 0..0.08, hizla soner. */
+  private punchAmp = 0;
   private keys = new Set<string>();
   private dragging = false;
   private lastX = 0;
@@ -63,6 +65,10 @@ export class Camera {
     );
   }
 
+  punch(amount: number): void {
+    this.punchAmp = Math.min(0.08, Math.max(this.punchAmp, amount));
+  }
+
   /** Sarsinti ekler (en buyuk deger korunur; 0-14 px araligi). */
   shake(amount: number): void {
     this.shakeAmp = Math.min(14, Math.max(this.shakeAmp, amount));
@@ -84,6 +90,8 @@ export class Camera {
 
   update(dt: number): void {
     this.shakeAmp *= Math.exp(-dt * 9);
+    this.punchAmp *= Math.exp(-dt * 8);
+    if (this.punchAmp < 0.001) this.punchAmp = 0;
     if (this.shakeAmp < 0.05) this.shakeAmp = 0;
     let dx = 0;
     let dy = 0;
@@ -102,9 +110,10 @@ export class Camera {
   }
 
   apply(world: Container, screenW: number, screenH: number): void {
-    world.scale.set(this.zoom);
+    const z = this.zoom * (1 + this.punchAmp);
+    world.scale.set(z);
     const sx = this.shakeAmp > 0 ? (Math.random() - 0.5) * 2 * this.shakeAmp : 0;
     const sy = this.shakeAmp > 0 ? (Math.random() - 0.5) * 2 * this.shakeAmp : 0;
-    world.position.set(screenW / 2 - this.x * this.zoom + sx, screenH / 2 - this.y * this.zoom + sy);
+    world.position.set(screenW / 2 - this.x * z + sx, screenH / 2 - this.y * z + sy);
   }
 }
