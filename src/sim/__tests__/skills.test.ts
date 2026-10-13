@@ -22,7 +22,7 @@ function run(b: Battle, seconds: number, each?: (b: Battle) => void): void {
 }
 
 describe('skills', () => {
-  it('Bone Caller summons skeletons (wakes them from the pool), skeletons attack the enemy', () => {
+  it('Bone Caller summons bone soldiers (wakes them from the pool), they attack the enemy', () => {
     const b = arena(['bone-caller'], ['militia', 'militia', 'militia'], 8, 14);
     const u = b.units;
     const skel = K('bone-soldier');

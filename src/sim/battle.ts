@@ -1066,7 +1066,7 @@ export class Battle {
 
   private readonly skillCache: Partial<Record<SkillId, SkillParams>> = {};
   private readonly zones: Zone[] = [];
-  /** hex poppet -> linked enemies; Bone Caller -> skeleton pool. */
+  /** Hex Poppets -> linked enemies; Bone Caller -> bone soldier pool. */
   private readonly links = new Map<number, number[]>();
   private readonly pools = new Map<number, number[]>();
   private readonly scratch: number[] = [];
@@ -1487,7 +1487,7 @@ export class Battle {
     }
   }
 
-  /** Lifecycle setup for skilled units: skeleton pool, hex links. */
+  /** Lifecycle setup for skilled units: bone soldier pool, hex links. */
   private setupSkills(): void {
     const u = this.units;
     const skelKind = KIND_OF_TROOP['bone-soldier'];
@@ -1519,7 +1519,7 @@ export class Battle {
     }
   }
 
-  /** Bone Caller: wakes a skeleton from the pool. */
+  /** Bone Caller: wakes a bone soldier from the pool. */
   private summon(i: number): void {
     const u = this.units;
     const pool = this.pools.get(i);

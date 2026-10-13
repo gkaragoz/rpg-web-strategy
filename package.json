@@ -11,7 +11,12 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "check": "tsc --noEmit && vitest run",
+    "check": "tsc --noEmit && node scripts/check-repo.mjs && vitest run",
+    "check:fast": "tsc --noEmit && node scripts/check-repo.mjs && vitest run --exclude \"**/{fuzz,rosterfuzz,comedy,mapSpec,onlinesetup,economy,troops,determinism,snapsize,crowd}.test.ts\"",
+    "lint:repo": "node scripts/check-repo.mjs",
+    "test:fast": "vitest run --exclude \"**/{fuzz,rosterfuzz,comedy,mapSpec,onlinesetup,economy,troops,determinism,snapsize,crowd}.test.ts\"",
+    "test:net": "vitest run net lan chunk onlinesetup",
+    "test:sim": "vitest run skills troops edge terrain determinism crowd comedy armies economy mapSpec",
     "screenshots": "npm run build && node scripts/screenshots.mjs"
   },
   "dependencies": {
