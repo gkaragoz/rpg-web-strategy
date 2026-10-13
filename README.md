@@ -80,6 +80,26 @@ sayaçları (takılan, aktif A* yolu, yasak, leash kırılması) ve son bayrakla
 **URL parametreleri:** `?debug=1`, `?bench=10000&auto=30` (benchmark, 30 sn sonra rapor), `?sim=main` (sim ana thread),
 `?env=off` (çevresiz), `?kite=off` (vur-kaç kapalı), `?seed=3`.
 
+## Çevrimiçi oyna
+
+Stüdyodaki **Çevrimiçi** düğmesi: ad + renk seç, sonra **Lobi kur**, **Kodla katıl** ya da **Seyret**.
+
+- **Lobi (host):** harita (seç ya da *Rastgele*), başlangıç gold'u, yerleştirme süresi, birim seviyesi, harita boyutu, *Açık yerleştirme*
+  (herkes herkesin askerini anlık görür), komedi fiziği/görünümü, kapalı nadirlikler, parola; oyuncu **atma/susturma**. Oyuncu sayısı = takım sayısı (en çok 6).
+- **Oyun akışı:** herkes *Hazırım* der → host *Oyunu başlat* → herkes kendi bölgesine, gold bütçesiyle asker koyar (her birimin otomatik gold maliyeti vardır) →
+  herkes *HAZIR* deyince ya da süre dolunca savaş başlar. Hız ve duraklatma **yalnız host'ta**; diğerlerinde kilitli. Sonuçta host *Rövanş* başlatır.
+- **Herkesin adı, rengi, imleci var:** imleçler haritada dünya koordinatında (kamera/zoom'dan bağımsız), lobide sayfa koordinatında görünür.
+  Birim galerisi gibi bir panel açıksa imleç etiketi `Ad (Birim seçiyor)` olur. `Enter` ile oyun içi sohbet.
+- **Seyirci** oyun ortasında girebilir; kopan oyuncu sayfayı yenileyip menüdeki **Yeniden bağlan** ile (≈1 dk içinde) aynı takıma döner.
+
+**İnternet (varsayılan):** WebRTC (PeerJS genel sinyal sunucusu). GitHub Pages sayfasından lobi kur, **Linki kopyala** ile `#join=KOD` bağlantısını paylaş.
+Host oyunu yönetir; oyun mantığı herkeste aynı deterministik simülasyonla koşar, ağdan yalnız komutlar geçer (sapma olursa kontrol toplamı yakalar, host durum görüntüsü yollar).
+**LAN:** kurulum sihirbazının `oyna-lan` başlatıcısı (ya da `node server.mjs app --open --lan`; geliştirmede `npm run dev` zaten `/ws` sunar) host'un bilgisayarında sunucuyu
+LAN'a açar; arkadaşlar yazdırılan `http://<host-ip>:5174` adresini açıp koda katılır. Menüde bağlantı türünü *LAN* seç.
+
+Sorun giderme: *Sinyal sunucusuna ulaşılamadı* → ağ/güvenlik duvarı PeerJS sinyal sunucusunu (`0.peerjs.com`) engelliyor, LAN'ı dene. Kurumsal/simetrik NAT'ta WebRTC bağlanamayabilir
+(ücretsiz sunucuda TURN yoktur). *LAN sunucusuna bağlanılamadı* → oyunu `--lan` ile başlatmadın ya da Pages'ten LAN seçtin (Pages https olduğundan `ws://` kuramaz).
+
 ## Birimler
 
 5 klasik tür (Savaşçı, Okçu, Rahip, **Kalkan Tankı**, **Çekiç Tankı**) ve [the reference roster](docs/UNITS.md)
@@ -101,6 +121,8 @@ diken yansıtma, kritik, patlama, Hex bağı, ışığa dönüşme vb.
 src/sim/      saf TS simülasyon (Node'da da çalışır): battle, terrain, grid, units, worker, paylaşılan bellek
 src/render/   PixiJS çizim: atlas (tek doku), unitView (ayrıntılı), massRenderer (toplu), fx, audio, terrainView
 src/app/      stüdyo (DOM), editör, savaş sahnesi, durum/kalıcılık
+src/app/online/  çevrimiçi arayüz: menü, lobi, yerleştirme, imleçler, sohbet
+src/net/      protokol, host lobi durum makinesi, lockstep, taşımalar (loopback / WebSocket LAN / PeerJS)
 ```
 
 - **Sim**: 30 Hz sabit adım, SoA tipli diziler, takım başına uniform grid; hedefleme puanlı ve yapışkan (titreme yok);
