@@ -73,8 +73,8 @@ export interface OnlineEnv {
   /** Shared attack-preview player for the unit gallery. */
   preview?: UnitPreview;
   battleDefaults(): Pick<BattleOptions, 'fx' | 'numbers'>;
-  /** Leave online mode and return to the studio. */
-  onExit(reopenMenu?: boolean): void;
+  /** Leave online mode: back to the home page (`home`), or to the Battle Studio when the player chose their own simulation. */
+  onExit(home: boolean): void;
   setComedyVisual(on: boolean | null): void;
 }
 
@@ -140,7 +140,7 @@ export class OnlineApp {
       {
         onHost: (n, c, tp) => void this.host(n, c, tp),
         onJoin: (n, c, code2, pass, spec) => void this.join(n, c, code2, pass, spec),
-        onClose: () => this.exit(),
+        onOwn: () => this.exit(false, false, true),
         onRejoin: () => {
           const l = loadLast();
           if (l) void this.join(l.name, l.color, l.code, '', false, l.token);
@@ -542,8 +542,8 @@ export class OnlineApp {
   }
 
   /** Leave online mode: close the session, remove the screens, return to the studio. */
-  /** Leaves online mode. `quiet` skips returning to the studio (used right before a page reload). */
-  exit(keepRejoin = false, quiet = false): void {
+  /** Leaves online mode (back to the home page, or to the studio with `toStudio`). `quiet` skips the return (used right before a page reload). */
+  exit(keepRejoin = false, quiet = false, toStudio = false): void {
     if (this.dead) return;
     this.dead = true;
     if (!keepRejoin) saveLast(null);
@@ -562,6 +562,6 @@ export class OnlineApp {
     this.root.remove();
     this.env.setIconColors(null);
     this.env.setComedyVisual(null);
-    if (!quiet) this.env.onExit(keepRejoin);
+    if (!quiet) this.env.onExit(!toStudio);
   }
 }

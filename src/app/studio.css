@@ -1603,7 +1603,7 @@ button.on {
     max-width: none;
     border-radius: 16px 16px 0 0;
     border-bottom: 0;
-    padding: 24px 0 calc(8px + env(safe-area-inset-bottom, 0px));
+    padding: 38px max(0px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(0px, env(safe-area-inset-left, 0px));
   }
   .sheet-handle {
     display: block;
@@ -1611,18 +1611,19 @@ button.on {
     top: 0;
     left: 0;
     right: 0;
-    height: 26px;
+    height: 40px;
     min-height: 0;
     padding: 0;
     border: 0;
     border-radius: 16px 16px 0 0;
     background: transparent;
+    touch-action: none;
   }
   .sheet-handle::after {
     content: '';
     position: absolute;
     left: 50%;
-    top: 10px;
+    top: 14px;
     width: 46px;
     height: 5px;
     border-radius: 3px;
@@ -1707,7 +1708,7 @@ button.on {
     scrollbar-width: none;
     border-radius: 16px 16px 0 0;
     border-bottom: 0;
-    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+    padding: 8px max(10px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px));
   }
   .hud-bottom::-webkit-scrollbar {
     display: none;
@@ -1747,6 +1748,9 @@ button.on {
   }
   .hud-bottom #hud-edit {
     order: 7;
+    position: sticky;
+    right: 0;
+    box-shadow: -10px 0 8px -2px rgba(16, 22, 32, 0.95);
   }
   .result > div {
     max-width: calc(100vw - 24px);
@@ -1918,13 +1922,38 @@ button.on {
 }
 
 /* ---------------- Language picker (bottom right) + connection badge stacking ---------------- */
+/* Full-screen button sits left of the language button inside the same bar. */
 .lang-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   position: fixed;
   right: calc(8px + env(safe-area-inset-right, 0px));
   bottom: calc(max(var(--bar-h, 0px), env(safe-area-inset-bottom, 0px)) + 8px);
   z-index: 30;
   font: 13px/1.3 system-ui, -apple-system, 'Segoe UI', sans-serif;
   color: var(--text);
+}
+.fs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  color: var(--text);
+  background: rgba(16, 22, 32, 0.82);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+.fs-btn[hidden] {
+  display: none;
+}
+.fs-btn svg {
+  box-shadow: none;
+  border-radius: 0;
 }
 .lp-btn {
   display: inline-flex;
@@ -1994,7 +2023,8 @@ button.on {
   bottom: calc(max(var(--bar-h, 0px), env(safe-area-inset-bottom, 0px)) + var(--lp-lift, 0px) + 10px);
 }
 @media (pointer: coarse) {
-  .lp-btn {
+  .lp-btn,
+  .fs-btn {
     min-height: 40px;
     min-width: 40px;
   }
@@ -2011,4 +2041,13 @@ button.on {
 .map-chips,
 .ug-bar {
   flex: none;
+}
+
+/* Touch: no double-tap zoom on buttons, dialogs scroll vertically only (the canvas has its own touch-action: none). */
+html,
+body {
+  touch-action: manipulation;
+}
+dialog {
+  touch-action: pan-y;
 }

@@ -32,7 +32,14 @@ document.title = t('sys.title');
 if (loading?.firstElementChild) loading.firstElementChild.textContent = t('sys.loading');
 
 /** Unexpected error: a short, self-dismissing notice for the user; details go to the console. */
+let lastErr = '';
+let lastErrAt = 0;
 function showError(msg: string): void {
+  // A failure that repeats every frame must not pile up hundreds of notices.
+  const now = performance.now();
+  if (msg === lastErr && now - lastErrAt < 5000) return;
+  lastErr = msg;
+  lastErrAt = now;
   const el = document.createElement('div');
   el.className = 'err-toast';
   el.textContent = t('sys.error.unexpected', { msg: msg.slice(0, 160) });
@@ -64,6 +71,8 @@ if (!isBench) {
   });
   startBottomStack();
 }
+// iOS Safari ignores user-scalable=no: stop the page-level pinch zoom (the canvas handles its own pinch).
+for (const g of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(g, (e) => e.preventDefault());
 const canUseWorker = typeof SharedArrayBuffer !== 'undefined' && self.crossOriginIsolated;
 // ?debug=1: the stall-tracking overlay needs direct access to the sim, so the sim runs on the main thread.
 const debugParam = params.get('debug') === '1';
@@ -145,13 +154,19 @@ const battle = new BattleScene({
   audio,
   isSoundOn: () => state.options.sound,
   isDebugOn: debugOn,
-  isComedyVisual: comedyVisualOn,
+  // What is actually on screen: online battles use the lobby's setting, not the saved solo option.
+  isComedyVisual: () => comedy.visual,
   toggleComedyVisual: () => {
+    if (online) {
+      // Online: a local view toggle only; the saved solo preference is left alone.
+      comedy.visual = !comedy.visual;
+      return comedy.visual;
+    }
     state.options.comedyVisual = !comedyVisualOn();
     saveState(state);
     applyOptions();
     studio.render();
-    return comedyVisualOn();
+    return comedy.visual;
   },
   isComedyPhysics: comedyPhysicsOn,
   toggleComedyPhysics: () => {
@@ -372,11 +387,40 @@ function battleOptions(): BattleOptions {
 }
 
 /** Restarts the battle with the same layout (the debug toggle changes the sim kind). */
-async function restartBattle(): Promise<void> {
-  ensureAtlas();
-  mode = 'studio';
-  battle.exit();
-  await battle.enter(battleOptions());
+let restarting: Promise<void> | null = null;
+function restartBattle(): Promise<void> {
+  // Double clicks / key repeat: one restart at a time (an overlapping one would start a second worker).
+  restarting ??= (async () => {
+    try {
+      ensureAtlas();
+      const opts = battleOptions();
+      opts.speed = battle.currentSpeed;
+      opts.seed = battle.currentSeed;
+      mode = 'studio';
+      battle.exit();
+      await enterBattle(opts);
+    } finally {
+      restarting = null;
+    }
+  })();
+  return restarting;
+}
+
+/** Enters the battle; if the worker simulation cannot start, falls back to the main-thread simulation, and as a last resort back to the studio. */
+async function enterBattle(opts: BattleOptions): Promise<void> {
+  try {
+    await battle.enter(opts);
+  } catch (e) {
+    console.error('[battle] could not start', e);
+    battle.exit();
+    try {
+      await battle.enter({ ...opts, useWorker: false });
+    } catch (e2) {
+      console.error('[battle] fallback failed', e2);
+      await backToStudio();
+      return;
+    }
+  }
   stats.setShown(STATS_DEFAULT_SHOWN);
   mode = 'battle';
 }
@@ -387,9 +431,7 @@ async function startBattle(): Promise<void> {
   const opts = battleOptions();
   studio.hide();
   editor.exit();
-  await battle.enter(opts);
-  stats.setShown(STATS_DEFAULT_SHOWN);
-  mode = 'battle';
+  await enterBattle(opts);
 }
 
 async function backToStudio(): Promise<void> {
@@ -453,7 +495,7 @@ function startOnline(joinCode?: string): void {
     setComedyVisual: (on) => {
       comedy.visual = on ?? comedyVisualOn();
     },
-    onExit: (reopenMenu) => {
+    onExit: (home) => {
       online = null;
       iconColors = null;
       rebakeAtlas();
@@ -462,10 +504,12 @@ function startOnline(joinCode?: string): void {
       rebuildWorld(false);
       camera.fit(app.screen.width, app.screen.height);
       stats.setShown(false);
-      studio.show();
-      editor.enter();
       if (location.hash.startsWith('#join=')) history.replaceState(null, '', location.pathname + location.search);
-      if (reopenMenu) startOnline();
+      if (home) startOnline();
+      else {
+        studio.show();
+        editor.enter();
+      }
     },
   });
   app2.openMenu(joinCode);
@@ -520,8 +564,9 @@ if (isBench) {
   stats.setShown(false);
   studio.show();
   editor.enter();
+  // The game opens on the home page (the former online menu); "Your own simulation" leads to the studio.
   const joinHash = /^#join=([A-Za-z0-9]{4,8})$/.exec(location.hash);
-  if (joinHash) startOnline(joinHash[1].toUpperCase());
+  startOnline(joinHash ? joinHash[1].toUpperCase() : undefined);
 }
 loading?.remove();
 requestAnimationFrame(frame);

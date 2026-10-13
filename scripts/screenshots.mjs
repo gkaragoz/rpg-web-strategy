@@ -21,6 +21,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** Scene catalogue: file name, README alt text feature name, README layout slot. */
 const SCENES = [
   { id: 'battle', title: 'Crowded battle', hero: true },
+  { id: 'home', title: 'Home page' },
   { id: 'comedy', title: 'Comedy physics' },
   { id: 'maps', title: 'Map gallery' },
   { id: 'units', title: 'Unit gallery with attack previews' },
@@ -107,11 +108,16 @@ class Page {
     await this.send('Emulation.setTouchEmulationEnabled', { enabled: mobile });
     await this.send('Emulation.setEmitTouchEventsForMouse', { enabled: mobile });
   }
-  async nav(url) {
+  /** Opens `url`; the game starts on the home page, so by default "Your own simulation" is clicked to reach the studio. */
+  async nav(url, toStudio = true) {
     const loaded = this.once('Page.loadEventFired');
     await this.send('Page.navigate', { url });
     await loaded;
     await sleep(2500);
+    if (toStudio) {
+      await this.eval(`document.getElementById('m-own')?.click()`);
+      await sleep(1200);
+    }
   }
   async click(x, y) {
     for (const type of ['mousePressed', 'mouseReleased']) await this.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
@@ -200,6 +206,11 @@ const scenes = {
     await sleep(500);
     await page.shot('comedy');
   },
+  async home(page) {
+    await page.viewport(1600, 900);
+    await page.nav(`${BASE}?lang=en`, false);
+    await page.shot('home');
+  },
   async maps(page) {
     await page.viewport(1600, 900);
     await page.nav(`${BASE}?lang=en`);
@@ -266,10 +277,8 @@ const scenes = {
 /** Hosts a LAN lobby in `page` and joins it from a second page (ctx.guest); returns when both are in the lobby (guest ready). */
 async function onlineSession(ctx, page) {
   await page.viewport(1600, 900);
-  await page.nav(`${BASE}?lang=en`);
+  await page.nav(`${BASE}?lang=en`, false);
   await page.eval(`(async () => {
-    document.getElementById('online').click();
-    await new Promise((r) => setTimeout(r, 400));
     document.getElementById('m-name').value = 'Ayla';
     document.querySelector('#m-tp [data-tp="lan"]').click();
     document.getElementById('m-host').click();
@@ -279,10 +288,8 @@ async function onlineSession(ctx, page) {
   const guest = await Page.open();
   ctx.guest = guest;
   await guest.viewport(1600, 900);
-  await guest.nav(`${BASE}?lang=en`);
+  await guest.nav(`${BASE}?lang=en`, false);
   await guest.eval(`(async () => {
-    document.getElementById('online').click();
-    await new Promise((r) => setTimeout(r, 400));
     document.getElementById('m-name').value = 'Bora';
     document.getElementById('m-code').value = ${JSON.stringify(code)};
     document.getElementById('m-join').click();
@@ -307,9 +314,10 @@ function readmeBlock() {
     '</p>',
     '',
     '<table>',
-    `  <tr>${cell('comedy', 460)}${cell('maps', 460)}</tr>`,
-    `  <tr>${cell('units', 460)}${cell('studio', 460)}</tr>`,
-    `  <tr>${cell('lobby', 460)}${cell('placement', 460)}</tr>`,
+    `  <tr>${cell('home', 460)}${cell('comedy', 460)}</tr>`,
+    `  <tr>${cell('maps', 460)}${cell('units', 460)}</tr>`,
+    `  <tr>${cell('studio', 460)}${cell('lobby', 460)}</tr>`,
+    `  <tr>${cell('placement', 460)}</tr>`,
     `  <tr><td colspan="2" align="center">${img('mobile-studio', 200)} ${img('mobile-battle', 200)}<br /><sub>Mobile: bottom sheet and battle HUD</sub></td></tr>`,
     '</table>',
     '<!-- screenshots:end -->',

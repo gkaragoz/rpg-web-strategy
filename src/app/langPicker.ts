@@ -17,18 +17,27 @@ const FLAGS: Record<Lang, string> = {
   tr: `<svg viewBox="0 0 60 40" width="24" height="16" aria-hidden="true"><rect width="60" height="40" fill="#E30A17"/><circle cx="22.5" cy="20" r="10" fill="#fff"/><circle cx="25.5" cy="20" r="8" fill="#E30A17"/><polygon points="${starPoints(35.5, 20, 5.4)}" fill="#fff"/></svg>`,
 };
 
+const FS_ICON = {
+  enter: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>`,
+  exit: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>`,
+};
+
+type FsDoc = Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => Promise<void> | void };
+type FsEl = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void };
+
 export interface LangPickerOptions {
   /** Return false to cancel the switch (e.g. the user declined to leave an online session). */
   beforeSwitch?: () => boolean;
 }
 
-/** Bottom-right language dropdown (flag + language name). Mounted once on <body>; switching reloads the page. */
+/** Bottom-right language dropdown (flag + language name) with the full-screen button next to it. Mounted once on <body>; switching reloads the page. */
 export function mountLangPicker(opts: LangPickerOptions = {}): () => void {
   const root = document.createElement('div');
   root.className = 'lang-picker';
   const cur = getLang();
   const label = (id: Lang): string => LANGS.find((l) => l.id === id)!.label;
   root.innerHTML = `
+<button type="button" class="fs-btn" aria-label="${t('battle.fullscreen')}" title="${t('battle.fullscreen')}" hidden></button>
 <button type="button" class="lp-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="${t('sys.lang.aria')}">${FLAGS[cur]}<span class="lp-name">${label(cur)}</span><span class="lp-caret" aria-hidden="true">▾</span></button>
 <ul class="lp-list" role="listbox" tabindex="-1" aria-label="${t('sys.lang.aria')}" hidden>${LANGS.map(
     (l) => `<li role="option" tabindex="-1" data-lang="${l.id}" aria-selected="${l.id === cur}">${FLAGS[l.id]}<span class="lp-opt"><b>${l.label}</b></span></li>`,
@@ -37,6 +46,29 @@ export function mountLangPicker(opts: LangPickerOptions = {}): () => void {
   const btn = root.querySelector('.lp-btn') as HTMLButtonElement;
   const list = root.querySelector('.lp-list') as HTMLElement;
   const items = [...list.querySelectorAll<HTMLElement>('[role=option]')];
+
+  // Full screen (not available on iPhone Safari: the button stays hidden there).
+  const fs = root.querySelector('.fs-btn') as HTMLButtonElement;
+  const docEl = document.documentElement as FsEl;
+  const doc = document as FsDoc;
+  const canFs = !!(docEl.requestFullscreen || docEl.webkitRequestFullscreen);
+  const isFs = (): boolean => !!(document.fullscreenElement || doc.webkitFullscreenElement);
+  const paintFs = (): void => {
+    fs.innerHTML = isFs() ? FS_ICON.exit : FS_ICON.enter;
+    fs.setAttribute('aria-pressed', String(isFs()));
+  };
+  fs.hidden = !canFs;
+  paintFs();
+  fs.addEventListener('click', () => {
+    try {
+      if (isFs()) void (document.exitFullscreen ? document.exitFullscreen() : doc.webkitExitFullscreen?.());
+      else void (docEl.requestFullscreen ? docEl.requestFullscreen() : docEl.webkitRequestFullscreen?.());
+    } catch {
+      /* refused by the browser */
+    }
+  });
+  document.addEventListener('fullscreenchange', paintFs);
+  document.addEventListener('webkitfullscreenchange', paintFs);
 
   const open = (on: boolean): void => {
     list.hidden = !on;
@@ -93,6 +125,8 @@ export function mountLangPicker(opts: LangPickerOptions = {}): () => void {
   return () => {
     document.removeEventListener('pointerdown', onDoc);
     document.removeEventListener('keydown', onKey);
+    document.removeEventListener('fullscreenchange', paintFs);
+    document.removeEventListener('webkitfullscreenchange', paintFs);
     root.remove();
   };
 }

@@ -15,7 +15,8 @@ const COLORS = PALETTES[0].colors;
 export interface MenuHandlers {
   onHost(name: string, color: number, transport: 'lan' | 'net'): void;
   onJoin(name: string, color: number, code: string, pass: string, spectator: boolean): void;
-  onClose(): void;
+  /** "Your own simulation": leave the home page for the Battle Studio. */
+  onOwn(): void;
   onRejoin?(): void;
 }
 
@@ -27,7 +28,7 @@ export interface MenuInit {
   last?: string;
 }
 
-/** Online menu: name + color, and the Host a lobby / Join with a code / Watch cards. */
+/** Home page: name + color, and the Your own simulation / Host a lobby / Join with a code / Watch cards. */
 export class MenuScreen {
   private readonly el: HTMLElement;
   private color: number;
@@ -44,7 +45,7 @@ export class MenuScreen {
     this.el.className = 'on-screen on-menu';
     this.el.innerHTML = `
 <div class="on-panel on-menu-panel" role="dialog" aria-label="${esc(t('online.title'))}">
-  <header><h2>${t('online.title')}</h2><button type="button" class="on-x" id="m-close" aria-label="${esc(t('online.close'))}">×</button></header>
+  <header><h2>${t('online.title')}</h2></header>
   <div class="on-profile">
     <label>${t('online.name')} <input id="m-name" maxlength="16" value="${esc(init.name)}" autocomplete="off" /></label>
     <div class="on-colors" id="m-colors" role="radiogroup" aria-label="${esc(t('online.color'))}"></div>
@@ -54,6 +55,11 @@ export class MenuScreen {
   ${init.last ? `<div class="on-rejoin"><span>${t('online.lastLobby')} <b>${esc(init.last)}</b></span> <button type="button" class="primary" id="m-rejoin">${t('online.rejoin')}</button></div>` : ''}
   <p class="legal">© gkaragoz and Contributors · <a href="https://github.com/gkaragoz/rpg-web-strategy/blob/master/LICENSE" target="_blank" rel="noopener">${t('online.license')}</a></p>
   <div class="on-cards">
+    <section class="on-card">
+      <h3>${t('online.own.title')}</h3>
+      <p class="note">${t('online.own.note')}</p>
+      <button type="button" class="primary wide" id="m-own">${t('online.own.btn')}</button>
+    </section>
     <section class="on-card">
       <h3>${t('online.host.title')}</h3>
       <p class="note">${t('online.host.note')}</p>
@@ -96,7 +102,9 @@ export class MenuScreen {
     };
     paintTp();
     const prof = (): { name: string; color: number } => ({ name: q<HTMLInputElement>('#m-name').value.trim() || t('online.defaultName'), color: this.color });
-    q('#m-close').addEventListener('click', () => this.h.onClose());
+    q('#m-own').addEventListener('click', () => {
+      if (!this.busy) this.h.onOwn();
+    });
     this.el.querySelector('#m-rejoin')?.addEventListener('click', () => {
       if (!this.busy) this.h.onRejoin?.();
     });
@@ -118,9 +126,6 @@ export class MenuScreen {
       if (!code) return this.setError(t('online.err.needCode'));
       const p = prof();
       this.h.onJoin(p.name, p.color, code, '', true);
-    });
-    this.el.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') this.h.onClose();
     });
   }
 

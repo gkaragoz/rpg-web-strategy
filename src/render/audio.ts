@@ -25,7 +25,7 @@ export class AudioSystem {
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
   private readonly lastPlay: Record<Sfx, number> = zeroed();
-  private readonly endTimes: number[] = [];
+  private endTimes: number[] = [];
   /** Test/verification: counter of played sounds (proves the event->sound mapping in environments with no audible output). */
   readonly played: Record<Sfx, number> = zeroed();
 
@@ -120,7 +120,8 @@ export class AudioSystem {
     const now = ctx.currentTime;
     const tms = performance.now();
     if (tms - this.lastPlay[sfx] < MIN_GAP[sfx]) return;
-    while (this.endTimes.length && this.endTimes[0] < now) this.endTimes.shift();
+    // Voices are not sorted by end time (durations differ): drop every expired one, not just a prefix.
+    if (this.endTimes.length >= MAX_VOICES) this.endTimes = this.endTimes.filter((e) => e >= now);
     if (this.endTimes.length >= MAX_VOICES) return;
     this.lastPlay[sfx] = tms;
     this.played[sfx]++;

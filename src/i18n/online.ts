@@ -4,7 +4,10 @@ import type { StringTable } from './types';
 export const online: StringTable = {
   en: {
     // menu
-    'online.title': 'Online',
+    'online.title': 'Home',
+    'online.own.title': 'Your own simulation',
+    'online.own.note': 'Open the Battle Studio: place armies, pick a map and watch the battle on your own.',
+    'online.own.btn': 'Open the studio',
     'online.close': 'Close',
     'online.name': 'Name',
     'online.color': 'Color',
@@ -187,7 +190,10 @@ export const online: StringTable = {
   },
   tr: {
     // menu
-    'online.title': 'Çevrimiçi',
+    'online.title': 'Ana sayfa',
+    'online.own.title': 'Kendi simülasyonun',
+    'online.own.note': 'Savaş Stüdyosunu aç: ordularını yerleştir, haritayı seç ve savaşı kendi başına izle.',
+    'online.own.btn': 'Stüdyoyu aç',
     'online.close': 'Kapat',
     'online.name': 'Ad',
     'online.color': 'Renk',

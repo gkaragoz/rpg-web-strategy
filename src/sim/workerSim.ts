@@ -83,6 +83,8 @@ export class WorkerSim implements SimBackend {
       const m = e.data;
       if (m.type === 'events') this.events.push(...m.events);
       else if (m.type === 'reset') {
+        // Events the worker sent before this reset belong to the old battle.
+        this.events.length = 0;
         this.units.count = m.count;
         this.pendingReset?.(m.count);
         this.pendingReset = null;
@@ -94,11 +96,27 @@ export class WorkerSim implements SimBackend {
     const sab = allocShared(unitCapacity(config), projectileCapacity(config));
     const sh = bindShared(sab, unitCapacity(config), projectileCapacity(config));
     const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-    const count = await new Promise<number>((resolve, reject) => {
-      worker.onmessage = (e: MessageEvent<WorkerEvent>) => e.data.type === 'ready' && resolve(e.data.count);
-      worker.onerror = (e) => reject(new Error(`sim worker hatasi: ${e.message}`));
-      worker.postMessage({ type: 'init', sab, config, seed } satisfies WorkerCommand);
-    });
+    let count: number;
+    try {
+      count = await new Promise<number>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('sim worker did not start')), 15000);
+        worker.onmessage = (e: MessageEvent<WorkerEvent>) => {
+          if (e.data.type === 'ready') {
+            clearTimeout(timer);
+            resolve(e.data.count);
+          }
+        };
+        worker.onerror = (e) => {
+          clearTimeout(timer);
+          reject(new Error(`sim worker error: ${e.message}`));
+        };
+        worker.postMessage({ type: 'init', sab, config, seed } satisfies WorkerCommand);
+      });
+    } catch (err) {
+      worker.terminate(); // never leave a half-started worker running
+      throw err;
+    }
+    worker.onerror = (e) => console.error('[sim worker]', e.message);
     return new WorkerSim(config, worker, sh, count);
   }
 
@@ -169,6 +187,9 @@ export class WorkerSim implements SimBackend {
   }
 
   dispose(): void {
+    // A reset still waiting for its reply would hang forever once the worker is gone.
+    this.pendingReset?.(0);
+    this.pendingReset = null;
     this.worker.terminate();
   }
 

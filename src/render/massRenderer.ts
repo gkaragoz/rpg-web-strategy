@@ -105,6 +105,12 @@ export class MassRenderer {
     return this.app.renderer.generateTexture({ target: g, resolution: 2, frame: new Rectangle(-10, -2, 20, 16) });
   }
 
+  /** Releases the layer and the textures this renderer created (called when the battle ends). */
+  destroy(): void {
+    this.layer.destroy({ children: true });
+    this.chevronTex.destroy(true);
+  }
+
   /** Ground: two-tone diamond-pattern TilingSprite, masked to the map shape. */
   buildGround(): Container {
     const n = this.sim.mapSize;

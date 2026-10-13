@@ -23,12 +23,18 @@ export function initSheet(dock: HTMLElement): { destroy(): void; close(): void }
   // Drag up/down: a small movement is enough.
   let y0 = 0;
   let drag = false;
+  let pid = -1;
   handle.addEventListener('pointerdown', (e) => {
     drag = true;
+    pid = e.pointerId;
     y0 = e.clientY;
   });
+  // The browser may cancel the touch (iOS does): never leave the drag armed, or the next paint stroke would toggle the sheet.
+  window.addEventListener('pointercancel', (e) => {
+    if (e.pointerId === pid) drag = false;
+  });
   window.addEventListener('pointerup', (e) => {
-    if (!drag) return;
+    if (!drag || e.pointerId !== pid) return;
     drag = false;
     const dy = e.clientY - y0;
     if (Math.abs(dy) > 24) {

@@ -182,6 +182,8 @@ export class MapPicker {
   }
 
   private render(): void {
+    // Picking a preset re-renders the dialog: keep the scroll position of the list.
+    const keepScroll = this.dlg.querySelector('.map-body')?.scrollTop ?? 0;
     const s = this.state;
     const m = s.map;
     const chips = [{ id: 'all', name: t('maps.filter.all') }, ...BIOMES.map((b) => ({ id: b, name: loc(BIOME_NAMES[b]) }))]
@@ -218,6 +220,8 @@ export class MapPicker {
   </div>
   <footer><span class="note">${esc(t('maps.selected', { name: this.label() }))}</span><button type="submit" class="primary">${esc(t('maps.ok'))}</button></footer>
 </form>`;
+    const mapBody = this.dlg.querySelector<HTMLElement>('.map-body');
+    if (mapBody) mapBody.scrollTop = keepScroll;
 
     this.dlg.querySelectorAll<HTMLElement>('[data-f]').forEach((b) =>
       b.addEventListener('click', () => {

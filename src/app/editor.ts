@@ -12,6 +12,8 @@ import type { WorldView } from './world';
 interface Op {
   type: 'add' | 'remove';
   units: PlacedUnit[];
+  /** Touch strokes: when the finger started painting (a second finger right after means it was the start of a pinch). */
+  touchAt?: number;
 }
 
 export interface EditorDeps {
@@ -61,7 +63,8 @@ export class Editor {
   /** Touch: if the finger stays alone (no second finger arrives), painting starts after a short delay. */
   private touchPending: { id: number; x: number; y: number; timer: ReturnType<typeof setTimeout> } | null = null;
   private readonly onCancel = (e: PointerEvent) => {
-    if (e.pointerType === 'touch') this.endTouchGesture();
+    // A cancelled touch (system gesture, palm rejection, app switch) must not place or erase anything.
+    if (e.pointerType === 'touch') this.cancelTouchGesture();
   };
   private readonly onLeave = () => {
     this.cursor.inside = false;
@@ -151,6 +154,7 @@ export class Editor {
       if (!this.active) return;
       // The camera counted the finger before this event: 2+ fingers = pan/zoom, not placement.
       if (this.d.camera.touchCount >= 2) {
+        this.abortTouchStroke();
         this.finishStroke();
         this.clearTouchPending();
         return;
@@ -193,6 +197,27 @@ export class Editor {
     this.touchPending = null;
     if (!t || !this.active || this.d.camera.touchCount > 1) return;
     this.beginStroke(this.d.state.tool === 'erase', 0, t.x, t.y, false);
+    if (this.stroke) this.stroke.touchAt = performance.now();
+  }
+
+  /** A second finger arrived: if the first finger had only just started painting, that was a pinch, so undo what it did. */
+  private abortTouchStroke(): void {
+    const op = this.stroke;
+    if (!op || op.touchAt === undefined || performance.now() - op.touchAt > 450) return;
+    this.stroke = null;
+    this.strokeButton = -1;
+    if (op.units.length > 0) this.revert(op);
+  }
+
+  /** The browser cancelled the touch: drop the stroke completely (nothing is kept, nothing goes to undo). */
+  private cancelTouchGesture(): void {
+    this.clearTouchPending();
+    const op = this.stroke;
+    this.stroke = null;
+    this.strokeButton = -1;
+    if (op && op.units.length > 0) this.revert(op);
+    this.cursor.inside = false;
+    this.drawGhost();
   }
 
   private finishStroke(): void {
@@ -231,6 +256,7 @@ export class Editor {
         this.beginTouch();
       }
       if (this.d.camera.touchCount >= 2) {
+        this.abortTouchStroke();
         this.finishStroke();
         this.clearTouchPending();
       }

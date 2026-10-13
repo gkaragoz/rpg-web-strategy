@@ -188,7 +188,10 @@ export class UnitGallery {
       }),
     );
     const search = this.dlg.querySelector<HTMLInputElement>('#ug-search')!;
-    search.addEventListener('input', () => {
+    search.addEventListener('compositionend', () => search.dispatchEvent(new Event('input')));
+    search.addEventListener('input', (e) => {
+      // Do not rebuild the dialog in the middle of an IME composition (Android keyboards): wait for compositionend.
+      if ((e as InputEvent).isComposing) return;
       this.query = search.value;
       const pos = search.selectionStart ?? this.query.length;
       this.render();

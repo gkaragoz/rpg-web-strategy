@@ -87,6 +87,8 @@ export class BattleScene {
   private speed = 1;
   private paused = false;
   private resetting = false;
+  /** Incremented by exit(): an enter() that is still waiting for its worker must drop the result. */
+  private enterId = 0;
   private seed = 1;
   private time = 0;
   private activeProjectiles = 0;
@@ -117,7 +119,17 @@ export class BattleScene {
 
   constructor(private readonly d: BattleDeps) {}
 
+  /** Speed and seed of the running battle (a restart keeps them). */
+  get currentSpeed(): number {
+    return this.speed;
+  }
+  get currentSeed(): number {
+    return this.seed;
+  }
+
   async enter(opts: BattleOptions): Promise<void> {
+    const token = ++this.enterId;
+    this.resetting = false;
     this.opts = opts;
     this.speed = opts.speed;
     this.seed = opts.seed;
@@ -126,7 +138,13 @@ export class BattleScene {
     this.resetBenchStats();
 
     const cfg = opts.config;
-    this.sim = opts.sim ?? (opts.useWorker ? await WorkerSim.create(cfg, this.seed) : new InlineSim(cfg, this.seed));
+    const sim = opts.sim ?? (opts.useWorker ? await WorkerSim.create(cfg, this.seed) : new InlineSim(cfg, this.seed));
+    if (token !== this.enterId) {
+      // exit() or a newer enter() happened while the worker was starting: this battle is stale.
+      if (!opts.sim) sim.dispose();
+      return;
+    }
+    this.sim = sim;
     this.sim.setSpeed(this.speed);
 
     const unitCount = this.sim.units.count;
@@ -196,12 +214,14 @@ export class BattleScene {
   }
 
   exit(): void {
+    this.enterId++;
+    this.resetting = false;
     this.d.camera.singleFingerPan = false;
     if (this.keyHandler) window.removeEventListener('keydown', this.keyHandler);
     this.keyHandler = null;
     if (this.visHandler) document.removeEventListener('visibilitychange', this.visHandler);
     this.visHandler = null;
-    this.sim.dispose();
+    this.sim?.dispose();
     for (const v of this.views) v.root.destroy({ children: true });
     this.views = [];
     for (const a of this.arrowViews) {
@@ -223,7 +243,7 @@ export class BattleScene {
       this.fx = null;
     }
     if (this.mass) {
-      this.mass.layer.destroy({ children: true });
+      this.mass.destroy();
       this.mass = null;
     }
     this.d.hudRoot.innerHTML = '';
@@ -250,7 +270,6 @@ export class BattleScene {
   <button type="button" id="hud-cv" aria-pressed="false" title="${t('battle.cv.title')}">${t('battle.cv')}</button>
   <button type="button" id="hud-cp" class="sec" aria-pressed="false" title="${t('battle.cp.title')}">${t('battle.cp')}</button>
   <button type="button" id="hud-debug" class="sec" aria-pressed="false" title="${t('battle.debug.title')}">${t('battle.debug')}</button>
-  <button type="button" id="hud-full" class="sec">${t('battle.fullscreen')}</button>
   <span class="hud-view" role="group" aria-label="${t('battle.camera.aria')}"><button type="button" id="hud-zout" aria-label="${t('battle.zoomOut')}">−</button><button type="button" id="hud-zin" aria-label="${t('battle.zoomIn')}">+</button><button type="button" id="hud-center" aria-label="${t('battle.center')}" title="${t('battle.center')}">⌖</button><button type="button" id="hud-stats" aria-label="${t('battle.stats.aria')}" title="${t('battle.stats.title')}">📊</button></span>
   <button type="button" id="hud-restart">${t('battle.restart')}</button>
   <button type="button" id="hud-edit" class="primary">${t('battle.edit')}</button>
@@ -263,9 +282,8 @@ export class BattleScene {
     q('#hud-zout').addEventListener('click', () => this.d.camera.zoomBy(1 / 1.35));
     q('#hud-center').addEventListener('click', () => this.d.camera.fit(this.d.app.screen.width, this.d.app.screen.height));
     q('#hud-stats').addEventListener('click', () => this.d.stats.toggle());
-    if (!document.documentElement.requestFullscreen) q('#hud-full').hidden = true;
     if (this.opts.online) {
-      // Online: only Sound, Comedy view, Full screen and Leave remain.
+      // Online: only Sound, Comedy view and Leave remain.
       for (const id of ['#hud-restart', '#hud-debug', '#hud-cp']) q(id).hidden = true;
       q('#hud-edit').textContent = this.opts.online.isHost ? t('battle.leave.host') : t('battle.leave.guest');
       q('#hud-edit').addEventListener('click', () => this.opts.online!.onLeave());
@@ -286,10 +304,6 @@ export class BattleScene {
     dbg.textContent = this.d.isDebugOn() ? t('battle.debug.on') : t('battle.debug.off');
     dbg.setAttribute('aria-pressed', String(this.d.isDebugOn()));
     dbg.addEventListener('click', () => this.d.toggleDebug());
-    q('#hud-full').addEventListener('click', () => {
-      if (document.fullscreenElement) void document.exitFullscreen();
-      else void document.documentElement.requestFullscreen?.();
-    });
     const snd = q('#hud-sound');
     const paintSnd = (on: boolean): void => {
       snd.textContent = on ? t('battle.sound.on') : t('battle.sound.off');
@@ -344,7 +358,7 @@ export class BattleScene {
       const secs = Math.round(this.sim.time);
       const dur = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
       const losses = this.opts.colors
-        .map((cc, ti) => `<span style="color:${hex(cc.main)}">T${ti + 1}: ${this.initialAlive[ti] - this.sim.alivePerTeam[ti]}/${this.initialAlive[ti]}</span>`)
+        .map((cc, ti) => `<span style="color:${hex(cc.main)}">T${ti + 1}: ${Math.max(0, this.initialAlive[ti] - this.sim.alivePerTeam[ti])}/${this.initialAlive[ti]}</span>`)
         .join(' · ');
       const on = this.opts.online;
       const winName = w >= 0 ? (on?.teamNames[w] ?? t('battle.team.name', { n: w + 1 })) : '';
@@ -377,6 +391,8 @@ export class BattleScene {
   private onKey(e: KeyboardEvent): void {
     const tg = e.target as HTMLElement | null;
     if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA')) return;
+    // Holding a key must not toggle pause / restart / debug dozens of times a second.
+    if (e.repeat) return;
     const bench = this.opts.bench;
     const on = this.opts.online;
     if (on) {
@@ -417,18 +433,23 @@ export class BattleScene {
   async restart(): Promise<void> {
     if (this.resetting) return;
     this.resetting = true;
-    this.seed++;
-    await this.sim.reset(this.seed);
-    this.resetBenchStats();
-    this.resultShown = false;
-    const res = document.getElementById('hud-result');
-    if (res) res.hidden = true;
-    if (this.mass) this.mass.rebuild();
-    else this.buildViews();
-    this.fx?.clear();
-    this.comedySys?.clear();
-    this.d.banner.style.display = 'none';
-    this.resetting = false;
+    const token = this.enterId;
+    try {
+      this.seed++;
+      await this.sim.reset(this.seed);
+      if (token !== this.enterId) return; // the battle was left while the worker was resetting
+      this.resetBenchStats();
+      this.resultShown = false;
+      const res = document.getElementById('hud-result');
+      if (res) res.hidden = true;
+      if (this.mass) this.mass.rebuild();
+      else this.buildViews();
+      this.fx?.clear();
+      this.comedySys?.clear();
+      this.d.banner.style.display = 'none';
+    } finally {
+      if (token === this.enterId) this.resetting = false;
+    }
   }
 
   frame(now: number, frameMs: number): void {
