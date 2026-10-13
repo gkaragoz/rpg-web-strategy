@@ -67,6 +67,14 @@ export class OnlineModel {
     return !!this.state && this.state.hostId === this.you;
   }
 
+  /** Forgets the host's step/speed/pause info of the previous battle. */
+  private resetClock(): void {
+    this.hostStep = -1;
+    this.hostStepAt = 0;
+    this.speed = 1;
+    this.paused = false;
+  }
+
   apply(msg: ServerMsg): void {
     switch (msg.t) {
       case 'welcome':
@@ -86,6 +94,11 @@ export class OnlineModel {
           if (msg.state.phase === 'placing') {
             this.placed.clear();
             this.result = null;
+            // Leftovers of the battle that just ended must not leak into the next one (a late resync of the old battle
+            // would be restored into the new sim; stale host step/speed would make the new battle fast-forward).
+            this.start = null;
+            this.pendingResync = null;
+            this.resetClock();
           }
         }
         this.state = msg.state;
@@ -108,6 +121,8 @@ export class OnlineModel {
         break;
       case 'start':
         this.start = msg.start;
+        this.pendingResync = null;
+        this.resetClock();
         break;
       case 'tick':
         if (msg.step >= 0) {
@@ -118,7 +133,8 @@ export class OnlineModel {
         this.paused = msg.paused;
         break;
       case 'resync':
-        this.pendingResync = { step: msg.step, data: msg.data };
+        // Only a running (or just finished) battle can use a snapshot; one that arrives late, after the room moved on, is dropped.
+        if (this.state && (this.state.phase === 'battle' || this.state.phase === 'result')) this.pendingResync = { step: msg.step, data: msg.data };
         break;
       case 'result':
         this.result = { winner: msg.winner, alive: msg.alive };

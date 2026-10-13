@@ -307,7 +307,11 @@ export class HostLobby {
   private sendSnapshot(to: string): void {
     const r = this.simProvider?.snapshot();
     if (!r) return;
-    const send = (s: { step: number; data: string }): void => this.sendTo(to, { t: 'resync', step: s.step, data: s.data });
+    const battle = this.battleStart;
+    // A worker answers later: by then the room may have gone back to placement/lobby, and the snapshot belongs to a dead battle.
+    const send = (s: { step: number; data: string }): void => {
+      if (this.battleStart === battle && (this.phase === 'battle' || this.phase === 'result')) this.sendTo(to, { t: 'resync', step: s.step, data: s.data });
+    };
     if (r instanceof Promise) void r.then(send);
     else send(r);
   }
@@ -358,7 +362,7 @@ export class HostLobby {
     if (this.phase === 'placing') {
       // Send the existing placements (all of them with open placement, otherwise only the player's own).
       const items = this.visibleUnits(this.player(to));
-      if (items.length) this.sendTo(to, { t: 'placed', owner: '*', items });
+      this.sendPlacedBatches(to, items);
     }
   }
 
@@ -676,6 +680,11 @@ export class HostLobby {
     return this.units.visible(this.settings.openPlacement ? null : me ? me.team : -1);
   }
 
+  /** Sends many placements in modest messages (a 30 000-unit room would otherwise be one huge frame for relay/WebRTC). */
+  private sendPlacedBatches(to: string, items: PlacedItem[]): void {
+    for (let i = 0; i < items.length; i += 400) this.sendTo(to, { t: 'placed', owner: '*', items: items.slice(i, i + 400) });
+  }
+
   /** Rematch: same map, teams and settings; the last formation stays and everybody places (tweaks) again. */
   private rematch(): void {
     if (!this.init || !this.terrain) return this.toLobby();
@@ -690,7 +699,7 @@ export class HostLobby {
     for (const p of this.players) {
       if (!p.connected) continue;
       const items = this.visibleUnits(p);
-      if (items.length) this.sendTo(p.id, { t: 'placed', owner: '*', items });
+      this.sendPlacedBatches(p.id, items);
     }
   }
 

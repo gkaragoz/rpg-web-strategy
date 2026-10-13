@@ -80,9 +80,13 @@ export class LockstepRunner {
     const rs = this.model.pendingResync;
     if (!host && rs) {
       this.model.pendingResync = null;
-      if (this.sim.restorePacked) this.sim.restorePacked(b64decode(rs.data), rs.step);
-      else this.sim.restore(unpackSnapshot(b64decode(rs.data)));
-      this.resyncs++;
+      try {
+        if (this.sim.restorePacked) this.sim.restorePacked(b64decode(rs.data), rs.step);
+        else this.sim.restore(unpackSnapshot(b64decode(rs.data)));
+        this.resyncs++;
+      } catch (e) {
+        console.warn('[lockstep] snapshot ignored', e); // a bad snapshot must not end the battle for this player
+      }
       this.acc = 0;
     }
     const speed = host ? this.speed : this.model.speed;

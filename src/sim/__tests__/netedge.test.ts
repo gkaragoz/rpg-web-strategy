@@ -359,3 +359,44 @@ describe('lockstep edge cases', () => {
     expect(sim.winner).not.toBe(-1);
   });
 });
+
+describe('leftovers of a finished battle', () => {
+  it('a late resync of the old battle is dropped after a rematch, and the host clock info is reset', () => {
+    const { r, a, b } = three();
+    for (const g of [a, b]) g.send({ t: 'ready', ready: true });
+    r.hs.send({ t: 'ready', ready: true });
+    r.host.tick();
+    expect(b.model.start).not.toBeNull();
+    b.model.apply({ t: 'tick', step: 900, speed: 2, paused: true });
+    r.hs.send({ t: 'rematch' });
+    expect(b.model.state!.phase).toBe('placing');
+    expect(b.model.start).toBeNull();
+    expect(b.model.hostStep).toBe(-1);
+    expect(b.model.paused).toBe(false);
+    b.model.apply({ t: 'resync', step: 500, data: 'AAAA' }); // arrives late: the room is in placement
+    expect(b.model.pendingResync).toBeNull();
+  });
+
+  it('rematch sends a big formation in several placed messages', () => {
+    const r = rig(9);
+    const a = join(r, 'A');
+    a.send({ t: 'ready', ready: true });
+    r.hs.send({ t: 'settings', settings: { gold: 5_000_000, mapSize: 160 } });
+    a.send({ t: 'ready', ready: true });
+    r.hs.send({ t: 'start' });
+    const sp = spots(r, 1, 1500);
+    for (let i = 0; i < sp.length; i += 80) a.send({ t: 'place', items: sp.slice(i, i + 80).map((q, j) => ({ cid: i + j, kind: 0, x: q.x, y: q.y })) });
+    const mine = a.model.placed.size;
+    expect(mine).toBeGreaterThan(900);
+    for (const g of [a]) g.send({ t: 'ready', ready: true });
+    r.hs.send({ t: 'ready', ready: true });
+    r.host.tick();
+    let placedMsgs = 0;
+    a.model.listeners.push((m) => {
+      if (m.t === 'placed') placedMsgs++;
+    });
+    r.hs.send({ t: 'rematch' });
+    expect(a.model.placed.size).toBe(mine);
+    expect(placedMsgs).toBeGreaterThan(2);
+  });
+});
