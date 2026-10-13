@@ -14,6 +14,13 @@ export const MAX_LEVEL_H = 8;
 /** Tile height units: 16 units per step; a neighbor difference >= CLIFF_UNITS makes a cliff. */
 export const H_UNITS = 16;
 export const CLIFF_UNITS = 24;
+/** Closed-in ground of fewer tiles is simply sealed; larger areas get a ramp (see fixPockets). */
+const POCKET_MIN_TILES = 12;
+const RAMP_MAX_TILES = 6;
+/** Ramp search: crossings tried, tiles a slope may be extended into the higher side, height units per step of a slope. */
+const RAMP_TRIES = 24;
+const RAMP_EXTEND = 14;
+const RAMP_STEP = 20;
 
 const R = Math.SQRT1_2;
 /** River axes: u = army axis (horizontal on screen), v = river direction (vertical on screen). */
@@ -104,6 +111,10 @@ export class Terrain {
   /** Connected-component id of walkable tiles (-1: not walkable) and the largest component. */
   region: Int32Array = new Int32Array(0);
   mainRegion = -1;
+  /** What fixPockets did: ramps opened and closed-in tiles that had to be sealed (diagnostics / tests). */
+  readonly fixInfo = { ramps: 0, sealed: 0 };
+  /** 1 for tiles sealed by fixPockets (the ground there is closed in and now an obstacle). */
+  private sealedMark = new Uint8Array(0);
   readonly cx: number;
   readonly cy: number;
   private readonly sMin: number;
@@ -169,6 +180,7 @@ export class Terrain {
     this.finishRelief();
     this.collectLand();
     this.computeRegions();
+    this.fixPockets();
   }
 
   /** Height at point (x,y) (in steps, fractional): bilinear interpolation of the corner elevations. */
@@ -287,6 +299,228 @@ export class Terrain {
     }
     this.region = region;
     this.mainRegion = sizes.length ? sizes.indexOf(Math.max(...sizes)) : -1;
+  }
+
+  /**
+   * No walkable ground may be unreachable (a plateau or valley closed in by cliffs, an island): such places are useless for
+   * players and look like bugs. Every closed-in area of a useful size gets a short ramp through the cliff or obstacle ring
+   * (the heights are smoothed along it); whatever cannot be connected within a few tiles is sealed as an obstacle. Every change is
+   * applied to the point-mirrored tile as well, so the map stays fair.
+   */
+  private fixPockets(): void {
+    const n = this.size;
+    for (let pass = 0; pass < 4; pass++) {
+      const sizes = new Map<number, number>();
+      for (let i = 0; i < this.region.length; i++) if (this.region[i] >= 0) sizes.set(this.region[i], (sizes.get(this.region[i]) ?? 0) + 1);
+      const pockets = [...sizes.keys()].filter((r) => r !== this.mainRegion).sort((a, b) => a - b);
+      if (!pockets.length) break;
+      let changed = false;
+      for (const r of pockets) {
+        if ((sizes.get(r) ?? 0) < POCKET_MIN_TILES) continue; // tiny nooks are sealed below
+        // Earlier ramps of this pass may already have joined it to the main area: skip if so.
+        const first = this.region.indexOf(r);
+        if (first < 0 || this.region[first] !== r) continue;
+        if (this.carveRamp(r)) changed = true;
+      }
+      if (!changed) break;
+      this.computeRegions();
+    }
+    // Seal what is left.
+    this.sealedMark = new Uint8Array(n * n);
+    let sealed = false;
+    for (let i = 0; i < n * n; i++) {
+      if (this.region[i] >= 0 && this.region[i] !== this.mainRegion) {
+        this.flags[i] = T_BLOCKED;
+        this.sealedMark[i] = 1;
+        this.fixInfo.sealed++;
+        sealed = true;
+      }
+    }
+    if (sealed) {
+      this.computeRegions();
+      this.dressSealed();
+    }
+    this.finishRelief();
+  }
+
+  /** Rocks on the ground that had to be sealed, so it reads as impassable rock and not as ground one could walk on. Point-symmetric. */
+  private dressSealed(): void {
+    const n = this.size;
+    const mirror = (i: number): number => n * n - 1 - i;
+    for (let i = 0; i < n * n; i++) {
+      const m = mirror(i);
+      if (i > m || this.flags[i] !== T_BLOCKED || this.sealedMark[i] === 0) continue;
+      // The same decision for a tile and its mirror (hash of the smaller index).
+      let h = Math.imul(i + 0x9e3779b9, 0x85ebca6b);
+      h ^= h >>> 15;
+      h = Math.imul(h, 0x2c1b3c6d);
+      h ^= h >>> 13;
+      const u = (h >>> 0) / 4294967296;
+      if (u > 0.55) continue;
+      const kind: DecorKind = u < 0.12 ? 'boulder' : 'rock';
+      const variant = Math.floor(u * 100) % 3;
+      for (const t of i === m ? [i] : [i, m]) {
+        const tx = t % n;
+        const ty = (t / n) | 0;
+        this.decor.push({ kind, variant, x: tx + 0.5, y: ty + 0.5 });
+      }
+    }
+  }
+
+  /**
+   * Opens a ramp from the closed-in region `r` to the main area: through the ring of obstacle (cliff) tiles, and, because a
+   * cliff is a height step of CLIFF_UNITS or more, down a gradual slope cut into the higher side (the tiles beside the cut
+   * that end up too high become cliffs, like the walls of a cutting). Tries the shortest crossings first; false if none fits.
+   */
+  private carveRamp(r: number): boolean {
+    const n = this.size;
+    const parent = new Int32Array(n * n).fill(-2);
+    const queue: number[] = [];
+    for (let i = 0; i < n * n; i++) {
+      if (this.region[i] === r) {
+        parent[i] = -1;
+        queue.push(i);
+      }
+    }
+    const dirs = [1, -1, n, -n];
+    const depth = new Uint8Array(n * n);
+    const crossings: Array<[number, number]> = [];
+    for (let q = 0; q < queue.length && crossings.length < RAMP_TRIES; q++) {
+      const cur = queue[q];
+      const cx = cur % n;
+      for (const d of dirs) {
+        const nx = cx + (d === 1 ? 1 : d === -1 ? -1 : 0);
+        const ni = cur + d;
+        if (nx < 1 || nx >= n - 1 || ni < n || ni >= n * (n - 1)) continue;
+        if (this.region[ni] === this.mainRegion && parent[cur] !== -1) {
+          crossings.push([cur, ni]);
+          continue;
+        }
+        if (parent[ni] !== -2 || this.flags[ni] !== T_BLOCKED || depth[cur] >= RAMP_MAX_TILES) continue;
+        parent[ni] = cur;
+        depth[ni] = depth[cur] + 1;
+        queue.push(ni);
+      }
+    }
+    for (const [last, exit] of crossings) {
+      const rim: number[] = [];
+      for (let p = last; parent[p] !== -1; p = parent[p]) rim.push(p);
+      rim.reverse();
+      const plan = this.planRamp(rim, parent[rim[0]], exit);
+      if (!plan) continue;
+      this.fixInfo.ramps++;
+      plan.chain.forEach((tile, k) => this.openTile(tile, plan.heights[k]));
+      this.recutCliffs(plan.chain);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * The chain of tiles of a ramp (high end first) and their heights: the rim tiles between `entry` (pocket side) and `exit`
+   * (main side), plus as many walkable tiles of the higher side as the slope needs (steps of at most 20 height units). Null when
+   * the slope does not fit (not enough room on the higher side, or a step toward a neighbour would be a cliff).
+   */
+  private planRamp(rim: number[], entry: number, exit: number): { chain: number[]; heights: number[] } | null {
+    const n = this.size;
+    const hEntry = this.height[entry];
+    const hExit = this.height[exit];
+    const entryHigh = hEntry >= hExit;
+    // Inward direction of the higher side, away from the rim.
+    const dir = entryHigh ? entry - rim[0] : exit - rim[rim.length - 1];
+    const base = entryHigh ? [entry, ...rim, exit] : [entry, ...rim, exit].reverse(); // high end ... low end
+    const drop = Math.abs(hEntry - hExit);
+    const ext: number[] = [];
+    let tile = base[0];
+    for (let e = 0; e <= RAMP_EXTEND; e++) {
+      const chain = [...ext.slice().reverse(), ...base];
+      const steps = chain.length - 1;
+      if (steps * RAMP_STEP >= drop) {
+        const top = this.height[chain[0]];
+        const bottom = this.height[chain[chain.length - 1]];
+        const heights = chain.map((_, k) => Math.round(top + ((bottom - top) * k) / steps));
+        // Inner tiles are rewritten; the two ends keep their height.
+        if (this.rampOk(chain, heights)) return { chain: chain.slice(1, -1), heights: heights.slice(1, -1) };
+      }
+      const next = tile - dir;
+      const col = tile % n;
+      if (next < 0 || next >= n * n || (dir === 1 && col === 0) || (dir === -1 && col === n - 1)) return null;
+      // Keep going into the higher side only through ordinary walkable ground of that side.
+      if (this.flags[next] !== T_GRASS) return null;
+      ext.push(next);
+      tile = next;
+    }
+    return null;
+  }
+
+  /** No step along the chain, and none between a chain tile and a walkable tile beside it that is not plain grass, may reach the cliff threshold. */
+  private rampOk(chain: number[], heights: number[]): boolean {
+    const n = this.size;
+    const limit = CLIFF_UNITS - 1;
+    for (let k = 1; k < heights.length; k++) if (Math.abs(heights[k] - heights[k - 1]) > limit) return false;
+    const on = new Map<number, number>();
+    chain.forEach((c, k) => on.set(c, heights[k]));
+    for (let k = 0; k < chain.length; k++) {
+      for (const d of [1, -1, n, -n]) {
+        const j = chain[k] + d;
+        if (j < 0 || j >= n * n || (d === 1 && j % n === 0) || (d === -1 && j % n === n - 1)) continue;
+        const hj = on.get(j) ?? this.height[j];
+        if (on.has(j) || !this.walkable((j % n) + 0.5, ((j / n) | 0) + 0.5)) continue;
+        const lower = heights[k] - hj; // how much higher the chain tile is than the neighbour
+        if (lower >= CLIFF_UNITS) return false; // the chain tile would become a cliff
+        if (-lower >= CLIFF_UNITS && this.flags[j] !== T_GRASS) return false; // a non-grass neighbour cannot be turned into a cliff
+      }
+    }
+    return true;
+  }
+
+  /** After a ramp: the tiles beside it that are now a cliff step higher than a neighbour become obstacles (as at generation). */
+  private recutCliffs(chain: number[]): void {
+    const n = this.size;
+    const protectedTiles = new Set<number>();
+    for (const c of chain) {
+      protectedTiles.add(c);
+      protectedTiles.add(n * n - 1 - c);
+    }
+    const near = new Set<number>();
+    for (const c of protectedTiles) {
+      const cx = c % n;
+      const cy = (c / n) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const x = cx + dx;
+          const y = cy + dy;
+          if (x >= 0 && y >= 0 && x < n && y < n && !protectedTiles.has(y * n + x)) near.add(y * n + x);
+        }
+      }
+    }
+    for (const i of near) {
+      if (this.flags[i] !== T_GRASS) continue;
+      const tx = i % n;
+      const ty = (i / n) | 0;
+      let cliff = false;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = tx + dx;
+        const ny = ty + dy;
+        if (nx >= 0 && ny >= 0 && nx < n && ny < n && this.height[i] - this.height[ny * n + nx] >= CLIFF_UNITS) cliff = true;
+      }
+      if (cliff) this.flags[i] = T_BLOCKED;
+    }
+  }
+
+  /** Makes tile i (and its point mirror) walkable ground at the given height, without decor. */
+  private openTile(i: number, h: number): void {
+    const n = this.size;
+    for (const t of [i, n * n - 1 - i]) {
+      this.flags[t] = T_GRASS;
+      this.height[t] = h;
+      this.occ[t] = 0;
+      const tx = t % n;
+      const ty = (t / n) | 0;
+      const keep = this.decor.filter((d) => Math.floor(d.x) !== tx || Math.floor(d.y) !== ty);
+      this.decor.length = 0;
+      for (const d of keep) this.decor.push(d);
+    }
   }
 
   // ---- A* pathfinding (only for units that get stuck) ----

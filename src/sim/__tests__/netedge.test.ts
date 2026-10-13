@@ -45,22 +45,12 @@ function three(): { r: Rig; a: GuestSession; b: GuestSession } {
 describe('unreachable ground', () => {
   const everywhere: Zone = { team: 0, contains: () => true, area: 1, cx: 0, cy: 0 };
 
-  it('placeBlock tells an isolated walkable tile from a reachable one', () => {
-    let found = 0;
-    for (let seed = 1; seed <= 60 && !found; seed++) {
-      const t = new Terrain(56, { seed, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
-      for (let y = 0; y < 56 && !found; y++)
-        for (let x = 0; x < 56; x++) {
-          if (t.walkable(x + 0.5, y + 0.5) && !t.reachable(x + 0.5, y + 0.5)) {
-            expect(placeBlock(t, everywhere, x + 0.5, y + 0.5)).toBe('unreachable');
-            found++;
-            break;
-          }
-        }
-    }
-    expect(found).toBeGreaterThan(0);
-    const t = new Terrain(56, { seed: 1, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
-    expect(placeBlock(t, { ...everywhere, contains: () => false }, 10.5, 10.5)).toBe('zone');
+  it('placeBlock tells an unreachable walkable tile from a reachable one (terrain generation no longer makes such ground, so a stub terrain is used)', () => {
+    const stub = { walkable: (x: number) => x < 50, reachable: (x: number) => x < 20 } as unknown as Terrain;
+    expect(placeBlock(stub, everywhere, 10.5, 5.5)).toBeNull();
+    expect(placeBlock(stub, everywhere, 30.5, 5.5)).toBe('unreachable');
+    expect(placeBlock(stub, everywhere, 60.5, 5.5)).toBe('zone'); // not walkable
+    expect(placeBlock(stub, { ...everywhere, contains: () => false }, 10.5, 5.5)).toBe('zone');
   });
 
   it('the host refuses an unreachable tile with its own reason and charges nothing', () => {

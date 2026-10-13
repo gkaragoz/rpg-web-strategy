@@ -254,7 +254,8 @@ export class Mover {
     if ((i + this.stepNo) % this.losEvery === 0) {
       const dx0 = gx - u.x[i];
       const dy0 = gy - u.y[i];
-      const far = dx0 * dx0 + dy0 * dy0 > 6;
+      // Even a target close by may be behind a thin wall (a diagonal pinch): only a unit practically on top of it skips the check.
+      const far = dx0 * dx0 + dy0 * dy0 > 1;
       const clear = !far || t.lineWalkable(u.x[i], u.y[i], gx, gy);
       if (has && clear) {
         u.pathN[i] = 0;
