@@ -24,6 +24,8 @@ export interface PlacedLayer {
   drop(key: unknown): void;
   clear(): void;
   has(key: unknown): boolean;
+  /** Empties the layer and releases it for good (the world forgets it); the layer is not used afterwards. */
+  destroy(): void;
 }
 
 /** The brush ring under the cursor. */

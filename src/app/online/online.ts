@@ -58,6 +58,15 @@ function saveLast(l: LastSession | null): void {
     /* storage unavailable */
   }
 }
+/** Re-stamps the stored rejoin record even if it already aged out (a quiet lobby sends no messages that would refresh it). */
+function touchLast(): void {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(LAST_KEY) ?? 'null') as LastSession | null;
+    if (raw && typeof raw.code === 'string') saveLast({ ...raw, at: Date.now() });
+  } catch {
+    /* storage unavailable */
+  }
+}
 /** Internet relay (relay/ Cloudflare Worker): needs no NAT/TURN; if unreachable, PeerJS (WebRTC) is tried. */
 export { RELAY_URL };
 /** The first connection to the relay (TLS + Durable Object cold start) can be slower than LAN. */
@@ -134,11 +143,27 @@ export class OnlineApp {
   private dead = false;
   private busy = false;
   private transition: Promise<void> = Promise.resolve();
+  private unhook: (() => void) | null = null;
 
   constructor(private readonly env: OnlineEnv) {
     this.root = document.createElement('div');
     this.root.id = 'online-root';
     document.body.appendChild(this.root);
+    // A quiet lobby sends no messages, so the rejoin record would expire (55 s) before a reload / Back / app switch: stamp it when the page goes away.
+    const stamp = (): void => {
+      if (this.dead || !this.session || this.session.isHost) return;
+      touchLast();
+    };
+    const onHide = (): void => {
+      if (document.visibilityState === 'hidden') stamp();
+    };
+    window.addEventListener('pagehide', stamp);
+    document.addEventListener('visibilitychange', onHide);
+    // Page-level listeners outlive this object: exit() removes them (they would keep the whole screen tree alive).
+    this.unhook = () => {
+      window.removeEventListener('pagehide', stamp);
+      document.removeEventListener('visibilitychange', onHide);
+    };
   }
 
   get active(): boolean {
@@ -601,7 +626,12 @@ export class OnlineApp {
   exit(keepRejoin = false, quiet = false, toStudio = false): void {
     if (this.dead) return;
     this.dead = true;
+    this.unhook?.();
+    this.unhook = null;
+    const w = window as unknown as { __session?: Session };
+    if (w.__session === this.session) delete w.__session; // diagnostics handle: must not pin the finished session
     if (!keepRejoin) saveLast(null);
+    else touchLast(); // a quiet lobby (or a long confirm dialog) must not let the record expire right before the reload
     try {
       // A kept rejoin entry needs the host to keep the slot too: only drop the connection, do not announce a leave.
       this.session?.leave(keepRejoin);

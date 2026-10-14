@@ -115,6 +115,14 @@ export class Nav {
     const dt = NAV_DEPTH[target];
     const df = NAV_DEPTH[from];
     if (verdict === 'revert' && dt > df) this.walk(dt - df);
-    else this.hist.pushState(navStateFor(from), '');
+    else if (dt !== df) {
+      // Refused: put the history back where it was by walking the other way (Forward after a refused Back). A pushState from here would
+      // run without a user gesture, and Chrome (Android) skips such entries on the next Back, which then leaves the page unasked.
+      this.walk(dt < df ? -(df - dt) : dt - df);
+      setTimeout(() => {
+        // The walk found no entry to land on (nothing popped): fall back to pushing the entry again.
+        if (this.cur === from && screenOfState(this.hist.state) !== from) this.hist.pushState(navStateFor(from), '');
+      }, 300);
+    } else this.hist.pushState(navStateFor(from), '');
   }
 }

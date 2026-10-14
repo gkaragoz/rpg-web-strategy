@@ -1,6 +1,7 @@
 import type { FrameInfo, MeterView, ProjView, SimBackend, SimStats, UnitsView } from './backend';
 import { DBG_KEYS, mapSizeFor, projectileCapacity, unitCapacity, type BattleConfig, type SimEvent } from './battle';
 import { THREADS_MIN_UNITS, armySize, simDtFor } from './constants';
+import { quitHelpers } from './movePool';
 import {
   F_ALIVE_BASE,
   F_DBG,
@@ -23,6 +24,16 @@ import {
   type Shared,
 } from './shared';
 import type { WorkerCommand, WorkerEvent } from './worker';
+
+/** Control buffer of each helper set (from the setup message): lets the page wake the helpers so they exit before they are terminated. */
+const helperCtrl = new WeakMap<Worker[], SharedArrayBuffer>();
+
+/** Terminates the helpers; they are woken first, otherwise a helper blocked in Atomics.wait lingers for Blink's 2 s forced-termination delay. */
+function killHelpers(helpers: Worker[]): void {
+  const ctrl = helperCtrl.get(helpers);
+  if (ctrl) quitHelpers(ctrl);
+  for (const h of helpers) h.terminate();
+}
 
 /**
  * Helper threads for the movement phase of big battles: `?threads=N` forces a number (0 = off), otherwise a share of the
@@ -104,7 +115,10 @@ export class WorkerSim implements SimBackend {
       const m = e.data;
       if (m.type === 'events') this.events.push(...m.events);
       else if (m.type === 'log') console.warn('[sim worker]', m.msg);
-      else if (m.type === 'helpers') for (const h of helpers) h.postMessage(m.init);
+      else if (m.type === 'helpers') {
+        helperCtrl.set(helpers, m.init.ctrl);
+        for (const h of helpers) h.postMessage(m.init);
+      }
       else if (m.type === 'hash' || m.type === 'snapshot') this.onExtra(m);
       else if (m.type === 'reset') {
         // Events the worker sent before this reset belong to the old battle.
@@ -139,7 +153,10 @@ export class WorkerSim implements SimBackend {
         const timer = setTimeout(() => reject(new Error('sim worker did not start')), 15000);
         worker.onmessage = (e: MessageEvent<WorkerEvent>) => {
           if (e.data.type === 'log') console.warn('[sim worker]', e.data.msg);
-          if (e.data.type === 'helpers') for (const h of helpers) h.postMessage(e.data.init);
+          if (e.data.type === 'helpers') {
+            helperCtrl.set(helpers, e.data.init.ctrl);
+            for (const h of helpers) h.postMessage(e.data.init);
+          }
           if (e.data.type === 'ready') {
             clearTimeout(timer);
             resolve(e.data.count);
@@ -154,7 +171,7 @@ export class WorkerSim implements SimBackend {
       });
     } catch (err) {
       worker.terminate(); // never leave a half-started worker running
-      for (const h of helpers) h.terminate();
+      killHelpers(helpers);
       throw err;
     }
     worker.onerror = (e) => console.error('[sim worker]', e.message);
@@ -232,7 +249,7 @@ export class WorkerSim implements SimBackend {
     this.pendingReset?.(0);
     this.pendingReset = null;
     this.worker.terminate();
-    for (const h of this.helpers) h.terminate();
+    killHelpers(this.helpers);
   }
 
   stats(): SimStats {

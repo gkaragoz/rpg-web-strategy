@@ -2,7 +2,7 @@ import { Graphics } from 'pixi.js';
 import { TILE_H, TILE_W, isoX, isoY } from '../iso';
 import { LEVEL_PX, type Terrain } from '../sim/terrain';
 import { PALETTES, type BiomePalette } from './biome';
-import { overlayTiles, reliefBands } from './depthSort';
+import { type BandPlan, overlayTiles, planBandStarts, reliefBands } from './depthSort';
 
 function shade(c: number, k: number): number {
   const r = Math.min(255, Math.max(0, Math.round(((c >> 16) & 255) * k)));
@@ -24,7 +24,7 @@ export interface GroundParts {
   bandOfTile: Map<number, Graphics>;
 }
 
-export function buildGround(size: number, pal: BiomePalette = PALETTES.forest, terrain: Terrain | null = null, bandWidth = 1): GroundParts {
+export function buildGround(size: number, pal: BiomePalette = PALETTES.forest, terrain: Terrain | null = null, plan: BandPlan = { tolPx: 6, maxWidth: 1 }): GroundParts {
   const g = new Graphics();
   const bands = new Map<number, Graphics>();
   const bandOfTile = new Map<number, Graphics>();
@@ -55,7 +55,8 @@ export function buildGround(size: number, pal: BiomePalette = PALETTES.forest, t
   // Relief ground: each tile is a sloped quad from its corner heights; drawn back to front (x+y increasing).
   // Flat tiles go to the base layer; tiles with relief go to depth bands that live in the sorted entity layer, so that units
   // behind a ridge are covered by it and units in front draw over it (see depthSort.ts).
-  const rb = reliefBands(size, (vx, vy) => terrain.vertexH(vx, vy), bandWidth, overlayTiles(terrain));
+  const starts = plan.maxWidth <= 1 ? 1 : planBandStarts(size, (x, y) => terrain.elevPx(x, y), terrain.maxH * LEVEL_PX, plan);
+  const rb = reliefBands(size, (vx, vy) => terrain.vertexH(vx, vy), starts, overlayTiles(terrain));
   for (const key of rb.keys) {
     const bg = new Graphics();
     bands.set(key, bg);

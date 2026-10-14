@@ -92,6 +92,7 @@ export class Studio {
   private template(): string {
     return `
 <aside class="panel left" id="panel-left" aria-label="${t('studio.panel.aria')}">
+  <button type="button" class="panel-close only-narrow" aria-label="${t('studio.panel.close')}">×</button>
   <header><h1>${t('studio.title')}</h1><p>${t('studio.tagline')}</p></header>
   <section>
     <h2>${t('studio.map.h')}</h2>
@@ -132,6 +133,7 @@ export class Studio {
 </aside>
 
 <aside class="panel right" id="panel-right" aria-label="${t('studio.teams.aria')}">
+  <button type="button" class="panel-close only-narrow" aria-label="${t('studio.panel.close')}">×</button>
   <section>
     <h2>${t('studio.teams.h')}</h2>
     <div class="row"><span>${t('studio.teams.count')}</span><span class="stepper"><button id="tm-minus" type="button" aria-label="${t('studio.teams.minus')}">−</button><b id="tm-count">2</b><button id="tm-plus" type="button" aria-label="${t('studio.teams.plus')}">+</button></span></div>
@@ -268,6 +270,8 @@ export class Studio {
     });
     this.$('#tgl-left').addEventListener('click', () => this.$('#panel-left').classList.toggle('open'));
     this.$('#tgl-right').addEventListener('click', () => this.$('#panel-right').classList.toggle('open'));
+    // On phones the open panel covers the dock (and its Settings / Teams buttons): it carries its own close button.
+    for (const id of ['#panel-left', '#panel-right']) this.$(id).querySelector('.panel-close')!.addEventListener('click', () => this.$(id).classList.remove('open'));
   }
 
   private optionsChanged(rerender = true): void {

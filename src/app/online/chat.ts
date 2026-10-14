@@ -14,6 +14,8 @@ export class ChatOverlay {
   private seen = 0;
   private readonly keys: (e: KeyboardEvent) => void;
   private readonly timer: ReturnType<typeof setInterval>;
+  /** The visual-viewport listener lives on `window` (it outlives the overlay and would keep the session and its DOM alive). */
+  private placeFn: (() => void) | null = null;
 
   constructor(
     root: HTMLElement,
@@ -55,6 +57,7 @@ export class ChatOverlay {
     place();
     this.timer = setInterval(place, 400);
     window.visualViewport?.addEventListener('resize', place);
+    this.placeFn = place;
     this.input.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Enter') {
@@ -91,6 +94,8 @@ export class ChatOverlay {
   destroy(): void {
     window.removeEventListener('keydown', this.keys);
     clearInterval(this.timer);
+    if (this.placeFn) window.visualViewport?.removeEventListener('resize', this.placeFn);
+    this.placeFn = null;
     this.el.remove();
   }
 }

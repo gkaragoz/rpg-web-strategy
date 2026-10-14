@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bandWidthFor, bandZ, computeCover, computeLift, coverAt, decorBox, DepthBoxIndex, FLAT_LEVELS, OVERLAY_LEVELS, overlayTiles, reliefBands, slabTable, slabZ } from '../../render/depthSort';
+import { bandPlanFor, bandZ, computeCover, computeLift, coverAt, decorBox, DepthBoxIndex, FLAT_LEVELS, OVERLAY_LEVELS, overlayTiles, planBandStarts, RAISE_COVER_PX, reliefBands, slabTable, slabZ } from '../../render/depthSort';
 import { LEVEL_PX } from '../terrain';
 
 describe('relief depth bands', () => {
@@ -32,11 +32,75 @@ describe('relief depth bands', () => {
     expect(bandZ(7)).toBeGreaterThan(6.99);
   });
 
-  it('crowds get a coarser band width', () => {
-    expect(bandWidthFor(100)).toBe(1);
-    expect(bandWidthFor(5000)).toBe(2);
-    expect(bandWidthFor(12000)).toBe(3);
-    expect(bandWidthFor(30000)).toBe(4);
+  it('crowds tolerate more hiding error before a band is split', () => {
+    expect(bandPlanFor(100).tolPx).toBe(RAISE_COVER_PX);
+    expect(bandPlanFor(5000).tolPx).toBeGreaterThan(bandPlanFor(100).tolPx);
+    expect(bandPlanFor(12000).tolPx).toBeGreaterThan(bandPlanFor(5000).tolPx);
+    expect(bandPlanFor(30000).tolPx).toBeGreaterThan(bandPlanFor(12000).tolPx);
+    expect(bandPlanFor(100).maxWidth).toBeGreaterThan(1);
+  });
+
+  it('reliefBands accepts a start table', () => {
+    const starts = Int32Array.from([0, 0, 0, 0, 4, 4, 4, 7, 7, 7, 7]);
+    const b = reliefBands(size, vh, starts);
+    expect(b.keys).toEqual([4]);
+    expect(b.tiles.get(4)).toHaveLength(4);
+  });
+});
+
+describe('adaptive band starts', () => {
+  const PLAN = { tolPx: RAISE_COVER_PX, maxWidth: 12 };
+
+  /** Brute-force statement of the invariant: a point hidden by more than tolPx by a tile that is at least two sums in front. */
+  function violations(size: number, elev: (x: number, y: number) => number, maxElev: number, starts: Int32Array, tol: number): number {
+    let bad = 0;
+    for (let ty = 0; ty < size; ty++) {
+      for (let tx = 0; tx < size; tx++) {
+        for (const [dx, dy] of [[0.5, 0.5], [0.15, 0.85], [0.85, 0.15], [0.15, 0.15], [0.85, 0.85]]) {
+          const cx = tx + dx;
+          const cy = ty + dy;
+          const base = elev(Math.min(size - 0.001, Math.max(0, cx)), Math.min(size - 0.001, Math.max(0, cy)));
+          for (let t = 0.25; t * 32 < maxElev - base + 32; t += 0.25) {
+            const px = cx + t;
+            const py = cy + t;
+            if (px >= size || py >= size) break;
+            const q = Math.floor(px) + Math.floor(py);
+            if (elev(px, py) - 32 * t - base > tol && q >= tx + ty + 2 && starts[q] < tx + ty + 2) bad++;
+          }
+        }
+      }
+    }
+    return bad;
+  }
+
+  it('smooth ground shares one band up to maxWidth, a cliff splits it', () => {
+    const size = 24;
+    const smooth = (x: number, y: number): number => (x + y) * 3;
+    const s1 = planBandStarts(size, smooth, 3 * 2 * size, PLAN);
+    expect(s1[0]).toBe(0);
+    expect(s1[11]).toBe(0);
+    expect(s1[12]).toBe(12);
+    expect(new Set(s1).size).toBe(Math.ceil((2 * size - 1) / PLAN.maxWidth));
+    // A 3-level wall rising toward the camera across the whole map at x+y = 20.
+    const wall = (x: number, y: number): number => (x + y >= 20 ? 3 * 26 : 0);
+    const s2 = planBandStarts(size, wall, 3 * 26, PLAN);
+    expect(violations(size, wall, 3 * 26, s2, PLAN.tolPx)).toBe(0);
+    expect(new Set(s2).size).toBeGreaterThan(Math.ceil((2 * size - 1) / PLAN.maxWidth));
+  });
+
+  it('keeps the hiding invariant on a rough height field and always at least as coarse as width 1', () => {
+    const size = 40;
+    const elev = (x: number, y: number): number => 26 * (2 + Math.sin(x * 0.7) * Math.cos(y * 0.5) * 1.6 + Math.sin((x + y) * 0.23) * 1.2);
+    for (const tol of [RAISE_COVER_PX, 20, 30]) {
+      const starts = planBandStarts(size, elev, 26 * 5, { tolPx: tol, maxWidth: 12 });
+      expect(violations(size, elev, 26 * 5, starts, tol)).toBe(0);
+      expect(new Set(starts).size).toBeLessThan(2 * size - 1);
+      for (let i = 1; i < starts.length; i++) expect(starts[i] === starts[i - 1] || starts[i] === i).toBe(true);
+    }
+  });
+
+  it('flat or gentle ground needs no split at all', () => {
+    expect(new Set(planBandStarts(30, () => 0, 0, PLAN)).size).toBe(Math.ceil(59 / 12));
   });
 });
 

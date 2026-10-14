@@ -257,6 +257,9 @@ export class BattleScene {
     if (this.visHandler) document.removeEventListener('visibilitychange', this.visHandler);
     this.visHandler = null;
     this.sim?.dispose();
+    // Drop the references to the finished simulation (its SharedArrayBuffers stay allocated while anything points at them).
+    this.sim = undefined as unknown as SimBackend;
+    delete (window as unknown as { __sim?: SimBackend }).__sim;
     for (const v of this.views) v.root.destroy({ children: true, context: true });
     this.views = [];
     for (const a of this.arrowViews) {
@@ -671,7 +674,7 @@ export class BattleScene {
   // ---- loop ----
 
   async restart(): Promise<void> {
-    if (this.resetting) return;
+    if (this.resetting || !this.sim) return;
     this.resetting = true;
     const token = this.enterId;
     try {

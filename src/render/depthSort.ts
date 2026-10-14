@@ -13,11 +13,21 @@ import type { DecorKind } from '../sim/terrain';
  */
 
 /**
- * Origin sums grouped per depth band: 1 = exact order; larger = fewer bands and fewer particle slabs (each slab is one draw call
- * with a fixed cost), coarser order near cliffs. Crowds are drawn small, so the order gets coarser with the number of units.
+ * How the origin sums are grouped into depth bands. Every band is one draw call and every band edge is one particle slab of the
+ * crowd renderer (also a draw call), so fewer bands are cheaper; but a unit is drawn over the whole band that starts at or below
+ * its sum, so tiles of the same band that lie in front of it never hide it. `planBandStarts` therefore only starts a new band where
+ * terrain in front really hides something (steeper than the iso slope, see `computeCover`) by more than `tolPx` pixels; on smooth
+ * ground whole stretches share one band. `maxWidth` caps a band in sums.
  */
-export function bandWidthFor(units: number): number {
-  return units <= 3000 ? 1 : units <= 8000 ? 2 : units <= 16000 ? 3 : 4;
+export interface BandPlan {
+  tolPx: number;
+  maxWidth: number;
+}
+
+/** Crowds are drawn small, so the hiding error that is tolerated grows with the number of units. */
+export function bandPlanFor(units: number): BandPlan {
+  const tolPx = units <= 3000 ? RAISE_COVER_PX : units <= 8000 ? 14 : units <= 16000 ? 28 : 45;
+  return { tolPx, maxWidth: 12 };
 }
 
 /** Terrain tile with any corner above the base level is part of a depth band. */
@@ -93,13 +103,13 @@ export function overlayTiles(t: OverlaySource): Uint8Array {
 }
 
 /**
- * Groups the tiles that have relief by origin sum tx+ty, in `width`-wide bands. Nearly flat tiles (and, with `overlay`, low tiles
+ * Groups the tiles that have relief by origin sum tx+ty, in `width`-wide bands (or, with a start table from `planBandStarts`, in the bands it plans). Nearly flat tiles (and, with `overlay`, low tiles
  * under river/bridge art) are left out: they stay in the base layer.
  */
-export function reliefBands(size: number, vertexH: (vx: number, vy: number) => number, width = 1, overlay?: Uint8Array | null): ReliefBands {
+export function reliefBands(size: number, vertexH: (vx: number, vy: number) => number, width: number | Int32Array = 1, overlay?: Uint8Array | null): ReliefBands {
   const tiles = new Map<number, number[]>();
   for (let sum = 0; sum <= 2 * size - 2; sum++) {
-    const key = sum - (sum % width);
+    const key = typeof width === 'number' ? sum - (sum % width) : width[sum];
     for (let tx = Math.max(0, sum - size + 1); tx <= Math.min(size - 1, sum); tx++) {
       const ty = sum - tx;
       const mh = Math.max(vertexH(tx, ty), vertexH(tx + 1, ty), vertexH(tx, ty + 1), vertexH(tx + 1, ty + 1));
@@ -111,6 +121,81 @@ export function reliefBands(size: number, vertexH: (vx: number, vy: number) => n
     }
   }
   return { keys: [...tiles.keys()].sort((a, b) => a - b), tiles };
+}
+
+/** Sample offsets inside a tile (per axis): units stand anywhere on a tile, not only at its centre. */
+const PLAN_GRID = [0.15, 0.5, 0.85];
+
+/**
+ * Band start (first origin sum) of every origin sum 0..2*size-2: runs of consecutive sums share one band unless terrain in front of
+ * a point of the run hides it by more than `plan.tolPx`. A point on a tile of sum S is hidden by terrain on a tile of sum Q >= S+2
+ * (a unit at x+y in [S+1, S+2) is already above band S+1 in the exact order), which needs a band starting in [S+2, Q]; a minimal
+ * set of starts is picked greedily (interval stabbing), and runs are cut at `plan.maxWidth`. Each tile is sampled at nine points
+ * and along the screen-vertical diagonal in quarter-tile steps (the hiding test of `computeCover`, finer).
+ */
+export function planBandStarts(size: number, elevPx: (x: number, y: number) => number, maxElevPx: number, plan: BandPlan): Int32Array {
+  const sums = 2 * size - 1;
+  const startOf = new Int32Array(sums);
+  // Per start S+2: the smallest Q that needs a band start in [S+2, Q]; best[from] = min Q over the intervals starting there.
+  const best = new Int32Array(sums + 2).fill(1 << 30);
+  if (maxElevPx > 0) {
+    // Terrain can only hide a point if it rises faster than the iso slope somewhere between the two: a tile whose height
+    // gradient along (1,1) can exceed PX_PER_T. Per diagonal (x - y) the last such tile; a point with no such tile ahead on its
+    // own or the two neighbouring diagonals is skipped (exact: the skipped samples could never exceed `tolPx`).
+    const eh = (x: number, y: number): number => elevPx(Math.min(size - 0.001, x), Math.min(size - 0.001, y));
+    const lastSteep = new Int32Array(2 * size + 3).fill(-1);
+    for (let ty = 0; ty < size; ty++) {
+      for (let tx = 0; tx < size; tx++) {
+        const h00 = eh(tx, ty);
+        const h10 = eh(tx + 1, ty);
+        const h01 = eh(tx, ty + 1);
+        const h11 = eh(tx + 1, ty + 1);
+        if (Math.max(h10 - h00, h11 - h01) + Math.max(h01 - h00, h11 - h10) > PX_PER_T) lastSteep[tx - ty + size + 1] = Math.max(lastSteep[tx - ty + size + 1], tx);
+      }
+    }
+    const sample = (cx: number, cy: number, s: number): void => {
+      const px0 = Math.min(size - 0.001, Math.max(0, cx));
+      const py0 = Math.min(size - 0.001, Math.max(0, cy));
+      const base = elevPx(px0, py0);
+      for (let t = 0.25; t * PX_PER_T < maxElevPx - base + PX_PER_T; t += 0.25) {
+        const px = cx + t;
+        const py = cy + t;
+        if (px >= size || py >= size) break;
+        if (elevPx(px, py) - PX_PER_T * t - base > plan.tolPx) {
+          const q = Math.floor(px) + Math.floor(py);
+          if (q >= s + 2) {
+            if (q < best[s + 2]) best[s + 2] = q;
+            return;
+          }
+        }
+      }
+    };
+    for (let ty = 0; ty < size; ty++) {
+      for (let tx = 0; tx < size; tx++) {
+        const dg = tx - ty + size + 1;
+        if (lastSteep[dg - 1] < tx && lastSteep[dg] < tx && lastSteep[dg + 1] < tx) continue;
+        for (const oy of PLAN_GRID) for (const ox of PLAN_GRID) sample(tx + ox, ty + oy, tx + ty);
+      }
+    }
+  }
+  // Intervals [from, best[from]]: sweep ascending right ends. Right ends are > from, so bucket by from and stab greedily.
+  const intervals: Array<[number, number]> = [];
+  for (let from = 0; from < best.length; from++) if (best[from] < 1 << 30) intervals.push([from, best[from]]);
+  intervals.sort((p, q) => p[1] - q[1] || p[0] - q[0]);
+  const isStart = new Uint8Array(sums + 2);
+  let lastPick = -1;
+  for (const [from, to] of intervals) {
+    // Picks ascend and never exceed the current right end, so [from, to] is stabbed iff the last pick is at or after `from`.
+    if (lastPick >= from) continue;
+    isStart[to] = 1;
+    lastPick = to;
+  }
+  let start = 0;
+  for (let s = 0; s < sums; s++) {
+    if (isStart[s] || s - start >= plan.maxWidth) start = s;
+    startOf[s] = start;
+  }
+  return startOf;
 }
 
 /** zIndex of band `key`: just below a unit standing exactly on the band's first sum, so units with x+y >= key draw over it. */

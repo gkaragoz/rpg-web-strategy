@@ -81,6 +81,12 @@ export class Editor {
     this.refreshSprites();
   }
 
+  /** Leaves the editor for good (an editor that is re-entered later, like the studio's, only calls `exit`): its layer is released. */
+  dispose(): void {
+    this.exit();
+    this.layer.destroy();
+  }
+
   exit(): void {
     this.active = false;
     const c = this.d.world.canvas;

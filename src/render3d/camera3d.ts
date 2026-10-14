@@ -31,12 +31,30 @@ export class Camera3D implements CameraBackend {
     window.addEventListener('pointercancel', (e) => this.up(e));
     c.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
     c.addEventListener('auxclick', (e) => e.preventDefault());
+    // The middle button would start the browser's autoscroll; the right button belongs to the editor (erase) and has no menu.
+    c.addEventListener('mousedown', (e) => {
+      if (e.button === 1) e.preventDefault();
+    });
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('keydown', (e) => {
       const t = e.target as HTMLElement | null;
-      if (this.enabled && !(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT'))) this.keys.add(e.code);
+      if (!this.enabled || e.ctrlKey || e.metaKey || e.altKey) return; // browser / OS shortcuts (Ctrl+W, Ctrl+A, Alt+arrow) never move the camera
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      this.keys.add(e.code);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    window.addEventListener('blur', () => this.keys.clear());
+    // Focus lost mid-gesture (Alt+Tab, a dialog, the window being minimised): the release may never arrive, so drop every drag and key.
+    window.addEventListener('blur', () => this.releaseAll());
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.releaseAll();
+    });
+  }
+
+  /** Ends a running mouse drag and clears the held keys (touches stay: they end with their own pointerup/pointercancel). */
+  private releaseAll(): void {
+    this.keys.clear();
+    this.mouseId = -1;
+    this.mode = this.touches.size >= 2 ? 'pinch' : this.touches.size === 1 && this.singleFingerPan ? 'pan' : 'none';
   }
 
   get touchCount(): number {
@@ -152,6 +170,11 @@ export class Camera3D implements CameraBackend {
       return;
     }
     if (e.pointerId !== this.mouseId || this.mode === 'none') return;
+    if (e.buttons === 0) {
+      // The button was released where no pointerup reached us (outside the window, over a dialog): the drag is over.
+      this.releaseAll();
+      return;
+    }
     const dx = e.clientX - this.last.x;
     const dy = e.clientY - this.last.y;
     this.last = { x: e.clientX, y: e.clientY };
@@ -181,7 +204,11 @@ export class Camera3D implements CameraBackend {
     e.preventDefault();
     if (!this.enabled) return;
     const before = this.view.pick(e.clientX, e.clientY);
-    const k = Math.exp(Math.max(-120, Math.min(120, e.deltaY)) * 0.0012);
+    // Pixels, lines (Firefox mouse wheel) or pages; a trackpad pinch arrives as ctrl+wheel with small deltas, so it gets a higher gain.
+    const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
+    const gain = e.ctrlKey ? 0.01 : 0.0012;
+    const lim = e.ctrlKey ? 40 : 120;
+    const k = Math.exp(Math.max(-lim, Math.min(lim, e.deltaY * unit)) * gain);
     this.view.rig.dist *= k;
     if (before) {
       // Keep the ground point under the cursor where it was.

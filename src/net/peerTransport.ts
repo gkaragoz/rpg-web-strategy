@@ -49,6 +49,8 @@ export class PeerHostTransport implements Transport {
   onPeerLeave: (peer: string) => void = noop;
   onClose: (reason: string) => void = noop;
   private readonly conns = new Map<string, DataConnection>();
+  /** close() was called: `Peer.destroy()` emits 'disconnected' before it marks itself destroyed, so a reconnect must not be attempted then. */
+  private closing = false;
 
   private constructor(private readonly peer: Peer) {
     peer.on('connection', (conn) => {
@@ -72,7 +74,7 @@ export class PeerHostTransport implements Transport {
     });
     peer.on('disconnected', () => {
       // Signaling connection dropped: current players are unaffected; reconnect for new arrivals.
-      if (!peer.destroyed) peer.reconnect();
+      if (!peer.destroyed && !this.closing) peer.reconnect();
     });
     peer.on('close', () => this.onClose('serverLost'));
   }
@@ -95,6 +97,7 @@ export class PeerHostTransport implements Transport {
     if (c) setTimeout(() => c.close(), 150);
   }
   close(): void {
+    this.closing = true;
     for (const c of this.conns.values()) setTimeout(() => c.close(), 150);
     setTimeout(() => this.peer.destroy(), 300);
   }

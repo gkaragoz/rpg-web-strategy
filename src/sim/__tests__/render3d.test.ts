@@ -3,9 +3,9 @@ import { newFrameTable, unitFrame, UnitInstances, type UnitsLike, DEATH_FADE } f
 import { billboardLean, footprintOf, leanUpVector, MAX_LEAN, MAX_LEAN_SCALE } from '../../render3d/depth';
 import { clampRig, eyeOf, panAxes, TILT_MAX, TILT_MIN } from '../../render3d/cameraRig';
 import { pickGround } from '../../render3d/pick';
-import { groundHeight, HEIGHT_PER_STEP, terrainGeometry, WATER_DEPTH } from '../../render3d/terrainMesh';
+import { cornerHeight, groundHeight, HEIGHT_PER_STEP, surfaceHeight, terrainGeometry, WATER_DEPTH } from '../../render3d/terrainMesh';
 import { DEFAULT_MAP } from '../mapSpec';
-import { Terrain, T_WATER } from '../terrain';
+import { Terrain, T_GRASS, T_PATH, T_WATER } from '../terrain';
 
 const opts = { spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 };
 
@@ -32,6 +32,35 @@ describe('3D terrain mesh', () => {
     const t = new Terrain(40, { seed: 1, spec: { ...DEFAULT_MAP, relief: 'flat' }, ...opts });
     expect(t.hasRelief).toBe(false);
     expect(groundHeight(t, 10.3, 20.7)).toBe(0);
+  });
+});
+
+describe('drawn surface height', () => {
+  it('follows the two triangles of every land tile (corners exact, diagonal midpoint is the diagonal average)', () => {
+    const t = new Terrain(56, { seed: 5, spec: { ...DEFAULT_MAP, relief: 'peak', river: 'none' }, ...opts });
+    let checked = 0;
+    let twisted = 0;
+    for (let ty = 0; ty < t.size; ty++) {
+      for (let tx = 0; tx < t.size; tx++) {
+        const f = t.flags[ty * t.size + tx];
+        if (f !== T_GRASS && f !== T_PATH) continue;
+        const h0 = cornerHeight(t, tx, ty);
+        const h1 = cornerHeight(t, tx, ty + 1);
+        const h2 = cornerHeight(t, tx + 1, ty + 1);
+        const h3 = cornerHeight(t, tx + 1, ty);
+        expect(surfaceHeight(t, tx + 0.001, ty + 0.001)).toBeCloseTo(h0, 2);
+        expect(surfaceHeight(t, tx + 0.5, ty + 0.5)).toBeCloseTo((h0 + h2) / 2, 5);
+        const lo = Math.min(h0, h1, h2, h3) - 1e-6;
+        const hi = Math.max(h0, h1, h2, h3) + 1e-6;
+        const m = surfaceHeight(t, tx + 0.3, ty + 0.8);
+        expect(m).toBeGreaterThanOrEqual(lo);
+        expect(m).toBeLessThanOrEqual(hi);
+        if (Math.abs(groundHeight(t, tx + 0.5, ty + 0.5) - (h0 + h2) / 2) > 0.01) twisted++;
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(500);
+    expect(twisted).toBeGreaterThan(0); // the two surfaces really differ somewhere, so the distinction matters
   });
 });
 

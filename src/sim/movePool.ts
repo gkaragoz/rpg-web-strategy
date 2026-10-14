@@ -189,8 +189,18 @@ export class MovePool {
 
   /** Tells the helpers to exit (the page terminates them). */
   stop(): void {
-    Atomics.store(this.ctrl, C_QUIT, 1);
-    Atomics.add(this.ctrl, C_GEN, 1);
-    Atomics.notify(this.ctrl, C_GEN);
+    quitHelpers(this.ctrl);
   }
+}
+
+/**
+ * Wakes the helpers of a pool and tells them to leave their loop. The page calls this (with `HelperInit.ctrl`) right before it
+ * terminates them: a worker blocked in Atomics.wait only dies after Blink's 2 s forced-termination delay, a worker that returned
+ * from `runHelper` dies at once.
+ */
+export function quitHelpers(ctrl: Int32Array | SharedArrayBuffer): void {
+  const c = ctrl instanceof Int32Array ? ctrl : new Int32Array(ctrl);
+  Atomics.store(c, C_QUIT, 1);
+  Atomics.add(c, C_GEN, 1);
+  Atomics.notify(c, C_GEN);
 }

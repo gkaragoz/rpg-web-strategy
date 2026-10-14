@@ -32,9 +32,16 @@ export function mountCamControls(cam: Camera3D): () => void {
       stop();
       timer = setInterval(() => step(yaw, tilt), 60);
     });
-    for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, stop);
+    for (const ev of ['pointerup', 'pointerleave', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, stop);
+    // Keyboard activation (Enter / Space) gives a click without a pointer: one step.
+    b.addEventListener('click', (e) => {
+      if (e.detail === 0) step(yaw, tilt);
+    });
   });
+  // The release can happen outside the window or after an app switch: never keep turning.
+  window.addEventListener('blur', stop);
   return () => {
+    window.removeEventListener('blur', stop);
     stop();
     root.remove();
   };

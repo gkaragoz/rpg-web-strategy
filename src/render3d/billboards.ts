@@ -146,7 +146,11 @@ export class UnitInstances {
       this.iB[o + 1] = h;
       this.iB[o + 2] = frames.anchor[f * 2];
       this.iB[o + 3] = frames.anchor[f * 2 + 1];
-      this.iUV.set(frames.uv.subarray(f * 4, f * 4 + 4), o);
+      // Four scalar writes: `subarray` would allocate a view per unit per frame (30 000 objects of garbage).
+      this.iUV[o] = frames.uv[f * 4];
+      this.iUV[o + 1] = frames.uv[f * 4 + 1];
+      this.iUV[o + 2] = frames.uv[f * 4 + 2];
+      this.iUV[o + 3] = frames.uv[f * 4 + 3];
       this.iC[o] = u.flash[i] > 0 ? 1 : 0;
       this.iC[o + 1] = alive && opts.focusTeam >= 0 && team === opts.focusTeam ? 1 : 0;
       this.iC[o + 2] = statusRGB(u.status[i]);

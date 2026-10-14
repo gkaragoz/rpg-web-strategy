@@ -25,7 +25,7 @@ import {
   WATER_FRAG,
   WATER_VERT,
 } from './shaders';
-import { groundHeight, terrainGeometry } from './terrainMesh';
+import { groundHeight, surfaceHeight, terrainGeometry } from './terrainMesh';
 
 export interface ZoneOverlay {
   team: number;
@@ -202,6 +202,20 @@ export class View3D {
     this.resize();
     // The host element changes size with the phone's address bar, rotation and the soft keyboard.
     new ResizeObserver(() => this.resize()).observe(host);
+    this.watchPixelRatio();
+  }
+
+  /** Browser zoom (Ctrl +/-) and moving the window to another screen change devicePixelRatio, with or without a size change. */
+  private watchPixelRatio(): void {
+    const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    mq.addEventListener(
+      'change',
+      () => {
+        this.resize();
+        this.watchPixelRatio();
+      },
+      { once: true },
+    );
   }
 
   // ---- geometry buffers ----
@@ -301,6 +315,7 @@ export class View3D {
     if (this.water) {
       this.scene.remove(this.water);
       this.water.geometry.dispose();
+      this.waterMat?.dispose();
     }
     const wg = new THREE.PlaneGeometry(t.size, t.size);
     wg.rotateX(-Math.PI / 2);
@@ -542,6 +557,8 @@ export class View3D {
   resize(): void {
     const w = this.host.clientWidth || window.innerWidth;
     const h = this.host.clientHeight || window.innerHeight;
+    const pr = Math.min(window.devicePixelRatio || 1, 2);
+    if (this.renderer.getPixelRatio() !== pr) this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
     this.renderer.domElement.style.width = '100%';
     this.renderer.domElement.style.height = '100%';
@@ -549,9 +566,12 @@ export class View3D {
     this.camera.updateProjectionMatrix();
     // Phones render the shadow map smaller.
     const small = Math.min(w, h) < 520;
-    this.sun.shadow.mapSize.set(small ? 1024 : 2048, small ? 1024 : 2048);
-    this.sun.shadow.map?.dispose();
-    (this.sun.shadow as { map: unknown }).map = null;
+    const shadowSize = small ? 1024 : 2048;
+    if (this.sun.shadow.mapSize.x !== shadowSize) {
+      this.sun.shadow.mapSize.set(shadowSize, shadowSize);
+      this.sun.shadow.map?.dispose();
+      (this.sun.shadow as { map: unknown }).map = null;
+    }
   }
 
   /** Places the camera from the rig (it stays above the ground) and updates the billboard axes. */
@@ -579,6 +599,7 @@ export class View3D {
   /** Draws the frame. */
   render(dt: number): void {
     this.time += dt;
+    if (this.renderer.getPixelRatio() !== Math.min(window.devicePixelRatio || 1, 2)) this.resize(); // zoom / screen change without a size change
     this.applyCamera();
     if (this.waterMat) this.waterMat.uniforms.uTime.value = this.time;
     this.renderer.render(this.scene, this.camera);
@@ -604,7 +625,7 @@ export class View3D {
     this.ray.setFromCamera(new THREE.Vector2(nx, ny), this.camera);
     const o = this.ray.ray.origin;
     const d = this.ray.ray.direction;
-    return pickGround(o.x, o.y, o.z, d.x, d.y, d.z, (x, z) => groundHeight(t, x, z), t.size);
+    return pickGround(o.x, o.y, o.z, d.x, d.y, d.z, (x, z) => surfaceHeight(t, x, z), t.size);
   }
 
   dispose(): void {

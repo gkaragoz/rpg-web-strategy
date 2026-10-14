@@ -544,6 +544,8 @@ export class Placement {
   }
 
   destroy(): void {
+    const w = window as unknown as { __placement?: Placement };
+    if (w.__placement === this) delete w.__placement; // the diagnostics handle must not pin a finished placement (and its DOM)
     window.removeEventListener('keydown', this.keys);
     if (this.timer) clearInterval(this.timer);
     if (this.readyTimer) clearTimeout(this.readyTimer);
@@ -554,14 +556,14 @@ export class Placement {
     this.cancelled.clear();
     this.stale.clear();
     this.removedById.clear();
-    this.editor?.exit();
+    this.editor?.dispose();
     this.top.remove();
     this.sheet?.destroy();
     this.gallery?.destroy();
     if (act.text === 'unitPicker') act.text = undefined;
     this.dock?.remove();
     this.env.world.setZones(null);
-    this.remoteLayer.clear();
+    this.remoteLayer.destroy();
     this.remoteIds.clear();
   }
 

@@ -2,7 +2,7 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import { isoX, isoY } from '../iso';
 import type { Atlas } from '../render/atlas';
 import { PALETTES } from '../render/biome';
-import { bandWidthFor, bandZ, computeCover, computeLift, coverAt, DepthBoxIndex, liftAt } from '../render/depthSort';
+import { bandPlanFor, bandZ, computeCover, computeLift, coverAt, DepthBoxIndex, liftAt } from '../render/depthSort';
 import { buildGround } from '../render/ground';
 import { buildTerrainOverlay, drawRoadTile } from '../render/terrainView';
 import { POSES } from '../render/unitView';
@@ -71,7 +71,7 @@ export class WorldView implements WorldBackend {
     this.mapSize = mapSizeFor(config);
     this.terrain = terrainFor(config);
     const t = this.terrain;
-    const parts = ground ? buildGround(this.mapSize, PALETTES[config.map?.biome ?? 'forest'], t, bandWidthFor(unitCapacity(config))) : null;
+    const parts = ground ? buildGround(this.mapSize, PALETTES[config.map?.biome ?? 'forest'], t, bandPlanFor(unitCapacity(config))) : null;
     if (parts) this.staticLayer.addChild(parts.base);
     // Road tiles on terrain with relief belong to their depth band (otherwise the band would cover them).
     if (t) this.staticLayer.addChild(buildTerrainOverlay(t, parts ? (idx) => parts.bandOfTile.has(idx) : undefined));
@@ -251,5 +251,9 @@ class PixiPlacedLayer implements PlacedLayer {
 
   has(key: unknown): boolean {
     return this.sprites.has(key);
+  }
+
+  destroy(): void {
+    this.clear();
   }
 }

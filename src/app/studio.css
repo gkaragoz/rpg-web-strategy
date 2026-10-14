@@ -452,6 +452,10 @@ kbd {
   .panel.open {
     display: block;
   }
+  /* The panel is a different stacking context than the fixed 2D/3D + language bar lifted over the dock, which would sit on top of its seed row: hide the bar while a panel is open (the panel has its own close button). */
+  :root:has(.panel.open) .lang-picker {
+    visibility: hidden;
+  }
   .only-narrow {
     display: inline-block;
   }
@@ -1341,7 +1345,7 @@ button.danger {
 .on-log {
   flex: 1;
   overflow-y: auto;
-  min-height: 80px;
+  min-height: 60px; /* log + 6 px gap + the 51 px touch input row must fit the 120 px of .on-chat, or the input spills over the Ready button */
   max-height: 220px;
   background: rgba(0, 0, 0, 0.25);
   border-radius: 8px;
@@ -1486,6 +1490,7 @@ button.on {
 }
 .on-ingame-chat .on-ig-in {
   pointer-events: auto;
+  box-sizing: border-box; /* width 100% + padding + border used to run 9 px past the right edge of a phone */
   width: 100%;
   background: rgba(10, 14, 22, 0.9);
   color: var(--text);
@@ -1591,17 +1596,19 @@ button.on {
     height: 40px;
   }
   .on-sw.sm {
-    width: 28px;
-    height: 28px;
+    /* the coarse-pointer rule gives every button min-height 40px: 40x40 keeps the swatch round and a proper touch target */
+    width: 40px;
+    height: 40px;
   }
   .on-x {
     min-width: 44px;
   }
   .on-ig-btn {
-    min-height: 36px;
+    min-height: 40px;
+    min-width: 44px;
   }
   .on-badge {
-    min-height: 32px;
+    min-height: 40px;
     padding: 4px 12px;
   }
 }
@@ -2108,6 +2115,12 @@ button.on {
 .cam3d button:active {
   background: rgba(59, 130, 246, 0.5);
 }
+/* Phone layout: the full-width battle hint stops before the rotate / tilt buttons (2 x 42 px + gap + gutter) instead of running under them. */
+@media (max-width: 760px), (max-height: 520px) {
+  :root:has(.cam3d) .hud-hint {
+    right: calc(116px + env(safe-area-inset-right, 0px));
+  }
+}
 @media (pointer: coarse) {
   .cam3d {
     grid-template-columns: repeat(2, 42px);
@@ -2433,8 +2446,11 @@ dialog {
 
 /* ---- Final scoreboard ---- */
 .result > .res-card {
+  box-sizing: border-box; /* the 24px gutter must include the padding, or the card is wider than the phone */
   width: min(680px, calc(100vw - 24px));
   max-width: none;
+  max-height: 100%;
+  overflow-y: auto; /* Details expanded: scroll inside the card instead of growing under the HUD */
   padding: 18px 20px;
 }
 .res-sub {
@@ -2501,6 +2517,20 @@ dialog {
   font-size: 11px;
 }
 @media (max-width: 760px), (max-height: 520px) {
+  .result {
+    /* keep the card clear of the team bars on top and of the bottom bar, picker and connection badge */
+    box-sizing: border-box;
+    padding: 56px 0 calc(var(--bar-h, 0px) + var(--lp-lift, 0px) + 62px);
+  }
+  @media (max-height: 520px) {
+    /* Landscape phone: there is no height to spare, so the bars on the right (badge, 2D/3D + language) are avoided sideways instead. */
+    .result {
+      padding: 52px 214px calc(var(--bar-h, 0px) + 8px) 64px; /* left: the in-game Chat button */
+    }
+    .result > .res-card {
+      width: min(680px, 100%);
+    }
+  }
   .result > .res-card {
     padding: 12px;
   }
@@ -2538,4 +2568,64 @@ dialog {
 /* The statistics panel (shown by default in battle) must not sit over the result card. */
 body:has(.result:not([hidden])) #stats {
   display: none;
+}
+
+/* Touch targets: every battle HUD / damage meter / segmented-control button is at least 40 px wide as well as tall (last in the file: it must win over the base rules above). */
+@media (pointer: coarse) {
+  .hud-bottom button,
+  .seg button,
+  .dps-tab,
+  .dps-toggle,
+  .ug-dir,
+  .chip {
+    min-width: 40px;
+  }
+}
+
+/* Close button of the side panels on narrow screens (the dock buttons that toggle them are covered while a panel is open). */
+.panel-close {
+  position: sticky;
+  top: 0;
+  float: right;
+  z-index: 1;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  margin: -6px -8px 0 0;
+  padding: 0;
+  font-size: 24px;
+  line-height: 1;
+  border-radius: 50%;
+}
+@media (min-width: 901px) {
+  .panel-close {
+    display: none;
+  }
+}
+
+/* Soft keyboard (landscape phones especially): the fixed language bar and connection badge would sit over the field being typed in or its Send button. */
+@media (pointer: coarse) {
+  :root:has(input:focus, textarea:focus) .lang-picker,
+  :root:has(input:focus, textarea:focus) .on-badge {
+    visibility: hidden;
+  }
+}
+
+/* Home / lobby scroll to the very end above the fixed 2D/3D + language bar (it covered the bottom of the last button and the last settings row). */
+@media (max-width: 760px), (max-height: 520px) {
+  .on-screen {
+    padding-bottom: calc(max(var(--bar-h, 0px), env(safe-area-inset-bottom, 0px)) + 64px);
+  }
+}
+
+@media (pointer: coarse) {
+  .on-ingame-chat .on-ig-in {
+    min-height: 40px;
+    font-size: 16px; /* no zoom-on-focus */
+  }
+}
+
+/* The open chat input sits above the team/gold top bar (they overlap on a landscape phone with the keyboard up). */
+.on-ingame-chat:has(.on-ig-in:not([hidden])) {
+  z-index: 40;
 }

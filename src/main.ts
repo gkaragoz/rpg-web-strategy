@@ -101,31 +101,40 @@ const debugOn = (): boolean => debugParam || state.options.debug;
 const workerOk = (): boolean => params.get('sim') !== 'main' && canUseWorker && !debugOn();
 
 const app = new Application();
-await app.init({
-  resizeTo: window,
-  background: 0x1a2332,
-  antialias: !isBench,
-  preference: 'webgl',
-  resolution: Math.min(window.devicePixelRatio || 1, 2),
-  autoDensity: true,
-});
+try {
+  await app.init({
+    resizeTo: window,
+    background: 0x1a2332,
+    antialias: !isBench,
+    preference: 'webgl',
+    resolution: Math.min(window.devicePixelRatio || 1, 2),
+    autoDensity: true,
+  });
+} catch (err) {
+  // No WebGL at all (disabled, blocklisted GPU, headless without a GPU): say so instead of leaving "Loading..." on screen forever.
+  if (loading?.firstElementChild) loading.firstElementChild.textContent = t('sys.gl.unavailable');
+  throw err;
+}
 document.body.prepend(app.canvas);
 app.ticker.stop();
 
 // If the WebGL context is lost (GPU reset, memory pressure), suggest reloading the page.
-app.canvas.addEventListener('webglcontextlost', (e) => {
+const onGlLost = (e: Event): void => {
   e.preventDefault();
+  if (document.querySelector('.fatal')) return;
   const el = document.createElement('div');
   el.className = 'fatal';
   el.innerHTML = `<div>${t('sys.gl.lost')}<br /><button type="button" id="reload-btn">${t('sys.gl.reload')}</button></div>`;
   document.body.appendChild(el);
   el.querySelector('#reload-btn')!.addEventListener('click', () => location.reload());
-});
+};
 // The browser restored the context by itself: the dialog is obsolete (Pixi re-uploads textures lazily; dead ones are replaced first).
-app.canvas.addEventListener('webglcontextrestored', () => {
+const onGlRestored = (): void => {
   healScene();
   document.querySelector('.fatal')?.remove();
-});
+};
+app.canvas.addEventListener('webglcontextlost', onGlLost);
+app.canvas.addEventListener('webglcontextrestored', onGlRestored);
 healScene = (): number => healTextures(app.stage);
 
 const state = loadState();
@@ -134,24 +143,42 @@ if (params.get('kite') === 'off') state.kite = false;
 if (Number(params.get('seed'))) state.seed = Number(params.get('seed'));
 
 // 2D (PixiJS isometric) or 3D (Three.js) world: ?view=3d / ?view=2d override the saved option. The rest of the app only sees the backend interfaces.
-const view3d = params.get('view') === '3d' || (params.get('view') !== '2d' && state.options.view === '3d');
-let world: WorldBackend;
-let camera: CameraBackend;
+let view3d = params.get('view') === '3d' || (params.get('view') !== '2d' && state.options.view === '3d');
+let world!: WorldBackend;
+let camera!: CameraBackend;
 let battle3d: Battle3D | undefined;
-let render: (dt: number) => void;
+let render!: (dt: number) => void;
 if (view3d) {
   // The Pixi app stays alive (atlas baking, unit icons, previews) but is hidden: the Three.js canvas takes its place.
-  app.canvas.style.display = 'none';
-  const m = await import('./render3d/world3d');
-  const w3 = new m.World3D(app.renderer, document.body);
-  world = w3;
-  camera = w3.camera3d;
-  battle3d = w3;
-  render = (dt) => {
-    w3.camera3d.update(dt);
-    w3.render(dt);
-  };
-} else {
+  try {
+    app.canvas.style.display = 'none';
+    const m = await import('./render3d/world3d');
+    const w3 = new m.World3D(app.renderer, document.body);
+    world = w3;
+    camera = w3.camera3d;
+    battle3d = w3;
+    // The visible canvas is the Three.js one: if its context is lost for good the player must be told (three.js re-uploads everything itself on restore).
+    w3.canvas.addEventListener('webglcontextlost', onGlLost);
+    w3.canvas.addEventListener('webglcontextrestored', onGlRestored);
+    render = (dt) => {
+      w3.camera3d.update(dt);
+      w3.render(dt);
+    };
+  } catch (err) {
+    // WebGL context for Three.js could not be created (too many contexts, driver refusal) or the 3D chunk failed to load: use the 2D view.
+    console.error(err);
+    view3d = false;
+    app.canvas.style.display = '';
+    for (const c of Array.from(document.querySelectorAll('canvas'))) if (c !== app.canvas) c.remove();
+    document.querySelectorAll('.cam3d').forEach((el) => el.remove());
+    const note = document.createElement('div');
+    note.className = 'err-toast';
+    note.textContent = t('sys.gl.no3d');
+    document.body.appendChild(note);
+    window.setTimeout(() => note.remove(), 9000);
+  }
+}
+if (!view3d) {
   const w2 = new WorldView(app.canvas);
   app.stage.addChild(w2.root);
   const c2 = new Camera(app.canvas, state.mapSize);
@@ -704,7 +731,7 @@ if (isBench) {
   // A reload by the language / 2D-3D switch (or a plain refresh) comes back to the screen it was on (see app/resume.ts).
   const rec = takeResume();
   const histScreen = screenOfState(history.state);
-  const act = joinHash ? 'home' : resumeAction(rec ?? (histScreen === 'studio' || histScreen === 'battle' ? { screen: 'studio', at: Date.now() } : null), canRejoin());
+  const act = joinHash ? 'home' : resumeAction(rec ?? (histScreen === 'studio' || histScreen === 'battle' ? { screen: 'studio', at: Date.now() } : histScreen === 'online' ? { screen: 'online', at: Date.now() } : null), canRejoin());
   if (act === 'studio') {
     // The studio is already shown; battles are not resumed.
     nav.boot('studio');

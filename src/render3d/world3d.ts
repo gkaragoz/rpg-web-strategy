@@ -86,6 +86,11 @@ class Layer3D implements PlacedLayer {
   has(key: unknown): boolean {
     return this.items.has(key);
   }
+
+  destroy(): void {
+    this.clear();
+    this.owner.removeLayer(this);
+  }
 }
 
 const NO_PROJECTILES = { count: 0 } as never;
@@ -122,6 +127,13 @@ export class World3D implements WorldBackend, Battle3D {
   }
 
   markPlacedDirty(): void {
+    this.placedDirty = true;
+  }
+
+  /** Forgets a layer that its owner (an editor / placement) has finished with. */
+  removeLayer(l: Layer3D): void {
+    const i = this.layers.indexOf(l);
+    if (i >= 0) this.layers.splice(i, 1);
     this.placedDirty = true;
   }
 

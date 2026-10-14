@@ -37,6 +37,30 @@ export function groundHeight(t: Terrain, x: number, y: number): number {
 }
 
 /**
+ * Height of the drawn surface at a point: every land tile is two triangles (split along the (tx,ty)-(tx+1,ty+1) diagonal, like
+ * `terrainGeometry`), which differs a little from the bilinear `groundHeight` on twisted tiles. Picking uses this so a ray hits what is
+ * on screen: with the bilinear surface a grazing ray over a hill crest skipped the crest and the ring jumped behind the hill.
+ * Water tiles keep the bilinear value (the water surface) and bridge decks float `DECK_LIFT` above it.
+ */
+export function surfaceHeight(t: Terrain, x: number, y: number): number {
+  const n = t.size;
+  const tx = Math.min(n - 1, Math.max(0, Math.floor(x)));
+  const ty = Math.min(n - 1, Math.max(0, Math.floor(y)));
+  const f = t.flags[ty * n + tx];
+  if (f === T_WATER) return groundHeight(t, x, y);
+  const u = Math.min(1, Math.max(0, x - tx));
+  const w = Math.min(1, Math.max(0, y - ty));
+  const lift = f === T_BRIDGE ? DECK_LIFT : 0;
+  const c = (dx: number, dy: number): number => (f === T_BRIDGE ? Math.max(0, cornerHeight(t, tx + dx, ty + dy)) : cornerHeight(t, tx + dx, ty + dy));
+  const h0 = c(0, 0);
+  const h1 = c(0, 1);
+  const h2 = c(1, 1);
+  const h3 = c(1, 0);
+  // Corner order (tx,ty) (tx,ty+1) (tx+1,ty+1) (tx+1,ty); triangles (0,1,2) and (0,2,3).
+  return lift + (w > u ? h0 + w * (h1 - h0) + u * (h2 - h1) : h0 + u * (h3 - h0) + w * (h2 - h3));
+}
+
+/**
  * Polygonal terrain from the height field: every tile is its own quad (own colour, flat-shaded faces) on the corner heights of
  * the simulation, water tiles sink below the shore, bridge decks float above the water, and shore walls close the gaps.
  */

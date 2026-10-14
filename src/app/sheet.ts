@@ -30,10 +30,10 @@ export function initSheet(dock: HTMLElement): { destroy(): void; close(): void }
     y0 = e.clientY;
   });
   // The browser may cancel the touch (iOS does): never leave the drag armed, or the next paint stroke would toggle the sheet.
-  window.addEventListener('pointercancel', (e) => {
+  const onCancel = (e: PointerEvent): void => {
     if (e.pointerId === pid) drag = false;
-  });
-  window.addEventListener('pointerup', (e) => {
+  };
+  const onUp = (e: PointerEvent): void => {
     if (!drag || e.pointerId !== pid) return;
     drag = false;
     const dy = e.clientY - y0;
@@ -42,7 +42,10 @@ export function initSheet(dock: HTMLElement): { destroy(): void; close(): void }
       suppress = true;
       setTimeout(() => (suppress = false), 0);
     }
-  });
+  };
+  // Window listeners must be removed in destroy(): their closures hold the whole dock subtree.
+  window.addEventListener('pointercancel', onCancel);
+  window.addEventListener('pointerup', onUp);
   let suppress = false;
   handle.addEventListener(
     'click',
@@ -58,6 +61,8 @@ export function initSheet(dock: HTMLElement): { destroy(): void; close(): void }
   return {
     close: () => set(false),
     destroy() {
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('pointerup', onUp);
       ro.disconnect();
       document.documentElement.style.removeProperty('--dock-h');
       handle.remove();

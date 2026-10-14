@@ -172,10 +172,13 @@ export class MassRenderer {
     if (t) return t;
     if (!this.silSource) {
       const src = tex.source;
-      const spr = new Sprite(new Texture({ source: src }));
+      // A Texture subscribes to its source's resize event until it is destroyed: free the temporary one (the atlas source outlives the battle).
+      const whole = new Texture({ source: src });
+      const spr = new Sprite(whole);
       spr.filters = [flatColorFilter(0xffffff)];
       this.silSource = this.app.renderer.generateTexture({ target: spr, resolution: src.resolution, frame: new Rectangle(0, 0, src.width, src.height) });
       spr.destroy();
+      whole.destroy(false);
     }
     t = new Texture({ source: this.silSource.source, frame: tex.frame.clone() });
     this.silTex.set(tex, t);

@@ -119,7 +119,7 @@ describe('nav history', () => {
     expect(readNavState(h.state)?.k).toBe('studio');
   });
 
-  it('a refused Back pushes the room entry again (stay); accepted Back leaves it', async () => {
+  it('a refused Back walks Forward to the room entry again (no new entry); accepted Back leaves it', async () => {
     let accept = false;
     const { h, nav, moves } = setup(() => (accept ? 'ok' : 'stay'));
     nav.boot('home');
@@ -129,6 +129,7 @@ describe('nav history', () => {
     expect(nav.cur).toBe('online');
     expect(readNavState(h.state)?.k).toBe('online');
     expect(h.idx).toBe(1);
+    expect(h.entries.length).toBe(2); // restored by go(+1): a pushState without a user gesture would be skipped by the next Back on Chrome
     accept = true;
     h.go(-1);
     await tick();
