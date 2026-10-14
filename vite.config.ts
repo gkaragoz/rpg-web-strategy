@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from 'vite';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { attachLan } from './scripts/lan.mjs';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
@@ -30,4 +31,6 @@ export default defineConfig({
   server: { headers: isolation },
   preview: { headers: isolation },
   worker: { format: 'es' },
+  // Two pages: the game and the 3D prototype (/3d/).
+  build: { rollupOptions: { input: { main: fileURLToPath(new URL('./index.html', import.meta.url)), view3d: fileURLToPath(new URL('./3d/index.html', import.meta.url)) } } },
 });
