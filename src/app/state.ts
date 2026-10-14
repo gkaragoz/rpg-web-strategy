@@ -232,6 +232,17 @@ export function loadState(): AppState {
 
 let saveTimer: number | undefined;
 /** Delays saving slightly (so it does not write on every step while painting by dragging). */
+/** Writes the state right now (saveState is debounced; use this before the page unloads, e.g. a reload to switch the view). */
+export function saveStateNow(s: AppState): void {
+  if (s.ephemeral) return;
+  window.clearTimeout(saveTimer);
+  try {
+    localStorage.setItem(KEY, JSON.stringify(s));
+  } catch {
+    /* quota full / private mode: ignore silently */
+  }
+}
+
 export function saveState(s: AppState): void {
   if (s.ephemeral) return;
   window.clearTimeout(saveTimer);

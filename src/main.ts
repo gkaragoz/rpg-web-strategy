@@ -8,7 +8,7 @@ import { BattleScene, type BattleOptions } from './app/battle';
 import { Editor } from './app/editor';
 import { OnlineApp } from './app/online/online';
 import type { Battle3D, CameraBackend, WorldBackend } from './app/backend';
-import { loadState, saveState, teamColors } from './app/state';
+import { loadState, saveState, saveStateNow, teamColors } from './app/state';
 import { Studio } from './app/studio';
 import { WorldView } from './app/world';
 import { Camera } from './camera';
@@ -137,7 +137,7 @@ if (!isBench) {
     onView: (v) => {
       // The saved choice wins after the reload: drop a ?view= query so it does not override it.
       state.options.view = v;
-      saveState(state);
+      saveStateNow(state); // the debounced save would be lost by the reload
       const u = new URL(location.href);
       u.searchParams.delete('view');
       location.replace(u.toString());

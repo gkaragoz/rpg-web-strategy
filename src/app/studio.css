@@ -2062,6 +2062,10 @@ button.on {
   grid-template-columns: repeat(2, 34px);
   gap: 6px;
 }
+/* The connection badge (online) sits in the same corner: stand above it. */
+body:has(.on-badge) .cam3d {
+  bottom: calc(max(var(--bar-h, 0px), env(safe-area-inset-bottom, 0px)) + 100px);
+}
 .cam3d button {
   height: 34px;
   padding: 0;

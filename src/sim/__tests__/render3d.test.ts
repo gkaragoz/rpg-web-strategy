@@ -241,3 +241,25 @@ describe('3D world helpers', () => {
     expect(defaultOptions().view).toBe('2d');
   });
 });
+
+describe('view switch persistence', () => {
+  it('saveStateNow writes immediately (the debounced save is lost by the reload that switches the view)', async () => {
+    const store = new Map<string, string>();
+    const g = globalThis as unknown as Record<string, unknown>;
+    const prev = { window: g.window, localStorage: g.localStorage };
+    g.window = { clearTimeout, setTimeout: (f: () => void, ms: number) => setTimeout(f, ms) };
+    g.localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+    try {
+      const { defaultState, saveState, saveStateNow } = await import('../../app/state');
+      const s = defaultState();
+      s.options.view = '3d';
+      saveState(s);
+      expect(store.size).toBe(0); // debounced: nothing yet
+      saveStateNow(s);
+      expect(JSON.parse([...store.values()][0]).options.view).toBe('3d');
+    } finally {
+      g.window = prev.window;
+      g.localStorage = prev.localStorage;
+    }
+  });
+});
