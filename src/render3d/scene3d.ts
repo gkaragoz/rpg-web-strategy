@@ -31,6 +31,8 @@ export interface ZoneOverlay {
   color: number;
   /** Tiles (x, y) of the zone that are valid placements. */
   tiles: Array<[number, number]>;
+  /** The player's own zone: a stronger tint. */
+  mine?: boolean;
 }
 
 const QUAD = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
@@ -422,20 +424,22 @@ export class View3D {
     let tiles = 0;
     for (const z of zones) tiles += z.tiles.length;
     const pos = new Float32Array(tiles * 12);
-    const col = new Float32Array(tiles * 12);
+    const col = new Float32Array(tiles * 16);
     const idx = new Uint32Array(tiles * 6);
     let q = 0;
     for (const z of zones) {
       const c = new THREE.Color(z.color);
+      const alpha = z.mine ? 0.42 : 0.18;
       for (const [x, y] of z.tiles) {
         const corners = [[x, y], [x, y + 1], [x + 1, y + 1], [x + 1, y]];
         corners.forEach(([cx, cy], k) => {
           pos[(q * 4 + k) * 3] = cx;
           pos[(q * 4 + k) * 3 + 1] = Math.max(0, groundHeight(t, cx, cy)) + 0.05;
           pos[(q * 4 + k) * 3 + 2] = cy;
-          col[(q * 4 + k) * 3] = c.r;
-          col[(q * 4 + k) * 3 + 1] = c.g;
-          col[(q * 4 + k) * 3 + 2] = c.b;
+          col[(q * 4 + k) * 4] = c.r;
+          col[(q * 4 + k) * 4 + 1] = c.g;
+          col[(q * 4 + k) * 4 + 2] = c.b;
+          col[(q * 4 + k) * 4 + 3] = alpha;
         });
         idx.set([q * 4, q * 4 + 1, q * 4 + 2, q * 4, q * 4 + 2, q * 4 + 3], q * 6);
         q++;
@@ -443,9 +447,9 @@ export class View3D {
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 4));
     g.setIndex(new THREE.BufferAttribute(idx, 1));
-    this.zoneMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide }));
+    this.zoneMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
     this.zoneMesh.renderOrder = -1;
     this.scene.add(this.zoneMesh);
   }
@@ -567,6 +571,14 @@ export class View3D {
     this.renderer.render(this.scene, this.camera);
     this.info.draws = this.renderer.info.render.calls;
     this.info.tris = this.renderer.info.render.triangles;
+  }
+
+  /** Canvas position (CSS pixels, relative to the canvas) of a world point. */
+  project(x: number, y: number, z: number): { x: number; y: number } {
+    const v = new THREE.Vector3(x, y, z).project(this.camera);
+    const w = this.renderer.domElement.clientWidth || 1;
+    const h = this.renderer.domElement.clientHeight || 1;
+    return { x: ((v.x + 1) / 2) * w, y: ((1 - v.y) / 2) * h };
   }
 
   /** Ground point under a screen position (client coordinates), or null. */

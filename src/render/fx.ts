@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 import { comedy, hash01 } from './comedyFlag';
 import { Container, Particle, ParticleContainer, Text, type TextStyleOptions } from 'pixi.js';
-import type { Camera } from '../camera';
+import type { CameraBackend } from '../app/backend';
 import { isoX, isoY } from '../iso';
 import type { SimEvent } from '../sim/battle';
 import { isTank } from '../sim/units';
@@ -62,7 +62,7 @@ export class FxSystem {
 
   constructor(
     private readonly atlas: Atlas,
-    private readonly camera: Camera,
+    private readonly camera: CameraBackend,
     quality: FxQuality,
     numbersOn: boolean,
   ) {
@@ -182,7 +182,7 @@ export class FxSystem {
 
   /** Comic text: rate-limited, only when appropriate (comedy view + few units + zoomed in). */
   private comic(sx: number, sy: number, words: string[], color: number, size = 22): void {
-    if (!comedy.visual || !this.comicOn || this.camera.zoom < 0.45) return;
+    if (!comedy.visual || !this.comicOn || this.camera.audioZoom < 0.45) return;
     const now = performance.now();
     if (now - this.comicLast < 110) return;
     this.comicLast = now;
@@ -204,7 +204,7 @@ export class FxSystem {
     if (high) this.spawn('ring', sx, cy, 0, 0, 0.18, 0.16, (isTank(kind) ? 0.7 : 0.45) * this.big(), 0xffffff, 0.75);
     if (dmg >= 30) this.comic(sx, sy, ['BONK!', 'POW!', 'BAM!', 'OOF!', 'WHAM!'], 0xffd84a);
     else if (dmg >= 14 && hash01(this.comicN * 3) < 0.25) this.comic(sx, sy, [t('battle.comic.bop'), t('battle.comic.pok'), 'BIFF!', t('battle.comic.tak')], 0xffffff, 18);
-    if (high && this.numbersOn && this.camera.zoom >= 0.5) this.number(sx, sy - 44 * (isTank(kind) ? 2 : 1), String(Math.max(1, Math.round(dmg))), dmg >= 18 ? 0xffb347 : 0xffffff, dmg >= 18 ? 18 : 15);
+    if (high && this.numbersOn && this.camera.audioZoom >= 0.5) this.number(sx, sy - 44 * (isTank(kind) ? 2 : 1), String(Math.max(1, Math.round(dmg))), dmg >= 18 ? 0xffb347 : 0xffffff, dmg >= 18 ? 18 : 15);
   }
 
   private death(sx: number, sy: number, kind: number, high: boolean): void {
@@ -239,7 +239,7 @@ export class FxSystem {
     }
     if (high) {
       this.spawn('puff', sx, sy - 22, 0, -14, 0.5, 0.7, 1.5, 0x8cf5a4, 0.5);
-      if (this.numbersOn && this.camera.zoom >= 0.5) this.number(sx + 8, sy - 50, `+${Math.round(amount)}`, 0x6cf08a, 14);
+      if (this.numbersOn && this.camera.audioZoom >= 0.5) this.number(sx + 8, sy - 50, `+${Math.round(amount)}`, 0x6cf08a, 14);
     }
   }
 

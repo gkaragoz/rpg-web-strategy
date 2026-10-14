@@ -1,6 +1,5 @@
 import { comedy } from './comedyFlag';
-import type { Camera } from '../camera';
-import { isoX, isoY } from '../iso';
+import type { CameraBackend } from '../app/backend';
 import type { SimEvent } from '../sim/battle';
 import { isTank } from '../sim/units';
 
@@ -65,17 +64,16 @@ export class AudioSystem {
   }
 
   /** Turns sim events into sound effects. */
-  handle(events: SimEvent[], camera: Camera, screenW: number, screenH: number): void {
+  handle(events: SimEvent[], camera: CameraBackend, screenW: number, screenH: number): void {
     if (!this.enabled || !this.ctx || this.ctx.state !== 'running') return;
     for (const ev of events) {
       const sfx = this.map(ev.type, ev.element);
       if (!sfx) continue;
-      const sx = (isoX(ev.x, ev.y) - camera.x) * camera.zoom + screenW / 2;
-      const sy = (isoY(ev.x, ev.y) - camera.y) * camera.zoom + screenH / 2;
+      const { sx, sy } = camera.project(ev.x, ev.y);
       const margin = 80;
       if (sx < -margin || sx > screenW + margin || sy < -margin || sy > screenH + margin) continue;
       // Gets quieter as you zoom out; gets clearer as you zoom in.
-      const zoomGain = Math.min(1, Math.max(0.25, camera.zoom * 0.9));
+      const zoomGain = Math.min(1, Math.max(0.25, camera.audioZoom * 0.9));
       const pan = Math.max(-1, Math.min(1, (sx - screenW / 2) / (screenW / 2))) * 0.8;
       const heavy = ev.kind !== undefined && isTank(ev.kind);
       this.play(sfx, zoomGain, pan, heavy, ev.value ?? 10);

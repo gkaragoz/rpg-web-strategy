@@ -1,22 +1,16 @@
-import type { Application } from 'pixi.js';
 import { t } from '../../i18n';
-import { isoX, isoY } from '../../iso';
 import { act } from '../../net/act';
 import type { OnlineModel } from '../../net/client';
 import type { ClientMsg } from '../../net/protocol';
-import type { Terrain } from '../../sim/terrain';
 import { PALETTES } from '../state';
-import type { WorldView } from '../world';
+import type { WorldBackend } from '../backend';
 
 const SEND_MS = 66; // ~15 Hz
 const STALE_MS = 4000;
 
 /** What map screens need for screen <-> world conversion (null in the lobby). */
 export interface MapView {
-  app: Application;
-  world: WorldView;
-  terrain: () => Terrain | null;
-  size: () => number;
+  world: WorldBackend;
 }
 
 const hexOf = (c: number): string => '#' + c.toString(16).padStart(6, '0');
@@ -80,7 +74,7 @@ export class CursorLayer {
     if (now - this.lastSend < SEND_MS) return;
     const v = this.view;
     let msg: ClientMsg;
-    if (v && e.target === v.app.canvas) {
+    if (v && e.target === v.world.canvas) {
       const p = this.toWorld(v, e.clientX, e.clientY);
       msg = { t: 'presence', x: +p.x.toFixed(2), y: +p.y.toFixed(2), ctx: 'world', act: act.text };
     } else {
@@ -95,29 +89,11 @@ export class CursorLayer {
   }
 
   private toWorld(v: MapView, cx: number, cy: number): { x: number; y: number } {
-    const rect = v.app.canvas.getBoundingClientRect();
-    const p = v.world.root.toLocal({ x: cx - rect.left, y: cy - rect.top });
-    let x = p.x / 64 + p.y / 32;
-    let y = p.y / 32 - p.x / 64;
-    const t = v.terrain();
-    if (t && t.hasRelief) {
-      const n = v.size();
-      for (let k = 0; k < 3; k++) {
-        const e = t.elevPx(Math.min(n, Math.max(0, x)), Math.min(n, Math.max(0, y)));
-        x = p.x / 64 + (p.y + e) / 32;
-        y = (p.y + e) / 32 - p.x / 64;
-      }
-    }
-    return { x, y };
+    return v.world.pick(cx, cy);
   }
 
   private toClient(v: MapView, x: number, y: number): { x: number; y: number } {
-    const t = v.terrain();
-    const n = v.size();
-    const e = t && t.hasRelief ? t.elevPx(Math.min(n, Math.max(0, x)), Math.min(n, Math.max(0, y))) : 0;
-    const g = v.world.root.toGlobal({ x: isoX(x, y), y: isoY(x, y, e) });
-    const rect = v.app.canvas.getBoundingClientRect();
-    return { x: g.x + rect.left, y: g.y + rect.top };
+    return v.world.toClient(x, y);
   }
 
   // ---------------------------------------------------------------- drawing

@@ -1,5 +1,6 @@
 import type { Container } from 'pixi.js';
-import { TILE_H, TILE_W } from './iso';
+import type { CameraBackend } from './app/backend';
+import { TILE_H, TILE_W, isoX, isoY } from './iso';
 
 const PAN_SPEED = 900;
 const MIN_ZOOM = 0.04;
@@ -20,7 +21,7 @@ export function gestureStep(
   return { x, y, zoom };
 }
 
-export class Camera {
+export class Camera implements CameraBackend {
   /** Center point on screen (world/iso pixel coordinates). */
   x = 0;
   y: number;
@@ -40,6 +41,9 @@ export class Camera {
   private canvasEl: HTMLCanvasElement;
   get touchCount(): number {
     return this.touches.size;
+  }
+  get audioZoom(): number {
+    return this.zoom;
   }
   private dragging = false;
   private lastX = 0;
@@ -131,6 +135,12 @@ export class Camera {
     if (e.pointerType !== 'touch') return;
     this.touches.delete(e.pointerId);
     this.gesture = this.touchState();
+  }
+
+  /** Screen position (relative to the canvas) of a map position; sound uses it for panning and culling. */
+  project(x: number, y: number): { sx: number; sy: number } {
+    const r = this.canvasEl.getBoundingClientRect();
+    return { sx: (isoX(x, y) - this.x) * this.zoom + r.width / 2, sy: (isoY(x, y) - this.y) * this.zoom + r.height / 2 };
   }
 
   /** Zoom in/out (HUD buttons): toward the screen center. */

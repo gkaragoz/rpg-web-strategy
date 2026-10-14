@@ -39,3 +39,17 @@ export function eyeOf(r: Rig, fy: number): { x: number; y: number; z: number } {
 export function panAxes(yaw: number): { rx: number; rz: number; ux: number; uz: number } {
   return { rx: -Math.cos(yaw), rz: Math.sin(yaw), ux: Math.sin(yaw), uz: Math.cos(yaw) };
 }
+
+/** Mouse orbit: a horizontal drag turns the camera, a vertical drag tilts it (tilt stays inside its limits). */
+export function orbitRig(r: Rig, dYaw: number, dTilt: number): Rig {
+  return { ...r, yaw: r.yaw + dYaw, tilt: Math.min(TILT_MAX, Math.max(TILT_MIN, r.tilt + dTilt)) };
+}
+
+/** Two-finger gesture: the distance ratio zooms, the change of the finger angle rotates (shortest way round). */
+export function pinchRig(r: Rig, prev: { dist: number; angle: number }, next: { dist: number; angle: number }): Rig {
+  let da = next.angle - prev.angle;
+  if (da > Math.PI) da -= Math.PI * 2;
+  if (da < -Math.PI) da += Math.PI * 2;
+  const dist = prev.dist > 8 ? r.dist * (prev.dist / Math.max(8, next.dist)) : r.dist;
+  return { ...r, yaw: r.yaw - da, dist };
+}

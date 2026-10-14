@@ -56,10 +56,12 @@ export interface Options {
   /** Comedy visuals (ragdoll death, exaggerated animation/effects/sound) and comedy physics (sim: launching). */
   comedyVisual: boolean;
   comedyPhysics: boolean;
+  /** How the world is drawn: the isometric 2D view or the 3D view (Three.js). */
+  view: '2d' | '3d';
 }
 
 export function defaultOptions(): Options {
-  return { sound: true, volume: 0.6, fx: 'auto', numbers: true, bars: 'damaged', debug: false, comedyVisual: false, comedyPhysics: false };
+  return { sound: true, volume: 0.6, fx: 'auto', numbers: true, bars: 'damaged', debug: false, comedyVisual: false, comedyPhysics: false, view: '2d' };
 }
 
 export interface AppState {
@@ -197,6 +199,7 @@ export function loadState(): AppState {
       if (typeof op.debug === 'boolean') s.options.debug = op.debug;
       if (typeof op.comedyVisual === 'boolean') s.options.comedyVisual = op.comedyVisual;
       if (typeof op.comedyPhysics === 'boolean') s.options.comedyPhysics = op.comedyPhysics;
+      if (op.view === '2d' || op.view === '3d') s.options.view = op.view;
       if (op.bars === 'damaged' || op.bars === 'always' || op.bars === 'never') s.options.bars = op.bars;
     }
     const stale = (o as { kindsVer?: number }).kindsVer !== KINDS_VER;

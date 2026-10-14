@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { teamZones } from '../../net/economy';
-import { PLACE_GAP } from '../../net/protocol';
 import { newFrameTable, unitFrame, UnitInstances, type UnitsLike, DEATH_FADE } from '../../render3d/billboards';
 import { clampRig, eyeOf, panAxes, TILT_MAX, TILT_MIN } from '../../render3d/cameraRig';
-import { fillFormations } from '../../render3d/formation';
 import { pickGround } from '../../render3d/pick';
 import { groundHeight, HEIGHT_PER_STEP, terrainGeometry, WATER_DEPTH } from '../../render3d/terrainMesh';
 import { DEFAULT_MAP } from '../mapSpec';
@@ -145,41 +142,6 @@ describe('billboard instance writer', () => {
   });
 });
 
-describe('formation fill', () => {
-  it('puts every soldier on a valid spot of its own zone with the placement gap, up to the requested count', () => {
-    const t = new Terrain(56, { seed: 2, spec: DEFAULT_MAP, ...opts });
-    const zones = teamZones(56, 3, t);
-    const list = fillFormations(t, zones, 300, 5);
-    expect(list.length).toBeGreaterThan(300);
-    for (const team of [0, 1, 2]) {
-      const mine = list.filter((s) => s.team === team);
-      expect(mine.length).toBeLessThanOrEqual(300);
-      expect(mine.length).toBeGreaterThan(100);
-      for (const s of mine) expect(zones[team].contains(s.x, s.y) && t.walkable(s.x, s.y) && t.reachable(s.x, s.y)).toBe(true);
-      for (let i = 0; i < mine.length; i += 17) for (let j = i + 1; j < Math.min(mine.length, i + 40); j++) expect(Math.hypot(mine[i].x - mine[j].x, mine[i].y - mine[j].y)).toBeGreaterThanOrEqual(PLACE_GAP);
-    }
-    // Deterministic for a seed.
-    expect(fillFormations(t, zones, 300, 5)).toEqual(list);
-  });
-});
-
-describe('3D watch helpers', () => {
-  it('colors teams by team index from the lobby players', async () => {
-    const { teamColorsOf, paletteColor } = await import('../../render3d/watch');
-    const init = { teamPlayers: ['a', 'b'], teams: 2 } as never;
-    const st = {
-      players: [
-        { id: 'x', role: 'spectator', team: -1, color: 5 },
-        { id: 'b2', role: 'player', team: 1, color: 2 },
-        { id: 'a2', role: 'player', team: 0, color: 4 },
-      ],
-    } as never;
-    const cols = teamColorsOf(init, st);
-    expect(cols.map((c) => c.main)).toEqual([paletteColor(4), paletteColor(2)]);
-    expect(paletteColor(-1)).toBe(paletteColor(5));
-  });
-});
-
 describe('3D effects pool', () => {
   const flat = (): number => 0;
   const rnd = (() => {
@@ -232,5 +194,50 @@ describe('3D effects pool', () => {
     expect(fx.count).toBe(7);
     expect(Number.isFinite(fx.px[0])).toBe(true);
     expect(keepX).toBeDefined();
+  });
+});
+
+describe('3D camera input helpers', () => {
+  const rig = { fx: 10, fz: 10, yaw: 1, tilt: 0.8, dist: 40 };
+
+  it('orbits: drag turns the yaw and tilts within the limits', async () => {
+    const { orbitRig, TILT_MAX, TILT_MIN } = await import('../../render3d/cameraRig');
+    const a = orbitRig(rig, 0.5, 0.1);
+    expect(a.yaw).toBeCloseTo(1.5);
+    expect(a.tilt).toBeCloseTo(0.9);
+    expect(orbitRig(rig, 0, 9).tilt).toBe(TILT_MAX);
+    expect(orbitRig(rig, 0, -9).tilt).toBe(TILT_MIN);
+    expect(rig.yaw).toBe(1); // pure: the input rig is untouched
+  });
+
+  it('pinches: spreading the fingers zooms in, twisting rotates the shortest way', async () => {
+    const { pinchRig } = await import('../../render3d/cameraRig');
+    const closer = pinchRig(rig, { dist: 100, angle: 0 }, { dist: 200, angle: 0 });
+    expect(closer.dist).toBeCloseTo(20);
+    const wrap = pinchRig(rig, { dist: 100, angle: Math.PI - 0.1 }, { dist: 100, angle: -Math.PI + 0.1 });
+    expect(wrap.yaw).toBeCloseTo(1 - 0.2);
+    // Fingers that start together do not zoom by a huge factor.
+    expect(pinchRig(rig, { dist: 2, angle: 0 }, { dist: 300, angle: 0 }).dist).toBe(40);
+  });
+});
+
+describe('3D world helpers', () => {
+  it('shows placed soldiers facing the map center like the 2D editor', async () => {
+    const { EditUnits } = await import('../../render3d/world3d');
+    const u = new EditUnits();
+    const list = [
+      { team: 0, kind: 3, x: 5, y: 20 },
+      { team: 1, kind: 4, x: 30, y: 6 },
+    ];
+    u.set(list, list.length);
+    expect(u.count).toBe(2);
+    expect([u.facing[0], u.facing[1]]).toEqual([1, -1]);
+    expect([u.team[1], u.kind[1]]).toEqual([1, 4]);
+    expect(u.alive[0]).toBe(1);
+  });
+
+  it('keeps the 2D view as the default option', async () => {
+    const { defaultOptions } = await import('../../app/state');
+    expect(defaultOptions().view).toBe('2d');
   });
 });

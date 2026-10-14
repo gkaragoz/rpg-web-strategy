@@ -1,5 +1,3 @@
-import type { Application } from 'pixi.js';
-import type { Camera } from '../../camera';
 import { t } from '../../i18n';
 import { HostLobby } from '../../net/host';
 import { GuestSession, HostSession, type Session } from '../../net/client';
@@ -18,7 +16,7 @@ import { KIND_OF_TROOP, LEGACY_COUNT, STATS } from '../../sim/units';
 import { STATS_DEFAULT_SHOWN, type StatsPanel } from '../../ui/stats';
 import type { BattleOptions, BattleScene } from '../battle';
 import { makeTeamColor } from '../state';
-import type { WorldView } from '../world';
+import type { CameraBackend, WorldBackend } from '../backend';
 import { ConnBadge } from './badge';
 import type { UnitPreview } from '../unitPreview';
 import { ChatOverlay } from './chat';
@@ -62,9 +60,10 @@ const RELAY_TIMEOUT_MS = 12000;
 const PAGES_URL = 'https://gkaragoz.github.io/rpg-web-strategy/';
 
 export interface OnlineEnv {
-  app: Application;
-  world: WorldView;
-  camera: Camera;
+  world: WorldBackend;
+  camera: CameraBackend;
+  /** Draws one frame of the world (camera update + render). */
+  render(dt: number): void;
   battle: BattleScene;
   stats: StatsPanel;
   /** Re-bakes the atlas with the given team colors/biome/kinds and binds it to the world. */
@@ -111,6 +110,10 @@ export class OnlineApp {
   private chat: ChatOverlay | null = null;
   private badge: ConnBadge | null = null;
   private session: Session | null = null;
+  /** Whether a lobby / match is active (the home menu alone is not a session). */
+  get inSession(): boolean {
+    return this.session !== null;
+  }
   private cursors: CursorLayer | null = null;
   private colors: TeamColors[] = [];
   private biome: MapSpec['biome'] = 'forest';
@@ -434,14 +437,12 @@ export class OnlineApp {
     env.bake(this.colors, this.biome, new Set(Array.from({ length: LEGACY_COUNT }, (_, i) => i)));
     env.world.rebuild(this.mapConfig(init), env.getAtlas(), true);
     env.camera.setMap(env.world.mapSize);
-    env.camera.fit(env.app.screen.width, env.app.screen.height);
-    this.cursors?.setView({ app: env.app, world: env.world, terrain: () => env.world.terrain, size: () => env.world.mapSize });
+    env.camera.fit(env.world.size().w, env.world.size().h);
+    this.cursors?.setView({ world: env.world });
     this.placement = new Placement(
       {
-        app: env.app,
         world: env.world,
         camera: env.camera,
-        getAtlas: () => env.getAtlas(),
         ensureAtlas: (kinds) => this.ensureKinds(kinds),
         icon: (k, t) => env.icon(k, t),
         preview: env.preview,
@@ -533,7 +534,7 @@ export class OnlineApp {
     }
     env.stats.setShown(STATS_DEFAULT_SHOWN);
     this.inBattle = true;
-    this.cursors?.setView({ app: env.app, world: env.world, terrain: () => env.world.terrain, size: () => env.world.mapSize });
+    this.cursors?.setView({ world: env.world });
   }
 
   private leaveBattle(): void {
@@ -551,9 +552,7 @@ export class OnlineApp {
     const dt = frameMs > 500 ? 0 : Math.min(frameMs / 1000, 0.1);
     if (this.inBattle) this.env.battle.frame(now, frameMs);
     else if (this.screen === 'placing') {
-      this.env.camera.update(dt);
-      this.env.camera.apply(this.env.world.root, this.env.app.screen.width, this.env.app.screen.height);
-      this.env.app.render();
+      this.env.render(dt);
     }
     // Menu/lobby screens cover the map: skip needless drawing (battery/heat, especially on phones).
     this.cursors?.update(dt);

@@ -2,6 +2,7 @@ import { drawProjectile, projStyle } from '../render/projectileStyle';
 import { DpsMeter, fmtDamage, fmtTime } from './dpsMeter';
 import { Graphics, type Application } from 'pixi.js';
 import type { Camera } from '../camera';
+import type { Battle3D, CameraBackend, WorldBackend } from './backend';
 import { isoX, isoY } from '../iso';
 import type { Atlas } from '../render/atlas';
 import { AudioSystem } from '../render/audio';
@@ -61,8 +62,10 @@ export interface BattleOptions {
 
 export interface BattleDeps {
   app: Application;
-  world: WorldView;
-  camera: Camera;
+  world: WorldBackend;
+  camera: CameraBackend;
+  /** 3D view: draws units, projectiles and effects instead of the PixiJS renderers. */
+  battle3d?: Battle3D;
   getAtlas: () => Atlas;
   stats: StatsPanel;
   hudRoot: HTMLElement;
@@ -134,6 +137,16 @@ export class BattleScene {
 
   constructor(private readonly d: BattleDeps) {}
 
+  /** The PixiJS world (2D view only). */
+  private get w2(): WorldView {
+    return this.d.world as WorldView;
+  }
+
+  /** The 2D camera (iso pixels); only read in the 2D view. */
+  private get cam2(): Camera {
+    return this.d.camera as Camera;
+  }
+
   /** Speed and seed of the running battle (a restart keeps them). */
   get currentSpeed(): number {
     return this.speed;
@@ -176,35 +189,38 @@ export class BattleScene {
     const detailed = !opts.bench && unitCount <= DETAILED_MAX;
     const atlas = this.d.getAtlas();
     const { world, camera, app } = this.d;
+    const r3 = this.d.battle3d;
     const reliefMap = !!cfg.map && cfg.map.relief !== 'flat';
     world.rebuild(cfg, atlas, detailed, !opts.bench || reliefMap);
     const terr = world.terrain;
     this.elev = terr && terr.hasRelief ? (x, y) => terr.elevPx(x, y) : () => 0;
     camera.setMap(world.mapSize);
-    camera.fit(app.screen.width, app.screen.height);
+    camera.fit(world.size().w, world.size().h);
     camera.enabled = !(opts.bench && opts.autoSeconds > 0);
     camera.singleFingerPan = true;
 
-    if (detailed) {
+    if (r3) {
+      r3.reset();
+    } else if (detailed) {
       this.buildViews();
     } else {
       this.mass = new MassRenderer(app, this.sim, atlas, world.terrain);
-      if (opts.bench && !reliefMap) world.staticLayer.addChildAt(this.mass.buildGround(), 0);
-      world.entityLayer.addChild(this.mass.layer);
+      if (opts.bench && !reliefMap) this.w2.staticLayer.addChildAt(this.mass.buildGround(), 0);
+      this.w2.entityLayer.addChild(this.mass.layer);
     }
 
-    if (!opts.bench) {
+    if (!opts.bench && !r3) {
       const quality: FxQuality = opts.fx === 'auto' ? (unitCount <= 400 ? 'high' : 'low') : opts.fx;
       // In a crowd floating numbers are unreadable: show only with few units.
       this.fx = new FxSystem(atlas, camera, quality, opts.numbers && unitCount <= 200);
       this.fx.elev = this.elev;
       this.fx.comicOn = opts.numbers && unitCount <= 400;
       this.comedySys = new ComedySystem(atlas, world.terrain, this.elev);
-      world.fxLayer.addChild(this.comedySys.layer, this.fx.layer, this.fx.numbers);
+      this.w2.fxLayer.addChild(this.comedySys.layer, this.fx.layer, this.fx.numbers);
     }
 
-    if (opts.debug && this.sim instanceof InlineSim) {
-      this.debug = new DebugOverlay(this.sim.battle, world);
+    if (opts.debug && !r3 && this.sim instanceof InlineSim) {
+      this.debug = new DebugOverlay(this.sim.battle, this.w2);
       this.sim.onStep = () => this.debug?.onStep();
     }
 
@@ -270,6 +286,7 @@ export class BattleScene {
     this.d.hudRoot.hidden = true;
     this.d.banner.style.display = 'none';
     this.d.camera.enabled = true;
+    this.d.battle3d?.end();
   }
 
   // ---- HUD ----
@@ -301,7 +318,7 @@ export class BattleScene {
     q('#hud-pause').addEventListener('click', () => this.togglePause());
     q('#hud-zin').addEventListener('click', () => this.d.camera.zoomBy(1.35));
     q('#hud-zout').addEventListener('click', () => this.d.camera.zoomBy(1 / 1.35));
-    q('#hud-center').addEventListener('click', () => this.d.camera.fit(this.d.app.screen.width, this.d.app.screen.height));
+    q('#hud-center').addEventListener('click', () => this.d.camera.fit(this.d.world.size().w, this.d.world.size().h));
     q('#hud-stats').addEventListener('click', () => this.d.stats.toggle());
     if (this.opts.online) {
       // Online: only Sound, Comedy view and Leave remain.
@@ -309,6 +326,8 @@ export class BattleScene {
       q('#hud-edit').textContent = this.opts.online.isHost ? t('battle.leave.host') : t('battle.leave.guest');
       q('#hud-edit').addEventListener('click', () => this.opts.online!.onLeave());
     }
+    // The comedy look and the debug overlay are drawn by the 2D renderers only.
+    if (this.d.battle3d) for (const id of ['#hud-cv', '#hud-debug']) q(id).hidden = true;
     const cv = q('#hud-cv');
     const paintCv = (on: boolean): void => {
       cv.textContent = on ? t('battle.cv.on') : t('battle.cv.off');
@@ -617,7 +636,7 @@ export class BattleScene {
       if (e.code === 'F3') {
         e.preventDefault();
         this.d.stats.toggle();
-      } else if (e.code === 'KeyK') this.toggleComedyView();
+      } else if (e.code === 'KeyK' && !this.d.battle3d) this.toggleComedyView();
       else if (on.isHost && e.code === 'Space') {
         e.preventDefault();
         this.togglePause();
@@ -637,8 +656,8 @@ export class BattleScene {
     else if (e.code === 'Digit2') this.setSpeed(2);
     else if (e.code === 'Digit3') this.setSpeed(4);
     else if (e.code === 'Escape' && !bench) this.opts.onEdit();
-    else if (e.code === 'KeyV' && !bench) this.d.toggleDebug();
-    else if (e.code === 'KeyK' && !bench) this.toggleComedyView();
+    else if (e.code === 'KeyV' && !bench && !this.d.battle3d) this.d.toggleDebug();
+    else if (e.code === 'KeyK' && !bench && !this.d.battle3d) this.toggleComedyView();
     else if (bench && e.code === 'KeyB') this.massOpts.bars = !this.massOpts.bars;
     else if (bench && e.code === 'KeyO') this.massOpts.sort = !this.massOpts.sort;
     else if (bench && e.code === 'KeyC') this.massOpts.cull = !this.massOpts.cull;
@@ -664,6 +683,7 @@ export class BattleScene {
       else this.buildViews();
       this.fx?.clear();
       this.comedySys?.clear();
+      this.d.battle3d?.reset();
       this.d.banner.style.display = 'none';
     } finally {
       if (token === this.enterId) this.resetting = false;
@@ -680,6 +700,7 @@ export class BattleScene {
     }
     if (this.resetting) return;
     const { camera, app, world, stats } = this.d;
+    const r3 = this.d.battle3d;
 
     const on = this.opts.online;
     if (on && !on.isHost) {
@@ -692,7 +713,7 @@ export class BattleScene {
       }
     }
     camera.update(dt);
-    camera.apply(world.root, app.screen.width, app.screen.height);
+    if (!r3) this.cam2.apply(this.w2.root, app.screen.width, app.screen.height);
 
     const info = this.sim.frame(dt);
     if (this.simTimeBase < 0) this.simTimeBase = this.sim.time;
@@ -711,16 +732,23 @@ export class BattleScene {
         this.comedySys.events.length = 0;
       } else if (this.comedySys.active > 0) this.comedySys.clear();
     }
-    if (!this.opts.bench) this.d.audio.handle(this.sim.events, camera, app.screen.width, app.screen.height);
+    if (!this.opts.bench) this.d.audio.handle(this.sim.events, camera, world.size().w, world.size().h);
+    if (r3) r3.events(this.sim.events, this.paused ? 0 : dt, { numbers: this.opts.numbers, particles: this.opts.fx !== 'off' });
     if (this.fx) {
       this.fx.handle(this.sim.events, this.viewRect());
       this.fx.update(this.paused ? 0 : dt);
     }
     this.sim.events.length = 0;
-    if (this.mass) this.syncMass(info.alpha);
-    else this.syncViews(dt, info.alpha);
-    this.debug?.update(info.alpha);
-    app.render();
+    if (r3) {
+      const drawn = r3.draw(this.sim, info.alpha, this.paused ? 0 : dt, { focusTeam: this.focusTeam, bars: UnitView.barMode !== 'never' });
+      this.activeProjectiles = drawn.projectiles;
+      this.drawnLine = `${t('battle.stats.drawn').padEnd(11)}${drawn.draws} draws · ${drawn.tris} tris`;
+    } else {
+      if (this.mass) this.syncMass(info.alpha);
+      else this.syncViews(dt, info.alpha);
+      this.debug?.update(info.alpha);
+      app.render();
+    }
     const t2 = performance.now();
 
     if (frameMs > 500) {
@@ -763,7 +791,8 @@ export class BattleScene {
 
   /** Visible world rectangle (iso pixels). */
   private viewRect(): MassViewport {
-    const { camera, app } = this.d;
+    const { app } = this.d;
+    const camera = this.cam2;
     const w = app.screen.width / camera.zoom;
     const h = app.screen.height / camera.zoom;
     return { left: camera.x - w / 2 - 60, right: camera.x + w / 2 + 60, top: camera.y - h / 2 - 100, bottom: camera.y + h / 2 + 40, zoom: camera.zoom };
@@ -793,7 +822,7 @@ export class BattleScene {
     const u = this.sim.units;
     for (let i = 0; i < u.count; i++) {
       const v = new UnitView(u.kind[i], this.opts.colors[u.team[i]] ?? this.opts.colors[0], i);
-      this.d.world.entityLayer.addChild(v.root);
+      this.w2.entityLayer.addChild(v.root);
       this.views.push(v);
     }
   }
@@ -805,8 +834,8 @@ export class BattleScene {
       shadow.ellipse(0, 0, 4, 2).fill({ color: 0x000000, alpha: 0.25 });
       const arrow = new Graphics();
       drawProjectile(arrow, 0);
-      this.d.world.shadowLayer.addChild(shadow);
-      this.d.world.fxLayer.addChild(arrow);
+      this.w2.shadowLayer.addChild(shadow);
+      this.w2.fxLayer.addChild(arrow);
       v = { shadow, arrow, tag: 0 };
       this.arrowViews[i] = v;
     }

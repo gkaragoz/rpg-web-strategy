@@ -28,6 +28,9 @@ type FsEl = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void
 export interface LangPickerOptions {
   /** Return false to cancel the switch (e.g. the user declined to leave an online session). */
   beforeSwitch?: () => boolean;
+  /** Current world view and the switch handler (the 2D/3D buttons are shown when both are given). */
+  view?: '2d' | '3d';
+  onView?: (v: '2d' | '3d') => void;
 }
 
 /** Bottom-right language dropdown (flag + language name) with the full-screen button next to it. Mounted once on <body>; switching reloads the page. */
@@ -38,6 +41,7 @@ export function mountLangPicker(opts: LangPickerOptions = {}): () => void {
   const label = (id: Lang): string => LANGS.find((l) => l.id === id)!.label;
   root.innerHTML = `
 <span class="app-ver" aria-hidden="true">v${typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : ''}</span>
+<span class="view-seg" role="group" aria-label="${t('sys.view.aria')}" ${opts.view && opts.onView ? '' : 'hidden'}><button type="button" data-view="2d" aria-pressed="${opts.view === '2d'}" title="${t('sys.view.2d')}">2D</button><button type="button" data-view="3d" aria-pressed="${opts.view === '3d'}" title="${t('sys.view.3d')}">3D</button></span>
 <button type="button" class="fs-btn" aria-label="${t('battle.fullscreen')}" title="${t('battle.fullscreen')}" hidden></button>
 <button type="button" class="lp-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="${t('sys.lang.aria')}">${FLAGS[cur]}<span class="lp-name">${label(cur)}</span><span class="lp-caret" aria-hidden="true">▾</span></button>
 <ul class="lp-list" role="listbox" tabindex="-1" aria-label="${t('sys.lang.aria')}" hidden>${LANGS.map(
@@ -93,6 +97,14 @@ export function mountLangPicker(opts: LangPickerOptions = {}): () => void {
     switchLang(id);
   };
 
+  root.querySelectorAll<HTMLButtonElement>('.view-seg button').forEach((b) =>
+    b.addEventListener('click', () => {
+      const v = b.dataset.view as '2d' | '3d';
+      if (v === opts.view) return;
+      if (opts.beforeSwitch && !opts.beforeSwitch()) return;
+      opts.onView?.(v);
+    }),
+  );
   btn.addEventListener('click', () => open(!!list.hidden));
   list.addEventListener('click', (e) => {
     const li = (e.target as HTMLElement).closest<HTMLElement>('[data-lang]');

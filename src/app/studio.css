@@ -1961,6 +1961,31 @@ button.on {
 .fs-btn[hidden] {
   display: none;
 }
+.view-seg {
+  display: inline-flex;
+  background: rgba(16, 22, 32, 0.82);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  overflow: hidden;
+}
+.view-seg[hidden] {
+  display: none;
+}
+.view-seg button {
+  padding: 4px 9px;
+  min-width: 34px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.view-seg button[aria-pressed='true'] {
+  color: #fff;
+  background: rgba(59, 130, 246, 0.55);
+}
 .fs-btn svg {
   box-shadow: none;
   border-radius: 0;
@@ -2027,6 +2052,40 @@ button.on {
   color: var(--muted);
   font-size: 11px;
 }
+/* 3D view: rotate / tilt buttons (bottom right, under the online screens). */
+.cam3d {
+  position: fixed;
+  right: calc(10px + env(safe-area-inset-right, 0px));
+  bottom: calc(max(var(--bar-h, 0px), env(safe-area-inset-bottom, 0px)) + 50px);
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(2, 34px);
+  gap: 6px;
+}
+.cam3d button {
+  height: 34px;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--text);
+  background: rgba(16, 22, 32, 0.82);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  touch-action: none;
+}
+.cam3d button:active {
+  background: rgba(59, 130, 246, 0.5);
+}
+@media (pointer: coarse) {
+  .cam3d {
+    grid-template-columns: repeat(2, 42px);
+  }
+  .cam3d button {
+    height: 42px;
+  }
+}
 /* The connection badge stacks next to / above the picker (see src/app/bottomStack.ts). */
 .on-badge {
   right: calc(10px + var(--lp-side, 0px) + env(safe-area-inset-right, 0px));
@@ -2034,7 +2093,8 @@ button.on {
 }
 @media (pointer: coarse) {
   .lp-btn,
-  .fs-btn {
+  .fs-btn,
+  .view-seg button {
     min-height: 40px;
     min-width: 40px;
   }

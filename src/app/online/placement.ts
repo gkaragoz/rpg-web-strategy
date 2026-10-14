@@ -1,30 +1,24 @@
-import { Graphics, Sprite, type Application } from 'pixi.js';
-import type { Camera } from '../../camera';
 import { t } from '../../i18n';
-import { isoX, isoY } from '../../iso';
 import { act } from '../../net/act';
 import { MAX_ROOM_UNITS, spent, teamZones, type Zone } from '../../net/economy';
 import { fmtDamage } from '../dpsMeter';
 import type { Session } from '../../net/client';
 import type { GameInit, PlacedItem, ServerMsg } from '../../net/protocol';
-import type { Atlas } from '../../render/atlas';
-import { POSES, type TeamColors } from '../../render/unitView';
-import { KIND_OF_TROOP, LEGACY_COUNT, MAX_TEAMS, STATS, unitDisplayName } from '../../sim/units';
+import type { TeamColors } from '../../render/unitView';
+import { KIND_OF_TROOP, LEGACY_COUNT, STATS, unitDisplayName } from '../../sim/units';
 import { initSheet } from '../sheet';
 import type { UnitPreview } from '../unitPreview';
 import { Editor } from '../editor';
 import { UnitGallery } from '../unitGallery';
 import { BRUSHES, defaultState, hex, type AppState, type PlacedUnit } from '../state';
-import type { WorldView } from '../world';
+import type { CameraBackend, PlacedLayer, WorldBackend, ZoneSpec } from '../backend';
 import { playerColor } from './cursors';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 export interface PlacementEnv {
-  app: Application;
-  world: WorldView;
-  camera: Camera;
-  getAtlas: () => Atlas;
+  world: WorldBackend;
+  camera: CameraBackend;
   /** Re-bakes the atlas if a texture for the given kinds is missing; returns true if it did. */
   ensureAtlas: (kinds: Set<number>) => boolean;
   icon: (kind: number, team: number) => HTMLCanvasElement;
@@ -42,8 +36,9 @@ export class Placement {
   private readonly myTeam: number;
   private readonly top: HTMLElement;
   private readonly dock: HTMLElement | null;
-  private readonly overlay = new Graphics();
-  private readonly remote = new Map<number, Sprite>();
+  /** Other players' soldiers (read-only), drawn by the world backend. */
+  private readonly remoteLayer: PlacedLayer;
+  private readonly remoteIds = new Set<number>();
   private readonly pending = new Map<number, PlacedUnit>();
   private readonly cancelled = new Set<number>();
   /** cids whose unit was erased and re-added (undo) before the host answered: the late answer must only undo that stale copy. */
@@ -87,8 +82,8 @@ export class Placement {
     // Rejoin during placement: our own units and READY state are already known to the host.
     this.locked = !!model.me?.ready;
     if (this.myTeam >= 0) for (const it of model.placed.values()) if (it.team === this.myTeam) this.state.units.push({ team: it.team, kind: it.kind, x: it.x, y: it.y, id: it.id });
+    this.remoteLayer = env.world.createPlacedLayer();
     this.drawZones();
-    env.world.fxLayer.addChild(this.overlay);
 
     this.top = document.createElement('div');
     this.top.className = 'on-top';
@@ -97,11 +92,9 @@ export class Placement {
     if (this.myTeam >= 0) {
       const zone = this.zones[this.myTeam];
       this.editor = new Editor({
-        app: env.app,
         world: env.world,
         camera: env.camera,
         state: this.state,
-        getAtlas: env.getAtlas,
         ensureAtlas: () => this.ensureKinds(),
         onChange: () => this.refreshUi(),
         toast: env.toast,
@@ -165,8 +158,8 @@ export class Placement {
   /** Called when the atlas is re-baked. */
   onAtlas(): void {
     this.editor?.refreshSprites();
-    for (const s of this.remote.values()) s.destroy();
-    this.remote.clear();
+    this.remoteLayer.clear();
+    this.remoteIds.clear();
     this.syncRemote();
   }
 
@@ -229,11 +222,7 @@ export class Placement {
       }
       case 'unplaced':
         for (const id of msg.ids) {
-          const s = this.remote.get(id);
-          if (s) {
-            s.destroy();
-            this.remote.delete(id);
-          }
+          if (this.remoteIds.delete(id)) this.remoteLayer.drop(id);
           if (this.editor) {
             const u = this.state.units.find((x) => x.id === id);
             if (u) this.editor.removeSilently([u]);
@@ -309,58 +298,39 @@ export class Placement {
 
   // ---------------------------------------------------------------- remote units
 
-  /** Draws the other teams' units in model.placed as read-only sprites. */
+  /** Draws the other teams' units in model.placed as read-only soldiers. */
   syncRemote(): void {
-    const atlas = this.env.getAtlas();
     const placed = this.session.model.placed;
-    for (const [id, s] of [...this.remote]) {
+    for (const id of [...this.remoteIds]) {
       if (!placed.has(id)) {
-        s.destroy();
-        this.remote.delete(id);
+        this.remoteLayer.drop(id);
+        this.remoteIds.delete(id);
       }
     }
-    const t = this.env.world.terrain;
-    const c = this.init.size / 2;
     for (const it of placed.values()) {
-      if (it.team === this.myTeam || this.remote.has(it.id)) continue;
-      const idx = (it.kind * MAX_TEAMS + it.team) * POSES;
-      const tex = atlas.unitTex[idx];
-      const anc = atlas.unitAnchor[idx];
-      if (!tex || !anc) continue;
-      const spr = new Sprite(tex);
-      spr.anchor.set(anc.ax, anc.ay);
-      spr.position.set(isoX(it.x, it.y), isoY(it.x, it.y, t && t.hasRelief ? t.elevPx(it.x, it.y) : 0));
-      spr.zIndex = it.x + it.y;
-      spr.scale.x = isoX(c, c) - isoX(it.x, it.y) >= 0 ? 1 : -1;
-      this.env.world.entityLayer.addChild(spr);
-      this.remote.set(it.id, spr);
+      if (it.team === this.myTeam || this.remoteIds.has(it.id)) continue;
+      this.remoteLayer.set(it.id, { team: it.team, kind: it.kind, x: it.x, y: it.y });
+      if (this.remoteLayer.has(it.id)) this.remoteIds.add(it.id);
     }
   }
 
   // ---------------------------------------------------------------- zone layer
 
   private drawZones(): void {
-    const g = this.overlay;
-    g.clear();
     const size = this.init.size;
     const t = this.env.world.terrain;
-    for (const z of this.zones) {
-      const mine = z.team === this.myTeam;
-      const col = this.colors[z.team]?.main ?? 0xffffff;
+    const specs: ZoneSpec[] = this.zones.map((z) => {
+      const tiles: Array<[number, number]> = [];
       for (let ty = 0; ty < size; ty++) {
         for (let tx = 0; tx < size; tx++) {
           if (!z.contains(tx + 0.5, ty + 0.5)) continue;
           if (t && (!t.walkable(tx + 0.5, ty + 0.5) || !t.reachable(tx + 0.5, ty + 0.5))) continue;
-          const e = (x: number, y: number): number => (t && t.hasRelief ? t.elevPx(x, y) : 0);
-          const p = (x: number, y: number): [number, number] => [isoX(x, y), isoY(x, y, e(x, y))];
-          const a = p(tx, ty);
-          const b = p(tx + 1, ty);
-          const c = p(tx + 1, ty + 1);
-          const d = p(tx, ty + 1);
-          g.poly([a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]]).fill({ color: col, alpha: mine ? 0.26 : 0.1 });
+          tiles.push([tx, ty]);
         }
       }
-    }
+      return { color: this.colors[z.team]?.main ?? 0xffffff, mine: z.team === this.myTeam, tiles };
+    });
+    this.env.world.setZones(specs);
   }
 
   // ---------------------------------------------------------------- UI
@@ -512,9 +482,9 @@ export class Placement {
     this.gallery?.destroy();
     if (act.text === 'unitPicker') act.text = undefined;
     this.dock?.remove();
-    this.overlay.destroy();
-    for (const s of this.remote.values()) s.destroy();
-    this.remote.clear();
+    this.env.world.setZones(null);
+    this.remoteLayer.clear();
+    this.remoteIds.clear();
   }
 
   /** The battle is starting: exposes the player's own placed units (for counting/results). */

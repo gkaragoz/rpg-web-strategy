@@ -10,7 +10,6 @@ import { studio } from './i18n/studio';
 import { system } from './i18n/system';
 import type { Strings } from './i18n/types';
 import { units } from './i18n/units';
-import { view3d } from './i18n/view3d';
 
 export type Lang = 'en' | 'tr';
 export const LANGS: Array<{ id: Lang; label: string }> = [
@@ -62,7 +61,7 @@ export function onLang(f: (l: Lang) => void): () => void {
 /** Picks the current-language variant of a localized text. */
 export const loc = (l: Localized): string => l[lang];
 
-const TABLES = [studio, battle, maps, units, online, system, view3d];
+const TABLES = [studio, battle, maps, units, online, system];
 const EN: Strings = Object.assign({}, ...TABLES.map((x) => x.en));
 const TR: Strings = Object.assign({}, ...TABLES.map((x) => x.tr));
 

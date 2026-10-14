@@ -1,45 +1,44 @@
-# 3D view (prototype)
+# 3D view
 
-A second page, `/3d/` (`3d/index.html` → `src/render3d/main3d.ts`), draws the same battles with Three.js: a polygonal terrain mesh built from the
-height field, billboard soldiers (GPU instancing, up to 30 000), sun light + shadow map + fog, and a free camera (rotate, tilt, zoom).
-Live: https://gkaragoz.github.io/rpg-web-strategy/3d/
+The game has two ways to draw the world: the isometric 2D view (PixiJS) and a 3D view (Three.js): a polygonal terrain mesh built from the
+height field, billboard soldiers (GPU instancing, up to 30 000), a low sun with shadow map, fog, hit effects and a free camera.
+**It is the same app**: the home menu, studio, lobby, placement dock, battle HUD, damage meter, scoreboard and online flows are the
+same DOM code in both views. Switch with the **2D | 3D** buttons next to the language picker (saved in `options.view`), or open
+`?view=3d` / `?view=2d` (`/3d/` just redirects to `?view=3d`). The 3D code is loaded lazily, so the 2D bundle is unchanged.
 
-The simulation is untouched: the page only **reads** a `SimBackend` (`units`, `projectiles`, `winner`, ...), so results and determinism are
-identical to the 2D game for the same config and seed (checked: a watched online battle ends with exactly the host's survivors).
+The simulation is untouched: both views only **read** a `SimBackend`, so results and determinism are identical (a 3D host and a 2D
+guest see exactly the same battle). Cross-view online play works (3D host + 2D guest and the other way round).
+
+## Architecture
+`src/app/backend.ts` (types only) is the seam between the UI and the world drawing:
+- `WorldBackend` (`app/world.ts` = PixiJS `WorldView`, `render3d/world3d.ts` = `World3D`): `canvas`, `terrain`, `rebuild`, `setAtlas`,
+  `pick(clientX, clientY)` → map tile, `toClient(x, y)`, `setGhost` (brush ring), `setZones` (placement zones), `createPlacedLayer()`
+  (soldiers shown while armies are placed). `Editor`, `Placement` and `CursorLayer` only use this interface.
+- `CameraBackend` (`camera.ts` = 2D `Camera`, `render3d/camera3d.ts` = `Camera3D`): `touchCount`, `singleFingerPan`, `fit`, `zoomBy`,
+  `project` (sound panning), `audioZoom` (sound / effect gating).
+- `Battle3D` (implemented by `World3D`): `reset/end`, `events` (hit effects), `draw` (units + projectiles + render). `BattleScene` keeps its
+  PixiJS code for 2D and calls `battle3d` instead when it is set; the HUD is shared.
+- `main.ts` picks the backend; the hidden Pixi application stays alive in 3D (atlas baking, unit icons, previews).
 
 ## Modules (`src/render3d/`)
 | File | Purpose |
 |---|---|
-| `terrainMesh.ts` | pure: per-tile quads from `Terrain.vh`, water sunk, bridge decks lifted, shore walls, biome colors |
-| `pick.ts` | pure: camera ray vs the height field (march + bisection) |
-| `cameraRig.ts` | pure: focus/yaw/tilt/dist rig, clamps, pan axes |
-| `billboards.ts` | pure: writes instance arrays (position, uv, pose, tint, bars, shadows) from a units view |
-| `atlasBridge.ts` | the 2D atlas (baked by a hidden Pixi app) → `CanvasTexture` + frame tables |
-| `shaders.ts` | billboard (with outline pass), blob shadow, health bar, projectile, water |
-| `scene3d.ts` | `View3D`: renderer, lights, meshes, picking, camera |
-| `controls.ts` | mouse / touch / keyboard camera and paint tools |
-| `formation.ts` | army fill inside team zones |
-| `fx3d.ts` | pure effect pool: hit sparks, dust, bursts, floating damage/heal numbers from sim events (+ glyph atlas) |
-| `watch.ts` | host a room, or join one as player/spectator (LAN → relay → WebRTC; `?relay=off` forces WebRTC) |
-| `main3d.ts` | panel, edit/battle/watch modes, main loop; `window.__v3` for automation |
+| `world3d.ts` | `World3D`: `WorldBackend` + `Battle3D` over `View3D`; `EditUnits` (placed soldiers as a units view) |
+| `camera3d.ts`, `camControls.ts` | `Camera3D` input; the on-screen rotate / tilt buttons |
+| `scene3d.ts` | `View3D`: renderer, lights, meshes, picking, effects |
+| `terrainMesh.ts`, `pick.ts`, `cameraRig.ts` | pure: terrain mesh from `Terrain.vh`, ray picking, rig math (`orbitRig`, `pinchRig`) |
+| `billboards.ts`, `atlasBridge.ts`, `shaders.ts` | instance writer, 2D atlas → GPU texture, shaders |
+| `fx3d.ts` | pure effect pool: hit sparks, dust, bursts, floating damage/heal numbers from sim events |
 
-## Using it
-- Offline: pick map/seed/size/teams, fill armies or paint them (Place/Erase tools), Start. URL shortcuts: `?map=&seed=&size=&teams=&per=&auto=1&speed=`.
-- Online: under "Watch online" type a room code (or `?watch=CODE`), optionally tick "Join as player" (`&play=1`) to place armies (paint,
-  erase, "Fill armies") and ready up like in the 2D game. "Host room" (`?host=lan|net`) opens a room from the 3D page: the host picks map,
-  seed, size, gold and open placement, starts the game, and controls pause/speed/rematch/lobby. The page follows the lobby phases
-  (map and placed armies during placement, the lockstep battle afterwards, rematches). The protocol is unchanged.
-- Effects: hit sparks, dust, shock rings, element bursts and floating damage/heal numbers are drawn from `sim.events` near the camera
-  (toggles "Damage numbers" / "Hit effects", `?numbers=0`, `?fx=0`).
-- Camera: right-drag rotate + tilt, wheel zoom, middle-drag / Look tool pan, WASD, Q/E, R/F; touch: drag, pinch, twist.
-- The sim worker (and helper threads) needs cross-origin isolation; the page loads `../coi-register.js` like the game and falls back to the main thread.
+## Controls
+- Mouse: left paint / right erase exactly as in 2D; **middle-drag pans**, **Alt + left-drag rotates and tilts**, wheel zooms to the cursor,
+  W A S D / arrows pan, Q/E rotate, R/F tilt. The buttons at the bottom right (↺ ↻ ⤒ ⤓) rotate and tilt.
+- Touch: one finger paints (pans in battle), two fingers pinch-zoom, twist-rotate and drag; tilt with the buttons.
 
-## Measurements (dev machine / phone)
-- PC: 165 fps small map; 30 000 soldiers on a 256 map ≈ 150 fps (sim worker 24 ms/step at 20 Hz).
-- Phone (Chrome via adb): 60 fps with 4 000 soldiers with effects on; online spectating over the relay also 60 fps.
-- Online 30 000: two 3D pages (host + player, 15 000 each, 256 map) fill, ready and fight in lockstep at 165 fps (host); both pages end with identical survivors. 3D host + 2D guest over LAN, relay and WebRTC all produce the same results as the 2D scoreboard.
+## Differences from 2D
+The comedy look (ragdolls) and the debug overlay are 2D-only (their buttons are hidden in 3D); health bars follow the Health bars option
+(damaged / always → shown, never → hidden). Effects are drawn on top of everything and capped per frame in huge battles.
 
-## Gaps / next steps
-- Effects are drawn on top of everything (no depth test) and numbers are capped per frame in huge battles.
-- Water is a flat shader plane; no depth-based foam. Lighting is a low sun with flat shading and a shadow map (no ambient occlusion).
-- The host UI of the 3D page is minimal (no password, banned rarities, placement timer or kick/mute; use the 2D lobby for those).
+## Measurements
+- PC: 165 fps; 30 000 soldiers on a 256 map ≈ 150 fps (sim worker 24 ms/step at 20 Hz); online 30 000 (two pages) verified in sync.
+- Phone (Chrome via adb): 60 fps with ~1 700 soldiers with effects on; touch paint / twist / pinch verified.

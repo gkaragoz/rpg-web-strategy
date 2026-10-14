@@ -1,13 +1,8 @@
-import { Graphics, Sprite, type Application } from 'pixi.js';
-import type { Camera } from '../camera';
 import { t } from '../i18n';
-import { isoX, isoY } from '../iso';
-import type { Atlas } from '../render/atlas';
 import { KIND_COUNT, MAX_TEAMS, STATS } from '../sim/units';
 import { composeArmy, composeFromKind, type Lane } from './armies';
-import { POSES } from '../render/unitView';
 import { BRUSHES, MAX_PLACED, colorsOf, saveState, type AppState, type PlacedUnit } from './state';
-import type { WorldView } from './world';
+import type { CameraBackend, PlacedLayer, WorldBackend } from './backend';
 
 interface Op {
   type: 'add' | 'remove';
@@ -17,11 +12,9 @@ interface Op {
 }
 
 export interface EditorDeps {
-  app: Application;
-  world: WorldView;
-  camera: Camera;
+  world: WorldBackend;
+  camera: CameraBackend;
   state: AppState;
-  getAtlas: () => Atlas;
   /** Bakes textures of the placed types if they are missing from the atlas (sprites are rebuilt). */
   ensureAtlas: () => void;
   /** Units/counts changed (update the UI counters). */
@@ -30,8 +23,6 @@ export interface EditorDeps {
 }
 
 const MIN_GAP = 0.85;
-/** Screen ellipse of a circle: radius r tiles -> rx = r*TILE_W/2*sqrt2, ry = rx/2. */
-const ELLIPSE_X = 45.25;
 
 /** Online/budgeted placement constraints: region, unit cost and remaining gold. */
 export interface PlacementConstraint {
@@ -48,8 +39,8 @@ export interface PlacementConstraint {
 
 /** Unit placement on the map: brush painting, erasing, undo/redo, formations. */
 export class Editor {
-  private readonly sprites = new Map<PlacedUnit, Sprite>();
-  private readonly ghost = new Graphics();
+  /** Placed soldiers as drawn on the map (sprites in 2D, instances in 3D). */
+  private readonly layer: PlacedLayer;
   private undoStack: Op[] = [];
   private redoStack: Op[] = [];
   private stroke: Op | null = null;
@@ -75,12 +66,12 @@ export class Editor {
   private readonly onContext = (e: Event) => e.preventDefault();
 
   constructor(private readonly d: EditorDeps) {
-    this.d.world.fxLayer.addChild(this.ghost);
+    this.layer = d.world.createPlacedLayer();
   }
 
   enter(): void {
     this.active = true;
-    const c = this.d.app.canvas;
+    const c = this.d.world.canvas;
     c.addEventListener('pointerdown', this.onDown);
     window.addEventListener('pointermove', this.onMove);
     window.addEventListener('pointerup', this.onUp);
@@ -92,7 +83,7 @@ export class Editor {
 
   exit(): void {
     this.active = false;
-    const c = this.d.app.canvas;
+    const c = this.d.world.canvas;
     c.removeEventListener('pointerdown', this.onDown);
     window.removeEventListener('pointermove', this.onMove);
     window.removeEventListener('pointerup', this.onUp);
@@ -100,32 +91,14 @@ export class Editor {
     this.endTouchGesture();
     c.removeEventListener('pointerleave', this.onLeave);
     c.removeEventListener('contextmenu', this.onContext);
-    this.ghost.clear();
+    this.d.world.setGhost(null);
     this.clearSprites();
   }
 
   // ---- coordinates / validity ----
 
   private toTile(clientX: number, clientY: number): { x: number; y: number } {
-    const rect = this.d.app.canvas.getBoundingClientRect();
-    const p = this.d.world.root.toLocal({ x: clientX - rect.left, y: clientY - rect.top });
-    // On elevated terrain the screen point shifts up by the elevation: correct it iteratively.
-    let x = p.x / 64 + p.y / 32;
-    let y = p.y / 32 - p.x / 64;
-    const t = this.d.world.terrain;
-    if (t && t.hasRelief) {
-      for (let k = 0; k < 3; k++) {
-        const e = t.elevPx(Math.min(this.d.world.mapSize, Math.max(0, x)), Math.min(this.d.world.mapSize, Math.max(0, y)));
-        x = p.x / 64 + (p.y + e) / 32;
-        y = (p.y + e) / 32 - p.x / 64;
-      }
-    }
-    return { x, y };
-  }
-
-  private elevAt(x: number, y: number): number {
-    const t = this.d.world.terrain;
-    return t && t.hasRelief ? t.elevPx(Math.min(this.d.world.mapSize, Math.max(0, x)), Math.min(this.d.world.mapSize, Math.max(0, y))) : 0;
+    return this.d.world.pick(clientX, clientY);
   }
 
   private inMap(x: number, y: number): boolean {
@@ -166,7 +139,8 @@ export class Editor {
       this.touchPending = { id, x, y, timer: setTimeout(() => this.beginTouch(), 70) };
       return;
     }
-    if (!this.active || (e.button !== 0 && e.button !== 2)) return;
+    // Alt + left drag is the 3D camera rotation, not a stroke.
+    if (!this.active || (e.button !== 0 && e.button !== 2) || (e.altKey && e.button === 0)) return;
     this.beginStroke(e.button === 2 || this.d.state.tool === 'erase', e.button, e.clientX, e.clientY, e.shiftKey);
   }
 
@@ -245,7 +219,7 @@ export class Editor {
 
   private pointerMove(e: PointerEvent): void {
     if (!this.active) return;
-    const rect = this.d.app.canvas.getBoundingClientRect();
+    const rect = this.d.world.canvas.getBoundingClientRect();
     const inside = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
     const p = this.toTile(e.clientX, e.clientY);
     this.cursor = { x: p.x, y: p.y, inside };
@@ -331,7 +305,7 @@ export class Editor {
     for (const u of added) s.units.push(u);
     this.d.ensureAtlas();
     for (const u of added) {
-      if (!this.sprites.has(u)) this.addSprite(u);
+      if (!this.layer.has(u)) this.addSprite(u);
       this.stroke!.units.push(u);
     }
     saveState(s);
@@ -363,59 +337,37 @@ export class Editor {
   // ---- ghost brush ----
 
   drawGhost(): void {
-    const g = this.ghost;
-    g.clear();
-    if (!this.active || !this.cursor.inside) return;
+    if (!this.active || !this.cursor.inside) {
+      this.d.world.setGhost(null);
+      return;
+    }
     const s = this.d.state;
     const br = BRUSHES[s.brush];
     const erase = s.tool === 'erase';
     const { x, y } = this.cursor;
-    const cx = isoX(x, y);
-    const cy = isoY(x, y, this.elevAt(x, y));
     const colors = colorsOf(s);
-    const col = erase ? 0xffffff : colors[Math.min(s.selTeam, colors.length - 1)].main;
-    const bad = !erase && br.count === 1 && !this.isValid(x, y);
-    const radius = erase ? (br.count === 1 ? 0.9 : br.radius) : br.radius;
-    g.ellipse(cx, cy, radius * ELLIPSE_X, (radius * ELLIPSE_X) / 2).fill({ color: bad ? 0xe0463b : col, alpha: 0.18 }).stroke({ width: 2, color: bad ? 0xe0463b : col, alpha: 0.9 });
-    if (erase) {
-      g.moveTo(cx - 8, cy - 4).lineTo(cx + 8, cy + 4).moveTo(cx - 8, cy + 4).lineTo(cx + 8, cy - 4).stroke({ width: 2, color: 0xe0463b });
-    }
+    this.d.world.setGhost({
+      x,
+      y,
+      radius: erase ? (br.count === 1 ? 0.9 : br.radius) : br.radius,
+      color: erase ? 0xffffff : colors[Math.min(s.selTeam, colors.length - 1)].main,
+      bad: !erase && br.count === 1 && !this.isValid(x, y),
+      erase,
+    });
   }
 
   // ---- sprites ----
 
-  private spriteFor(u: PlacedUnit): Sprite {
-    const atlas = this.d.getAtlas();
-    const idx = (u.kind * MAX_TEAMS + u.team) * POSES;
-    const tex = atlas.unitTex[idx] ?? atlas.unitTex[u.kind * MAX_TEAMS * POSES];
-    const anc = atlas.unitAnchor[idx] ?? atlas.unitAnchor[u.kind * MAX_TEAMS * POSES];
-    const spr = new Sprite(tex);
-    spr.anchor.set(anc.ax, anc.ay);
-    spr.position.set(isoX(u.x, u.y), isoY(u.x, u.y, this.elevAt(u.x, u.y)));
-    spr.zIndex = u.x + u.y;
-    // Faces the center of the map.
-    const c = this.d.world.mapSize / 2;
-    spr.scale.x = isoX(c, c) - isoX(u.x, u.y) >= 0 ? 1 : -1;
-    return spr;
-  }
-
   private addSprite(u: PlacedUnit): void {
-    const spr = this.spriteFor(u);
-    this.d.world.entityLayer.addChild(spr);
-    this.sprites.set(u, spr);
+    this.layer.set(u, u);
   }
 
   private dropSprite(u: PlacedUnit): void {
-    const spr = this.sprites.get(u);
-    if (spr) {
-      spr.destroy();
-      this.sprites.delete(u);
-    }
+    this.layer.drop(u);
   }
 
   private clearSprites(): void {
-    for (const spr of this.sprites.values()) spr.destroy();
-    this.sprites.clear();
+    this.layer.clear();
   }
 
   /** Rebuilds all sprites from state (when the atlas/palette changes, on entering the scene). */
@@ -612,7 +564,7 @@ export class Editor {
     const s = this.d.state;
     for (const u of added) s.units.push(u);
     this.d.ensureAtlas();
-    for (const u of added) if (!this.sprites.has(u)) this.addSprite(u);
+    for (const u of added) if (!this.layer.has(u)) this.addSprite(u);
     this.undoStack.push({ type: 'add', units: added });
     this.redoStack = [];
     saveState(s);

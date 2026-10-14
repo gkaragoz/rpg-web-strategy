@@ -7,6 +7,7 @@ import './app/studio.css';
 import { BattleScene, type BattleOptions } from './app/battle';
 import { Editor } from './app/editor';
 import { OnlineApp } from './app/online/online';
+import type { Battle3D, CameraBackend, WorldBackend } from './app/backend';
 import { loadState, saveState, teamColors } from './app/state';
 import { Studio } from './app/studio';
 import { WorldView } from './app/world';
@@ -59,18 +60,6 @@ const params = new URLSearchParams(location.search);
 const benchPer = params.has('bench') ? Math.max(10, Number(params.get('bench')) || 10000) : 0;
 const autoSeconds = Number(params.get('auto')) || 0;
 const isBench = benchPer > 0;
-if (!isBench) {
-  mountLangPicker({
-    // Switching reloads the page: leave an active online session cleanly first (keeps the rejoin entry).
-    beforeSwitch: () => {
-      if (!online) return true;
-      if (!window.confirm(t('sys.lang.confirmLeave'))) return false;
-      online.exit(true, true);
-      return true;
-    },
-  });
-  startBottomStack();
-}
 // iOS Safari ignores user-scalable=no: stop the page-level pinch zoom (the canvas handles its own pinch).
 for (const g of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(g, (e) => e.preventDefault());
 const canUseWorker = typeof SharedArrayBuffer !== 'undefined' && self.crossOriginIsolated;
@@ -111,9 +100,58 @@ if (params.get('env') === 'off') state.env = false;
 if (params.get('kite') === 'off') state.kite = false;
 if (Number(params.get('seed'))) state.seed = Number(params.get('seed'));
 
-const world = new WorldView();
-app.stage.addChild(world.root);
-const camera = new Camera(app.canvas, state.mapSize);
+// 2D (PixiJS isometric) or 3D (Three.js) world: ?view=3d / ?view=2d override the saved option. The rest of the app only sees the backend interfaces.
+const view3d = params.get('view') === '3d' || (params.get('view') !== '2d' && state.options.view === '3d');
+let world: WorldBackend;
+let camera: CameraBackend;
+let battle3d: Battle3D | undefined;
+let render: (dt: number) => void;
+if (view3d) {
+  // The Pixi app stays alive (atlas baking, unit icons, previews) but is hidden: the Three.js canvas takes its place.
+  app.canvas.style.display = 'none';
+  const m = await import('./render3d/world3d');
+  const w3 = new m.World3D(app.renderer, document.body);
+  world = w3;
+  camera = w3.camera3d;
+  battle3d = w3;
+  render = (dt) => {
+    w3.camera3d.update(dt);
+    w3.render(dt);
+  };
+} else {
+  const w2 = new WorldView(app.canvas);
+  app.stage.addChild(w2.root);
+  const c2 = new Camera(app.canvas, state.mapSize);
+  world = w2;
+  camera = c2;
+  render = (dt) => {
+    c2.update(dt);
+    c2.apply(w2.root, app.screen.width, app.screen.height);
+    app.render();
+  };
+  (window as unknown as { __camera: Camera }).__camera = c2;
+}
+if (!isBench) {
+  mountLangPicker({
+    view: view3d ? '3d' : '2d',
+    onView: (v) => {
+      // The saved choice wins after the reload: drop a ?view= query so it does not override it.
+      state.options.view = v;
+      saveState(state);
+      const u = new URL(location.href);
+      u.searchParams.delete('view');
+      location.replace(u.toString());
+    },
+    // Switching reloads the page: leave an active online session cleanly first (keeps the rejoin entry).
+    beforeSwitch: () => {
+      if (!online?.inSession) return true;
+      if (!window.confirm(t('sys.lang.confirmLeave'))) return false;
+      online.exit(true, true);
+      return true;
+    },
+  });
+  startBottomStack();
+}
 const stats = new StatsPanel(document.getElementById('stats')!);
 const banner = document.getElementById('banner')!;
 const studioRoot = document.getElementById('studio')!;
@@ -148,6 +186,7 @@ const battle = new BattleScene({
   app,
   world,
   camera,
+  battle3d,
   getAtlas,
   stats,
   hudRoot,
@@ -213,11 +252,9 @@ function layoutArray(): Float32Array {
 
 let studio!: Studio;
 const editor = new Editor({
-  app,
   world,
   camera,
   state,
-  getAtlas,
   ensureAtlas: () => ensureAtlas(),
   onChange: () => studio?.render(),
   toast: (m) => studio?.toast(m),
@@ -228,7 +265,7 @@ function rebuildWorld(announce: boolean): void {
   if (state.map.biome !== atlasBiome) rebakeAtlas();
   world.rebuild(studioConfig(), atlas, true);
   camera.setMap(world.mapSize);
-  camera.fit(app.screen.width, app.screen.height);
+  camera.fit(world.size().w, world.size().h);
   editor.setSeedForRandom(state.seed);
   const r = editor.revalidate();
   if (announce && (r.moved > 0 || r.removed > 0)) {
@@ -444,7 +481,7 @@ async function backToStudio(): Promise<void> {
   battle.exit();
   mode = 'studio';
   rebuildWorld(false);
-  camera.fit(app.screen.width, app.screen.height);
+  camera.fit(world.size().w, world.size().h);
   stats.setShown(false);
   studio.show();
   editor.enter();
@@ -478,9 +515,9 @@ function startOnline(joinCode?: string): void {
   editor.exit();
   mode = 'online';
   const app2 = online = new OnlineApp({
-    app,
     world,
     camera,
+    render,
     battle,
     stats,
     bake: (colors, biome, kinds) => {
@@ -509,7 +546,7 @@ function startOnline(joinCode?: string): void {
       applyOptions();
       mode = 'studio';
       rebuildWorld(false);
-      camera.fit(app.screen.width, app.screen.height);
+      camera.fit(world.size().w, world.size().h);
       stats.setShown(false);
       if (location.hash.startsWith('#join=')) history.replaceState(null, '', location.pathname + location.search);
       if (home) startOnline();
@@ -551,12 +588,9 @@ function frame(now: number): void {
     return;
   }
   const dt = frameMs > 500 ? 0 : Math.min(frameMs / 1000, 0.1);
-  camera.update(dt);
-  camera.apply(world.root, app.screen.width, app.screen.height);
-  app.render();
+  render(dt);
 }
 
-(window as unknown as { __camera: Camera; __audio: AudioSystem }).__camera = camera;
 (window as unknown as { __audio: AudioSystem }).__audio = audio;
 
 if (isBench) {
