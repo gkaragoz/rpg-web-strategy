@@ -76,7 +76,11 @@ export class Controls {
   }
 
   private down(e: PointerEvent): void {
-    this.canvas.setPointerCapture?.(e.pointerId);
+    try {
+      this.canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* synthetic or already released pointer */
+    }
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, button: e.button });
     if (e.pointerType === 'touch') {
       if (this.pointers.size >= 2) {

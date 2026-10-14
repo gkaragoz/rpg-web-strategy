@@ -8,6 +8,7 @@ import { LockstepWorkerSim } from '../../net/lockstepWorkerSim';
 import type { SimBackend } from '../../sim/backend';
 import { battleConfig, layoutOf, makeCode, type ClientMsg, type GameInit, type ServerMsg } from '../../net/protocol';
 import { PeerGuestTransport, PeerHostTransport } from '../../net/peerTransport';
+import { RELAY_URL } from '../../net/relay';
 import type { Transport } from '../../net/transport';
 import { NetError, WsGuestTransport, WsHostTransport, lanUrl } from '../../net/wsTransport';
 import type { Atlas } from '../../render/atlas';
@@ -54,7 +55,7 @@ function saveLast(l: LastSession | null): void {
   }
 }
 /** Internet relay (relay/ Cloudflare Worker): needs no NAT/TURN; if unreachable, PeerJS (WebRTC) is tried. */
-export const RELAY_URL = 'wss://rpg-web-relay.gkaragoz96tablet.workers.dev';
+export { RELAY_URL };
 /** The first connection to the relay (TLS + Durable Object cold start) can be slower than LAN. */
 const RELAY_TIMEOUT_MS = 12000;
 /** Shared join address of internet lobbies (Pages). */

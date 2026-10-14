@@ -3,21 +3,26 @@ import { loc, t } from '../i18n';
 import { placeableKinds } from '../app/armies';
 import { teamColors } from '../app/state';
 import { placeBlock, teamZones, type Zone } from '../net/economy';
-import { PLACE_GAP } from '../net/protocol';
+import type { GuestSession } from '../net/client';
+import { LockstepSim } from '../net/lockstepSim';
+import { LockstepWorkerSim } from '../net/lockstepWorkerSim';
+import { PLACE_GAP, battleConfig, layoutOf, type BattleStart } from '../net/protocol';
 import { bakeAtlas, type Atlas } from '../render/atlas';
 import { terrainFor, type BattleConfig } from '../sim/battle';
 import { InlineSim } from '../sim/inlineSim';
 import { PRESETS, type MapSpec } from '../sim/mapSpec';
 import type { SimBackend } from '../sim/backend';
 import { WorkerSim } from '../sim/workerSim';
-import { LEGACY_COUNT, unitDisplayName } from '../sim/units';
+import { KIND_OF_TROOP, LEGACY_COUNT, STATS, unitDisplayName } from '../sim/units';
 import { atlasToGpu } from './atlasBridge';
 import type { UnitsLike } from './billboards';
 import { Controls, type Tool } from './controls';
 import { fillFormations, type PlacedSoldier } from './formation';
 import { View3D, type ZoneOverlay } from './scene3d';
+import { teamColorsOf, watchRoom, type WatchVia } from './watch';
 
-const TEAM_COLORS = teamColors('classic', 6);
+const DEFAULT_COLORS = teamColors('classic', 6);
+let TEAM_COLORS = DEFAULT_COLORS;
 const MAX_SOLDIERS = 30000;
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -101,6 +106,7 @@ const settings: Settings = {
 let pixi: Application | null = null;
 let atlas: Atlas | null = null;
 let atlasBiome = '';
+let atlasColorKey = '';
 const atlasKinds = new Set<number>();
 let view!: View3D;
 let controls!: Controls;
@@ -115,7 +121,9 @@ let speed = 1;
 let seedCounter = 1;
 let battleStep = 0;
 
-const specOf = (): MapSpec => (PRESETS.find((p) => p.id === settings.preset) ?? PRESETS[0]).spec;
+/** Map of the room being watched (null: the preset chosen in the panel). */
+let specOverride: MapSpec | null = null;
+const specOf = (): MapSpec => specOverride ?? (PRESETS.find((p) => p.id === settings.preset) ?? PRESETS[0]).spec;
 const configOf = (layout?: Float32Array): BattleConfig => ({ mode: 'custom', perTeam: 0, teamCount: settings.teams, mapSize: settings.size, env: true, kite: true, terrainSeed: settings.seed, map: specOf(), layout });
 
 // ---- atlas ----
@@ -123,8 +131,11 @@ const configOf = (layout?: Float32Array): BattleConfig => ({ mode: 'custom', per
 async function ensureAtlas(extra: Iterable<number> = []): Promise<void> {
   const need = new Set<number>([...Array.from({ length: LEGACY_COUNT }, (_, i) => i), settings.kind, ...extra]);
   for (const s of placed) need.add(s.kind);
+  // The bone caller summons bone soldiers in battle: their texture must be in the atlas too.
+  for (const k of [...need]) if (STATS[k]?.troop === 'bone-caller') need.add(KIND_OF_TROOP['bone-soldier']);
   const biome = specOf().biome;
-  let missing = biome !== atlasBiome;
+  const colorKey = TEAM_COLORS.map((c) => c.main).join(',');
+  let missing = biome !== atlasBiome || colorKey !== atlasColorKey;
   for (const k of need) if (!atlasKinds.has(k)) missing = true;
   if (!missing && atlas) return;
   if (!pixi) {
@@ -135,6 +146,7 @@ async function ensureAtlas(extra: Iterable<number> = []): Promise<void> {
   const old = atlas;
   atlas = bakeAtlas(pixi.renderer, TEAM_COLORS, biome, atlasKinds);
   atlasBiome = biome;
+  atlasColorKey = colorKey;
   view.setAtlas(atlasToGpu(pixi.renderer, atlas));
   old?.dispose();
 }
@@ -179,7 +191,7 @@ function occupied(grid: Map<number, PlacedSoldier[]>, team: number, x: number, y
 }
 
 function paint(x: number, y: number, tool: 'place' | 'erase'): void {
-  if (mode !== 'edit') return;
+  if (mode !== 'edit' || watching) return;
   const r = settings.brush;
   if (tool === 'erase') {
     const keep = placed.filter((s) => Math.hypot(s.x - x, s.y - y) > Math.max(0.6, r));
@@ -216,7 +228,7 @@ function paint(x: number, y: number, tool: 'place' | 'erase'): void {
 }
 
 async function fill(): Promise<void> {
-  if (mode !== 'edit') return;
+  if (mode !== 'edit' || watching) return;
   placed = fillFormations(terrain, zones, settings.perTeam, settings.seed);
   await ensureAtlas();
   editUnits.set(placed);
@@ -262,6 +274,165 @@ function backToEdit(): void {
   syncPanel();
 }
 
+// ---- watching an online room ----
+
+let watching: { session: GuestSession; via: WatchVia; code: string } | null = null;
+let watchSimStart: BattleStart | null = null;
+let watchWorldKey = '';
+let watchDirty = false;
+let watchBusy = false;
+let watchRerun = false;
+
+function setWatchStatus(text: string): void {
+  $('w-status').textContent = text;
+}
+
+async function watchStart(code: string): Promise<void> {
+  if (watching || !code.trim()) return;
+  $<HTMLButtonElement>('w-go').disabled = true;
+  try {
+    const w = await watchRoom(code, t('v3.watch'), (k) => setWatchStatus(t(k)));
+    watching = { ...w, code: code.trim().toUpperCase() };
+    w.session.model.listeners.push((m) => {
+      if (m.t === 'placed' || m.t === 'unplaced') watchDirty = true;
+      else void watchKick();
+    });
+    void watchKick();
+  } catch (e) {
+    const key = e instanceof Error && e.message.startsWith('v3.') ? e.message : 'v3.err.joinFail';
+    setWatchStatus(t(key));
+  }
+  syncPanel();
+}
+
+function watchLeave(message = ''): void {
+  const w = watching;
+  watching = null;
+  watchSimStart = null;
+  watchWorldKey = '';
+  watchDirty = false;
+  if (w) {
+    try {
+      w.session.leave();
+    } catch {
+      /* connection already gone */
+    }
+  }
+  specOverride = null;
+  TEAM_COLORS = DEFAULT_COLORS;
+  placed = [];
+  stopSim();
+  setWatchStatus(message);
+  syncPanel();
+  void buildWorld();
+}
+
+/** Follows the room: lobby phase -> map and placed armies -> the battle itself. */
+async function watchKick(): Promise<void> {
+  if (watchBusy) {
+    watchRerun = true;
+    return;
+  }
+  watchBusy = true;
+  try {
+    do {
+      watchRerun = false;
+      await watchReconcile();
+    } while (watchRerun);
+  } finally {
+    watchBusy = false;
+  }
+}
+
+async function watchReconcile(): Promise<void> {
+  const w = watching;
+  if (!w) return;
+  const m = w.session.model;
+  if (m.closedReason) {
+    watchLeave(m.closedReason === 'lost' ? t('v3.err.dropped') : t('v3.err.closed'));
+    return;
+  }
+  const st = m.state;
+  if (!st) return;
+  const init = st.init ?? m.start?.init;
+  if (st.phase === 'lobby' || !init) {
+    if (sim) {
+      stopSim();
+      watchSimStart = null;
+      mode = 'edit';
+    }
+    setWatchStatus(t('v3.st.lobby'));
+    return;
+  }
+  const colors = teamColorsOf(init, st);
+  const key = [JSON.stringify(init.spec), init.seed, init.size, init.teams, colors.map((c) => c.main).join(',')].join('|');
+  if (key !== watchWorldKey) {
+    watchWorldKey = key;
+    specOverride = init.spec;
+    settings.seed = init.seed;
+    settings.size = init.size;
+    settings.teams = init.teams;
+    TEAM_COLORS = colors;
+    placed = [];
+    await buildWorld();
+    if (watching !== w) return;
+  }
+  if (st.phase === 'placing') {
+    if (sim) {
+      stopSim();
+      watchSimStart = null;
+      mode = 'edit';
+      showZones(true);
+    }
+    setWatchStatus(t('v3.st.placing'));
+    watchDirty = true;
+    return;
+  }
+  const start = m.start;
+  if (start && start !== watchSimStart) {
+    watchSimStart = start;
+    await watchBattle(w, start);
+  }
+  if (watching === w) setWatchStatus(t(st.phase === 'result' ? 'v3.st.result' : 'v3.st.battle'));
+}
+
+async function watchBattle(w: NonNullable<typeof watching>, start: BattleStart): Promise<void> {
+  stopSim();
+  showZones(false);
+  const lay = layoutOf(start);
+  const kinds = new Set<number>();
+  for (let i = 0; i < lay.length; i += 4) kinds.add(lay[i + 1]);
+  await ensureAtlas(kinds);
+  if (watching !== w || watchSimStart !== start) return;
+  const cfg = battleConfig(start);
+  const opts = { send: (msg: Parameters<GuestSession['send']>[0]) => w.session.send(msg) };
+  let next: SimBackend | null = null;
+  if (self.crossOriginIsolated) {
+    try {
+      next = await LockstepWorkerSim.createLockstep(cfg, start.simSeed, w.session.model, opts);
+    } catch (e) {
+      console.warn('[3d] sim worker unavailable, running on the main thread', e);
+    }
+  }
+  next ??= new LockstepSim(cfg, start.simSeed, w.session.model, opts);
+  if (watching !== w || watchSimStart !== start) {
+    next.dispose();
+    return;
+  }
+  sim = next;
+  mode = 'battle';
+  battleStep = 0;
+  syncPanel();
+}
+
+/** Placement phase: shows every army the room lets spectators see. */
+function watchRefreshPlaced(): void {
+  if (!watching || mode !== 'edit') return;
+  placed = [...watching.session.model.placed.values()].map((p) => ({ team: p.team, kind: p.kind, x: p.x, y: p.y }));
+  void ensureAtlas().then(() => editUnits.set(placed));
+  editUnits.set(placed);
+}
+
 // ---- panel ----
 
 function sizeOptions(): number[] {
@@ -273,6 +444,8 @@ function buildPanel(): void {
   $('panel').innerHTML = `
     <h1>${t('v3.title')}</h1>
     <div class="row"><a href="../">${t('v3.back')}</a></div>
+    <div class="row"><label>${t('v3.watch')}</label><input id="w-code" type="text" maxlength="8" placeholder="${t('v3.code')}" autocapitalize="characters" autocomplete="off" /><button id="w-go" type="button"></button></div>
+    <div class="row"><span id="w-status" class="hint"></span></div>
     <div class="row"><label>${t('v3.map')}</label><select id="p-map">${PRESETS.map((p) => `<option value="${p.id}">${loc(p.name)}</option>`).join('')}</select></div>
     <div class="row"><label>${t('v3.seed')}</label><input id="p-seed" type="number" min="1" max="999999" /><button id="p-rnd" type="button">${t('v3.random')}</button></div>
     <div class="row"><label>${t('v3.size')}</label><select id="p-size">${sizeOptions().map((s) => `<option value="${s}">${t(`v3.sizeOpt.${s}`)}</option>`).join('')}</select></div>
@@ -320,6 +493,7 @@ function buildPanel(): void {
     settings.perTeam = Number(inp('p-per').value);
     $('p-per-v').textContent = String(settings.perTeam);
   };
+  $('w-go').onclick = () => (watching ? watchLeave() : void watchStart(inp('w-code').value));
   $('p-fill').onclick = () => void fill();
   $('p-clear').onclick = () => {
     placed = [];
@@ -382,8 +556,12 @@ function syncPanel(): void {
   sel('p-hl').value = String(settings.highlight);
   inp('p-brush').value = String(settings.brush);
   inp('p-bars').checked = settings.bars;
-  $('edit-ui').hidden = mode !== 'edit';
-  $('battle-ui').hidden = mode !== 'battle';
+  $('edit-ui').hidden = mode !== 'edit' || !!watching;
+  $('battle-ui').hidden = mode !== 'battle' || !!watching;
+  $('w-go').textContent = watching ? t('v3.leaveBtn') : t('v3.watchBtn');
+  $<HTMLButtonElement>('w-go').disabled = false;
+  inp('w-code').disabled = !!watching;
+  for (const id of ['p-map', 'p-seed', 'p-rnd', 'p-size', 'p-teams']) ($(id) as HTMLInputElement).disabled = !!watching;
   $('b-pause').textContent = paused ? t('v3.resume') : t('v3.pause');
   document.querySelectorAll<HTMLElement>('#p-tool button').forEach((b) => b.classList.toggle('on', b.dataset.tool === controls.tool));
   document.querySelectorAll<HTMLElement>('#b-speed button').forEach((b) => b.classList.toggle('on', Number(b.dataset.s) === speed));
@@ -398,6 +576,10 @@ function frame(now: number, last: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   fps += (1 / Math.max(0.001, dt) - fps) * 0.08;
   controls.update(dt);
+  if (watchDirty) {
+    watchDirty = false;
+    watchRefreshPlaced();
+  }
   view.setOutlineColor(settings.highlight >= 0 ? TEAM_COLORS[settings.highlight].main : 0xffffff);
   const focus = settings.highlight;
   if (mode === 'battle' && sim) {
@@ -461,7 +643,11 @@ async function main(): Promise<void> {
   requestAnimationFrame(loop);
   syncPanel();
   // Automation / sharing links: ?auto=1 fills the armies and starts the battle.
-  if (qp.get('auto')) {
+  const watchCode = qp.get('watch');
+  if (watchCode) {
+    $<HTMLInputElement>('w-code').value = watchCode;
+    void watchStart(watchCode);
+  } else if (qp.get('auto')) {
     await fill();
     await startBattle();
     if (qp.get('speed')) {
@@ -470,7 +656,7 @@ async function main(): Promise<void> {
       syncPanel();
     }
   }
-  (window as unknown as { __v3: unknown }).__v3 = { view, settings, get sim() { return sim; }, get placed() { return placed; }, fill, startBattle, buildWorld, };
+  (window as unknown as { __v3: unknown }).__v3 = { view, settings, get sim() { return sim; }, get placed() { return placed; }, get zones() { return zones; }, get terrain() { return terrain; }, fill, startBattle, buildWorld, };
 }
 
 void main();

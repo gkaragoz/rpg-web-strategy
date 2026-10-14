@@ -166,6 +166,8 @@ export class View3D {
     this.hover.renderOrder = 10;
     this.scene.add(this.hover);
     this.resize();
+    // The host element changes size with the phone's address bar, rotation and the soft keyboard.
+    new ResizeObserver(() => this.resize()).observe(host);
   }
 
   // ---- geometry buffers ----
@@ -266,7 +268,9 @@ export class View3D {
     (this.scene.fog as THREE.FogExp2).density = 0.0035;
     this.uniforms.uFogColor.value.copy(this.fogColor);
     this.uniforms.uFogDensity.value = 0.0035;
-    this.rig = clampRig({ ...this.rig, fx: c, fz: c, dist: t.size * 1.05 }, t.size);
+    // Portrait screens need to stand further back to see the width of the map.
+    const wide = Math.max(1, 0.95 / Math.max(0.2, this.camera.aspect));
+    this.rig = clampRig({ ...this.rig, fx: c, fz: c, dist: t.size * 1.05 * wide }, t.size);
     this.buildDecor();
   }
 
