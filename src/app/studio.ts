@@ -27,6 +27,8 @@ export interface StudioDeps {
   preview?: UnitPreview;
   /** A new type was picked: the atlas is baked if needed. */
   onKindPick: (kind: number) => void;
+  /** The 3D view is active (the hint line names the 3D camera keys). */
+  view3d?: boolean;
 }
 
 const KIND_KEYS = ['1', '2', '3', '4', '5'];
@@ -164,7 +166,7 @@ export class Studio {
     <button id="online" type="button" class="sec" title="${t('studio.online.title')}">${t('studio.online')}</button>
     <button id="start" type="button" class="primary">${t('studio.start')}</button>
   </div>
-  <div class="dock-hint" id="hint">${t('studio.hint')}</div>
+  <div class="dock-hint" id="hint">${t(this.d.view3d ? 'studio.hint3d' : 'studio.hint')}</div>
 </div>
 <div id="toasts" class="toasts" aria-live="polite"></div>`;
   }

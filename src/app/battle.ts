@@ -312,7 +312,7 @@ export class BattleScene {
   <button type="button" id="hud-restart">${t('battle.restart')}</button>
   <button type="button" id="hud-edit" class="primary">${t('battle.edit')}</button>
 </div>
-<div class="hud-hint">${window.matchMedia('(pointer: coarse)').matches ? t('battle.hint.touch') : ''}${window.matchMedia('(pointer: coarse)').matches ? '' : this.opts.online ? (this.opts.online.isHost ? t('battle.hint.host') : t('battle.hint.guest')) + t('battle.hint.online') : t('battle.hint.solo')}</div>
+<div class="hud-hint">${window.matchMedia('(pointer: coarse)').matches ? t(this.d.battle3d ? 'battle.hint.touch3d' : 'battle.hint.touch') : ''}${window.matchMedia('(pointer: coarse)').matches ? '' : this.opts.online ? (this.opts.online.isHost ? t('battle.hint.host') : t('battle.hint.guest')) + t(this.d.battle3d ? 'battle.hint.online3d' : 'battle.hint.online') : t(this.d.battle3d ? 'battle.hint.solo3d' : 'battle.hint.solo')}</div>
 <div class="result" id="hud-result" hidden></div>`;
     const q = (s: string) => root.querySelector(s) as HTMLElement;
     q('#hud-pause').addEventListener('click', () => this.togglePause());

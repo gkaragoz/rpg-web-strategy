@@ -56,6 +56,8 @@ function saveLast(l: LastSession | null): void {
 export { RELAY_URL };
 /** The first connection to the relay (TLS + Durable Object cold start) can be slower than LAN. */
 const RELAY_TIMEOUT_MS = 12000;
+/** `?relay=off` skips the internet relay (to test the direct WebRTC route). */
+const relayOff = (): boolean => new URLSearchParams(location.search).get('relay') === 'off';
 /** Shared join address of internet lobbies (Pages). */
 const PAGES_URL = 'https://gkaragoz.github.io/rpg-web-strategy/';
 
@@ -180,6 +182,7 @@ export class OnlineApp {
         try {
           if (kind === 'net') {
             try {
+              if (relayOff()) throw new NetError('failed', 'relay disabled');
               tp = await WsHostTransport.create(lanUrl(code, 'host', RELAY_URL), RELAY_TIMEOUT_MS);
               this.via = 'relay';
             } catch (re) {
@@ -237,6 +240,7 @@ export class OnlineApp {
         kind = 'net';
         this.menu?.setStatus(t('online.st.relay'));
         try {
+          if (relayOff()) throw new NetError('failed', 'relay disabled');
           tp = await WsGuestTransport.create(lanUrl(code, 'guest', RELAY_URL), RELAY_TIMEOUT_MS);
           this.via = 'relay';
         } catch (re) {

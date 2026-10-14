@@ -395,6 +395,7 @@ function onPaletteChange(): void {
 
 studio = new Studio(studioRoot, {
   state,
+  view3d,
   editor,
   onMapChange,
   onPaletteChange,

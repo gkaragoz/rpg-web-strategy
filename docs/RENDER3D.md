@@ -31,8 +31,8 @@ guest see exactly the same battle). Cross-view online play works (3D host + 2D g
 | `fx3d.ts` | pure effect pool: hit sparks, dust, bursts, floating damage/heal numbers from sim events |
 
 ## Controls
-- Mouse: left paint / right erase exactly as in 2D; **middle-drag pans**, **Alt + left-drag rotates and tilts**, wheel zooms to the cursor,
-  W A S D / arrows pan, Q/E rotate, R/F tilt. The buttons at the bottom right (↺ ↻ ⤒ ⤓) rotate and tilt.
+- Mouse: left paint / right erase exactly as in 2D; **middle-drag (or Alt + left-drag) rotates and tilts**, **Shift + middle-drag pans**, wheel zooms to the cursor,
+  W A S D / arrows pan, [ ] turn, PageUp/PageDown tilt (Q/E, R and F stay with the studio and battle). The buttons at the bottom right (↺ ↻ ⤒ ⤓) rotate and tilt.
 - Touch: one finger paints (pans in battle), two fingers pinch-zoom, twist-rotate and drag; tilt with the buttons.
 
 ## Differences from 2D

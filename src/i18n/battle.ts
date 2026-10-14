@@ -37,6 +37,9 @@ export const battle: StringTable = {
 
     // Hint line
     'battle.hint.touch': 'One finger: pan · Two fingers: zoom / pan',
+    'battle.hint.touch3d': 'One finger: pan · Two fingers: zoom / turn / pan',
+    'battle.hint.online3d': 'F3: statistics · Middle button: rotate · Shift+middle / WASD: pan · wheel: zoom · [ ] turn · PgUp/PgDn: tilt',
+    'battle.hint.solo3d': 'Space: pause · R: restart · Esc: edit · 1-2-3: speed · F3: statistics · Middle button: rotate · Shift+middle / WASD: pan · wheel: zoom · [ ] turn · PgUp/PgDn: tilt',
     'battle.hint.host': 'Space: pause · 1-2-3: speed (host only) · ',
     'battle.hint.guest': 'Speed and pause are host-only · ',
     'battle.hint.online': 'F3: statistics · WASD / middle button: pan · wheel: zoom',
@@ -146,6 +149,9 @@ export const battle: StringTable = {
     'battle.leave.guest': 'Lobiden ayrıl',
 
     'battle.hint.touch': 'Tek parmak: kaydır · İki parmak: yakınlaştır / kaydır',
+    'battle.hint.touch3d': 'Tek parmak: kaydır · İki parmak: yakınlaştır / döndür / kaydır',
+    'battle.hint.online3d': 'F3: istatistik · Orta tuş: döndür · Shift+orta tuş / WASD: kaydır · tekerlek: yakınlaş · [ ] çevir · PgUp/PgDn: eğ',
+    'battle.hint.solo3d': 'Space: duraklat · R: yeniden başlat · Esc: düzenle · 1-2-3: hız · F3: istatistik · Orta tuş: döndür · Shift+orta tuş / WASD: kaydır · tekerlek: yakınlaş · [ ] çevir · PgUp/PgDn: eğ',
     'battle.hint.host': 'Space: duraklat · 1-2-3: hız (yalnız host) · ',
     'battle.hint.guest': 'Hız ve duraklatma yalnız host’ta · ',
     'battle.hint.online': 'F3: istatistik · WASD / orta tuş: kaydır · tekerlek: yakınlaş',

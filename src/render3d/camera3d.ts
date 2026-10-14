@@ -5,8 +5,8 @@ import type { View3D } from './scene3d';
 
 /**
  * The 3D camera, behind the same interface as the 2D one so the editor and battle HUD work unchanged.
- * Mouse: middle-drag pans, Alt+left-drag rotates and tilts, wheel zooms to the cursor (left and right buttons belong to the
- * editor: paint / erase). Keys: WASD / arrows pan, Q/E rotate, R/F tilt. Touch: one finger pans only in battle (otherwise it
+ * Mouse: middle-drag (or Alt+left-drag) rotates and tilts, Shift+middle-drag pans, wheel zooms to the cursor (left and right buttons belong to the
+ * editor: paint / erase). Keys: WASD / arrows pan, [ ] turn, PageUp/PageDown tilt (Q/E, R and F belong to the studio and the battle). Touch: one finger pans only in battle (otherwise it
  * paints), two fingers pinch-zoom, twist-rotate and drag.
  */
 export class Camera3D implements CameraBackend {
@@ -114,7 +114,7 @@ export class Camera3D implements CameraBackend {
     }
     if (e.button === 1) {
       e.preventDefault();
-      this.mode = 'pan';
+      this.mode = e.shiftKey ? 'pan' : 'rotate';
     } else if (e.button === 0 && e.altKey) {
       e.preventDefault();
       this.mode = 'rotate';
@@ -204,9 +204,9 @@ export class Camera3D implements CameraBackend {
     const ay = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
     r.fx += (a.rx * ax + a.ux * ay) * sp;
     r.fz += (a.rz * ax + a.uz * ay) * sp;
-    if (k.has('KeyQ')) r.yaw += 1.6 * dt;
-    if (k.has('KeyE')) r.yaw -= 1.6 * dt;
-    if (k.has('KeyR')) r.tilt = Math.min(TILT_MAX, r.tilt + 0.9 * dt);
-    if (k.has('KeyF')) r.tilt = Math.max(TILT_MIN, r.tilt - 0.9 * dt);
+    if (k.has('BracketLeft')) r.yaw += 1.6 * dt;
+    if (k.has('BracketRight')) r.yaw -= 1.6 * dt;
+    if (k.has('PageUp')) r.tilt = Math.min(TILT_MAX, r.tilt + 0.9 * dt);
+    if (k.has('PageDown')) r.tilt = Math.max(TILT_MIN, r.tilt - 0.9 * dt);
   }
 }
