@@ -1,4 +1,5 @@
-import { t } from '../i18n';
+import { getLang, t } from '../i18n';
+import { isPlainShortcut, langKeys } from './hotkeys';
 import type { UnitPreview } from './unitPreview';
 import { initSheet } from './sheet';
 import { LEGACY_COUNT, MAX_TEAMS, unitDisplayName } from '../sim/units';
@@ -481,12 +482,20 @@ export class Studio {
       }
       return;
     }
+    const keys = langKeys(getLang());
+    if (e.code === keys.gallery) {
+      if (!isPlainShortcut(e)) return;
+      e.preventDefault();
+      this.gallery.toggle();
+      return;
+    }
+    if (this.gallery.isOpen) return;
     if (e.code === 'KeyQ') s.selTeam = (s.selTeam + s.teamCount - 1) % s.teamCount;
     else if (e.code === 'KeyE') s.selTeam = (s.selTeam + 1) % s.teamCount;
     else if (e.code === 'KeyX') s.tool = s.tool === 'place' ? 'erase' : 'place';
     else if (e.code === 'KeyZ') this.d.editor.undo();
     else if (e.code === 'KeyY') this.d.editor.redo();
-    else if (e.code === 'KeyB') s.brush = (s.brush + 1) % BRUSHES.length;
+    else if (e.code === keys.brush) s.brush = (s.brush + 1) % BRUSHES.length;
     else if (e.code.startsWith('Digit')) {
       const k = Number(e.code.slice(5)) - 1;
       if (k < 0 || k >= LEGACY_COUNT) return;

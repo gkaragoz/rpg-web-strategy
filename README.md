@@ -110,7 +110,7 @@ palette, soldier placement and a benchmark.
 |---|---|
 | Left click / drag | Place soldiers (brush: Single / Small / Large) |
 | Right click / drag | Erase (Shift: only the selected team) |
-| Q / E | Switch team · 1–5: soldier type · B: brush · X: place/erase |
+| Q / E | Switch team · 1–5: soldier type · B: brush (F in Turkish) · X: place/erase · U: units gallery (B in Turkish; not while typing) |
 | Ctrl+Z / Ctrl+Y (or Z / Y) | Undo / redo |
 | Wheel, WASD, middle button | Zoom, pan (2D view) |
 | Middle button or Alt + drag · Shift + middle button · `[` `]` · PageUp / PageDown | (3D view) rotate and tilt · pan · turn · tilt; the buttons at the bottom right do the same |

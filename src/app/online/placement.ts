@@ -1,4 +1,5 @@
-import { t } from '../../i18n';
+import { getLang, t } from '../../i18n';
+import { isPlainShortcut, langKeys } from '../hotkeys';
 import { act } from '../../net/act';
 import { MAX_ROOM_UNITS, spent, teamZones, type Zone } from '../../net/economy';
 import { fmtDamage } from '../dpsMeter';
@@ -410,6 +411,14 @@ export class Placement {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
     if (!this.editor) return;
+    const keys = langKeys(getLang());
+    if (e.code === keys.gallery && this.gallery) {
+      if (!isPlainShortcut(e)) return;
+      e.preventDefault();
+      this.gallery.toggle();
+      return;
+    }
+    if (this.gallery?.isOpen) return;
     if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
       e.preventDefault();
       if (e.shiftKey) this.editor.redo();
@@ -419,7 +428,7 @@ export class Placement {
     else if (e.code === 'KeyX') {
       this.state.tool = this.state.tool === 'place' ? 'erase' : 'place';
       this.refreshUi();
-    } else if (e.code === 'KeyB') {
+    } else if (e.code === keys.brush) {
       this.state.brush = (this.state.brush + 1) % BRUSHES.length;
       this.refreshUi();
     } else if (e.code.startsWith('Digit')) {

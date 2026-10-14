@@ -65,6 +65,16 @@ export class UnitGallery {
     if (!this.dlg.open) this.dlg.showModal();
   }
 
+  get isOpen(): boolean {
+    return this.dlg.open;
+  }
+
+  /** Keyboard shortcut: closes the gallery when it is open, opens it unless some other dialog is in front. */
+  toggle(): void {
+    if (this.dlg.open) this.dlg.close();
+    else if (!document.querySelector('dialog[open]')) this.open();
+  }
+
   /** Short summary of the selected unit (for the dock button). */
   static summary(kind: number): string {
     return unitDisplayName(kind);
