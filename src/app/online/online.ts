@@ -46,6 +46,10 @@ function loadLast(): LastSession | null {
     return null;
   }
 }
+/** Whether a fresh rejoin entry exists (used by the page-reload resume). */
+export function canRejoin(): boolean {
+  return loadLast() !== null;
+}
 function saveLast(l: LastSession | null): void {
   try {
     if (l) sessionStorage.setItem(LAST_KEY, JSON.stringify(l));
@@ -139,6 +143,24 @@ export class OnlineApp {
 
   get active(): boolean {
     return !this.dead;
+  }
+
+  /** The screen shown now (the app's history follows it; see `app/nav.ts`). */
+  get screenName(): Screen {
+    return this.screen;
+  }
+
+  /** A host/join attempt is in flight (the menu is still shown, but the player is on the way into a room). */
+  get connecting(): boolean {
+    return this.busy;
+  }
+
+  /** Rejoins the last room from the stored rejoin entry (page reload resume); false if there is none. Call after `openMenu`. */
+  rejoinLast(): boolean {
+    const l = loadLast();
+    if (!l) return false;
+    void this.join(l.name, l.color, l.code, '', !!l.spectator, l.token);
+    return true;
   }
 
   // ---------------------------------------------------------------- menu

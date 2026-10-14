@@ -6,7 +6,9 @@ import { UnitPreview, type FrameJob } from './app/unitPreview';
 import './app/studio.css';
 import { BattleScene, type BattleOptions } from './app/battle';
 import { Editor } from './app/editor';
-import { OnlineApp } from './app/online/online';
+import { Nav, screenOfState, type NavScreen, type NavVerdict } from './app/nav';
+import { OnlineApp, canRejoin } from './app/online/online';
+import { resumeAction, resumeScreenFor, saveResume, takeResume } from './app/resume';
 import type { Battle3D, CameraBackend, WorldBackend } from './app/backend';
 import { loadState, saveState, saveStateNow, teamColors } from './app/state';
 import { Studio } from './app/studio';
@@ -171,12 +173,19 @@ if (!isBench) {
       saveStateNow(state); // the debounced save would be lost by the reload
       const u = new URL(location.href);
       u.searchParams.delete('view');
-      location.replace(u.toString());
+      // Same entry, same history marker (location.replace would drop it and leave a bogus entry behind).
+      history.replaceState(history.state, '', u.toString());
+      location.reload();
     },
-    // Switching reloads the page: leave an active online session cleanly first (keeps the rejoin entry).
+    // Switching reloads the page: remember the screen (restored on boot), then leave an active online session cleanly first (keeps the rejoin entry).
     beforeSwitch: () => {
-      if (!online?.inSession) return true;
+      const screen = resumeScreenFor({ inOnlineSession: !!online?.inSession, inStudioOrSoloBattle: !online && (mode === 'studio' || mode === 'battle') });
+      if (!online?.inSession) {
+        saveResume(screen);
+        return true;
+      }
       if (!window.confirm(t('sys.lang.confirmLeave'))) return false;
+      saveResume(screen);
       online.exit(true, true);
       return true;
     },
@@ -371,7 +380,7 @@ function beginFrameJob(kind: number, team: number, frames: number): FrameJob {
   const cleanup = (): void => {
     if (dead) return;
     dead = true;
-    box.destroy({ children: true });
+    box.destroy({ children: true, context: true });
   };
   return {
     step() {
@@ -409,7 +418,7 @@ function renderIcon(kind: number, team: number): HTMLCanvasElement {
     const tex = app.renderer.generateTexture({ target: box, frame: new Rectangle(0, 0, W, H), resolution: 1.5, antialias: true });
     src = app.renderer.extract.canvas(tex) as HTMLCanvasElement;
     tex.destroy(true);
-    box.destroy({ children: true });
+    box.destroy({ children: true, context: true });
     iconCache.set(key, src);
   }
   const out = document.createElement('canvas');
@@ -498,6 +507,7 @@ async function enterBattle(opts: BattleOptions): Promise<void> {
   }
   stats.setShown(STATS_DEFAULT_SHOWN);
   mode = 'battle';
+  nav.go('battle');
 }
 
 /** A double click / double tap on Start must not start two battles (the stale one would leave `mode` at 'battle' with no simulation). */
@@ -518,6 +528,7 @@ async function startBattle(): Promise<void> {
 }
 
 async function backToStudio(): Promise<void> {
+  if (nav.cur === 'battle') nav.go('studio'); // (a Back press has already moved the history)
   battle.exit();
   mode = 'studio';
   rebuildWorld(false);
@@ -588,16 +599,57 @@ function startOnline(joinCode?: string): void {
       rebuildWorld(false);
       camera.fit(world.size().w, world.size().h);
       stats.setShown(false);
-      if (location.hash.startsWith('#join=')) history.replaceState(null, '', location.pathname + location.search);
+      if (location.hash.startsWith('#join=')) history.replaceState(history.state, '', location.pathname + location.search);
       if (home) startOnline();
       else {
         studio.show();
         editor.enter();
+        nav.go('studio');
       }
     },
   });
   app2.openMenu(joinCode);
+  nav.go('home');
 }
+
+// ---- Browser history (Back/Forward behave like an app; see app/nav.ts) ----
+
+/** Online screens follow the OnlineApp: the home menu is the base entry, a room (lobby / placement / battle) is one entry above it. */
+function syncNav(): void {
+  if (!online) return;
+  if (online.screenName !== 'menu') nav.go('online');
+  else if (!online.connecting) nav.go('home');
+}
+
+/** The player pressed Back/Forward (or the phone's system Back): move the app to the matching screen. */
+async function navMove(target: NavScreen, from: NavScreen): Promise<NavVerdict> {
+  if (startingBattle) return 'stay';
+  if (target === 'home') {
+    if (online?.inSession) {
+      // Never drop a player silently: same confirmation pattern as the language switch.
+      if (!window.confirm(t('sys.nav.confirmLeave'))) return 'stay';
+      online.exit();
+      return 'ok';
+    }
+    if (mode === 'battle') await backToStudio();
+    if (!online) startOnline();
+    return 'ok';
+  }
+  if (target === 'studio') {
+    if (mode === 'battle') await backToStudio();
+    else if (online && !online.inSession) online.exit(false, false, true);
+    else if (online) return 'revert';
+    return 'ok';
+  }
+  if (target === 'battle') {
+    if (mode !== 'studio' || online) return 'revert';
+    void startBattle();
+    return 'ok';
+  }
+  // 'online' (forward into a room entry): a room cannot be restored from history.
+  return from === 'home' ? 'revert' : 'stay';
+}
+const nav = new Nav(history, navMove);
 
 // ---- Main loop ----
 
@@ -620,6 +672,7 @@ function frame(now: number): void {
   last = now;
   if (mode !== 'studio') adaptResolution(frameMs);
   if (mode === 'online' && online) {
+    syncNav();
     online.frame(now, frameMs);
     return;
   }
@@ -648,7 +701,19 @@ if (isBench) {
   editor.enter();
   // The game opens on the home page (the former online menu); "Your own simulation" leads to the studio.
   const joinHash = /^#join=([A-Za-z0-9]{4,8})$/.exec(location.hash);
-  startOnline(joinHash ? joinHash[1].toUpperCase() : undefined);
+  // A reload by the language / 2D-3D switch (or a plain refresh) comes back to the screen it was on (see app/resume.ts).
+  const rec = takeResume();
+  const histScreen = screenOfState(history.state);
+  const act = joinHash ? 'home' : resumeAction(rec ?? (histScreen === 'studio' || histScreen === 'battle' ? { screen: 'studio', at: Date.now() } : null), canRejoin());
+  if (act === 'studio') {
+    // The studio is already shown; battles are not resumed.
+    nav.boot('studio');
+  } else {
+    startOnline(joinHash ? joinHash[1].toUpperCase() : undefined);
+    if (act === 'rejoin' && (online as OnlineApp | null)?.rejoinLast()) nav.boot('online');
+    else nav.boot('home');
+  }
+  nav.start(window);
   // A join link pasted into an already open page only changes the hash (no reload): put its code into the home page.
   window.addEventListener('hashchange', () => {
     const h = /^#join=([A-Za-z0-9]{4,8})$/.exec(location.hash);

@@ -27,6 +27,9 @@ const NUMBER_STYLE: TextStyleOptions = {
     * arrow trails/impacts, camera shake and floating damage numbers. Particles are drawn from
     * the atlas with a single ParticleContainer; the numbers are pooled Text objects.
  */
+/** Terrain in front hiding more than this many pixels of a ground point hides the effects there. */
+const BEHIND_RIDGE_PX = 40;
+
 export class FxSystem {
   readonly layer: ParticleContainer;
   readonly numbers = new Container();
@@ -59,6 +62,8 @@ export class FxSystem {
 
   /** Terrain height (screen pixels); so events are drawn in the right place on slopes. */
   elev: (x: number, y: number) => number = () => 0;
+  /** Pixels of terrain in front that hide a ground point (a ridge); events behind a ridge spawn no effect. */
+  cover: (x: number, y: number) => number = () => 0;
 
   constructor(
     private readonly atlas: Atlas,
@@ -145,6 +150,7 @@ export class FxSystem {
       const sx = isoX(ev.x, ev.y);
       const sy = isoY(ev.x, ev.y, this.elev(ev.x, ev.y));
       if (!this.inView(sx, sy, view)) continue;
+      if (this.cover(ev.x, ev.y) > BEHIND_RIDGE_PX) continue;
       budget--;
       switch (ev.type) {
         case 'hit':

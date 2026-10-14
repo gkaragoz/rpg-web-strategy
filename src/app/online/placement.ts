@@ -271,6 +271,7 @@ export class Placement {
         const bad: PlacedUnit[] = [];
         for (const cid of msg.cids) {
           if (this.stale.delete(cid)) continue;
+          this.cancelled.delete(cid); // refused: there is nothing left on the host to remove
           const u = this.pending.get(cid);
           if (u) {
             bad.push(u);
@@ -352,6 +353,12 @@ export class Placement {
           this.pumpOutbox();
           this.editor.removeSilently([u]);
         } else u.id = it.id;
+        return null;
+      }
+      if (mine && !u && this.stale.delete(it.cid)) {
+        // The answer to a request that was superseded (erase + undo): the host now holds a second copy, take it back.
+        this.outbox.remove([it.id]);
+        this.pumpOutbox();
         return null;
       }
       // One of my own units placed earlier (reconnect, rematch): add it to the local state.
@@ -543,6 +550,10 @@ export class Placement {
     if (this.outTimer) clearTimeout(this.outTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.outbox.clear();
+    this.pending.clear();
+    this.cancelled.clear();
+    this.stale.clear();
+    this.removedById.clear();
     this.editor?.exit();
     this.top.remove();
     this.sheet?.destroy();

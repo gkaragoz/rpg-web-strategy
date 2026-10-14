@@ -10,7 +10,7 @@ import { MAX_TEAMS, STATS, isMelee, isRanged, isTank } from '../sim/units';
 import { DEATH_FADE, POSES, statusTint } from './unitView';
 import { projStyle } from './projectileStyle';
 import { flatColorFilter } from './outlineFilter';
-import { coverAt, HIDDEN_BODY_PX, slabTable, slabZ } from './depthSort';
+import { coverAt, HIDDEN_BODY_PX, liftAt, slabTable, slabZ } from './depthSort';
 import type { DepthInfo } from '../app/world';
 
 const DEPTH_SCALE = 4;
@@ -51,6 +51,9 @@ export class MassRenderer {
    * layer. Flat maps have a single slab. A slab also owns the outline silhouettes of its units (drawn just below them).
    */
   private readonly slabs: Array<{ units: ParticleContainer; focus: ParticleContainer; uOut: IParticle[]; fOut: IParticle[] }> = [];
+  /** Per-tile key raise of the depth info (null without relief bands). */
+  private liftTab: Uint8Array | null = null;
+  private liftN = 0;
   private slabOf = new Uint16Array(0);
   private slabFirst = new Int32Array(0);
   private slabBase = new Int32Array(0);
@@ -117,6 +120,8 @@ export class MassRenderer {
     private readonly depth: DepthInfo | null = null,
   ) {
     this.cuts = depth ? depth.cuts : [];
+    this.liftTab = depth && depth.cuts.length > 0 ? depth.lift : null;
+    this.liftN = depth ? depth.size : 0;
     this.unitTex = atlas.unitTex;
     this.unitAnchor = atlas.unitAnchor;
     this.arrowTex = atlas.arrowTex;
@@ -190,7 +195,7 @@ export class MassRenderer {
       sl.units.destroy();
       sl.focus.destroy();
     }
-    this.top.destroy({ children: true });
+    this.top.destroy({ children: true, context: true });
     this.silSource?.destroy(true);
     this.chevronTex.destroy(true);
   }
@@ -228,7 +233,8 @@ export class MassRenderer {
       const spr = list[d.variant % list.length];
       this.decorX[i] = isoX(d.x, d.y);
       this.decorY[i] = isoY(d.x, d.y, this.terrain ? this.terrain.elevPx(d.x, d.y) : 0);
-      this.decorKey[i] = Math.min(maxKey, Math.max(0, ((d.x + d.y) * DEPTH_SCALE) | 0));
+      const dl = this.depth && this.depth.cuts.length > 0 ? liftAt(this.depth.lift, this.depth.size, d.x, d.y) : 0;
+      this.decorKey[i] = Math.min(maxKey, Math.max(0, ((d.x + d.y + dl) * DEPTH_SCALE) | 0));
       this.decorParticles.push(new Particle({ texture: spr.texture, x: this.decorX[i], y: this.decorY[i], anchorX: spr.ax, anchorY: spr.ay }));
     });
   }
@@ -368,8 +374,8 @@ export class MassRenderer {
         // Standing higher than its current target (half steps): that is what earns the damage and range bonus.
         const adv = u.hgAdv[i];
         // Chevrons (like health bars) are not shown for a unit that a ridge in front mostly hides.
-        const hidden = this.covered(wx, wy) > HIDDEN_BODY_PX * STATS[u.kind[i]].scale;
-        this.markLevel[i] = hidden ? 0 : adv >= 6 ? 3 : adv >= 4 ? 2 : adv >= 2 ? 1 : 0;
+        const lvl = adv >= 6 ? 3 : adv >= 4 ? 2 : adv >= 2 ? 1 : 0;
+        this.markLevel[i] = lvl > 0 && this.covered(wx, wy) <= HIDDEN_BODY_PX * STATS[u.kind[i]].scale ? lvl : 0;
         this.markSx[i] = sx;
         this.markSy[i] = sy;
       }
@@ -386,7 +392,7 @@ export class MassRenderer {
         p.texture = this.unitTex[(kind * MAX_TEAMS + u.team[i]) * POSES];
         p.tint = u.flash[i] > 0 ? 0xff9a9a : u.status[i] !== 0 ? statusTint(u.status[i]) : 0xffffff;
         p.alpha = 1;
-        let key = Math.min(maxKey, Math.max(0, ((boxes ? boxes.frontKey(wx, wy, wx + wy, 0.3) : wx + wy) * DEPTH_SCALE) | 0));
+        let key = Math.min(maxKey, Math.max(0, this.sortKey(boxes, wx, wy)));
         const lk = this.lastKey[i];
         if (lk >= 0 && Math.abs(key - lk) < 2) key = lk;
         this.lastKey[i] = key;
@@ -441,7 +447,7 @@ export class MassRenderer {
       // In the air (comedy physics): spins fast.
       if (alive && lift > 0.04) p.rotation = (time * 13 + i) * u.facing[i];
       // Depth key hysteresis: on small changes the order stays the same (overlapping units do not flicker).
-      let key = Math.min(maxKey, Math.max(0, ((boxes ? boxes.frontKey(wx, wy, wx + wy, 0.3) : wx + wy) * DEPTH_SCALE) | 0));
+      let key = Math.min(maxKey, Math.max(0, this.sortKey(boxes, wx, wy)));
       const lk = this.lastKey[i];
       if (lk >= 0 && Math.abs(key - lk) < 2) key = lk;
       this.lastKey[i] = key;
@@ -495,6 +501,17 @@ export class MassRenderer {
     this.syncArrows(view, alpha * (opt.stepDt ?? SIM_DT));
     this.syncBars(alpha, view, opt.bars);
     this.syncMarks(zoom);
+  }
+
+  /** Quantized depth key of a unit at (x, y): x+y raised on uncovered relief tiles (see computeLift) and above the big decor it stands in front of. */
+  private sortKey(boxes: DepthInfo['boxes'] | null, x: number, y: number): number {
+    let k = x + y;
+    const lt = this.liftTab;
+    if (lt !== null) {
+      const n = this.liftN;
+      k += lt[(y < 0 ? 0 : y >= n ? n - 1 : y | 0) * n + (x < 0 ? 0 : x >= n ? n - 1 : x | 0)];
+    }
+    return ((boxes ? boxes.frontKey(x, y, k, 0.3) : k) * DEPTH_SCALE) | 0;
   }
 
   /** Pixels of terrain in front that hide a ground point (0 without relief). */

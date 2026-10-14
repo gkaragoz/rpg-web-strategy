@@ -28,14 +28,83 @@ export interface ReliefBands {
   tiles: Map<number, number[]>;
 }
 
-/** Groups the tiles that have relief (some corner above 0) by origin sum tx+ty, in `width`-wide bands. */
-export function reliefBands(size: number, vertexH: (vx: number, vy: number) => number, width = 1): ReliefBands {
+/** Tiles whose highest corner is at most this many levels are drawn flat in the base layer (a 9 px bump hides nothing worth sorting). */
+export const FLAT_LEVELS = 0.35;
+/** Low tiles that carry river, bridge or island art stay in the base layer too, so the static overlay is drawn over them. */
+export const OVERLAY_LEVELS = 1.6;
+
+/** The terrain data `overlayTiles` needs (a structural subset of `Terrain`). */
+export interface OverlaySource {
+  size: number;
+  riverKind: string;
+  toS(x: number, y: number): number;
+  toD(x: number, y: number): number;
+  offsetAt(s: number): number;
+  widthAt(s: number): number;
+  landTiles: readonly number[];
+  crossWaterTiles: readonly number[];
+  crossBridgeTiles: readonly number[];
+  bridges: ReadonlyArray<{ s: number; o: number; halfLen: number; halfW: number }>;
+}
+
+/** Tiles (index ty * size + tx) that carry static overlay art (river with banks, islands, channels, bridges, fords). */
+export function overlayTiles(t: OverlaySource): Uint8Array {
+  const n = t.size;
+  const mask = new Uint8Array(n * n);
+  const mark = (idx: number, grow: number): void => {
+    const cx = idx % n;
+    const cy = (idx / n) | 0;
+    for (let y = Math.max(0, cy - grow); y <= Math.min(n - 1, cy + grow); y++) for (let x = Math.max(0, cx - grow); x <= Math.min(n - 1, cx + grow); x++) mask[y * n + x] = 1;
+  };
+  if (t.riverKind !== 'none') {
+    for (let ty = 0; ty < n; ty++) {
+      for (let tx = 0; tx < n; tx++) {
+        // Sample the corners and the centre of the tile against the river band plus its bank.
+        for (let k = 0; k < 5; k++) {
+          const x = tx + (k === 4 ? 0.5 : k & 1);
+          const y = ty + (k === 4 ? 0.5 : k >> 1);
+          const s = t.toS(x, y);
+          if (Math.abs(t.toD(x, y) - t.offsetAt(s)) <= t.widthAt(s) / 2 + 1.4) {
+            mask[ty * n + tx] = 1;
+            break;
+          }
+        }
+      }
+    }
+  }
+  for (const i of t.landTiles) mark(i, 1);
+  for (const i of t.crossWaterTiles) mark(i, 1);
+  for (const i of t.crossBridgeTiles) mark(i, 1);
+  if (t.bridges.length > 0) {
+    for (let ty = 0; ty < n; ty++) {
+      for (let tx = 0; tx < n; tx++) {
+        const s = t.toS(tx + 0.5, ty + 0.5);
+        const d = t.toD(tx + 0.5, ty + 0.5);
+        for (const b of t.bridges) {
+          if (Math.abs(s - b.s) < b.halfW + 1.2 && Math.abs(d - b.o) < b.halfLen + 1.2) {
+            mask[ty * n + tx] = 1;
+            break;
+          }
+        }
+      }
+    }
+  }
+  return mask;
+}
+
+/**
+ * Groups the tiles that have relief by origin sum tx+ty, in `width`-wide bands. Nearly flat tiles (and, with `overlay`, low tiles
+ * under river/bridge art) are left out: they stay in the base layer.
+ */
+export function reliefBands(size: number, vertexH: (vx: number, vy: number) => number, width = 1, overlay?: Uint8Array | null): ReliefBands {
   const tiles = new Map<number, number[]>();
   for (let sum = 0; sum <= 2 * size - 2; sum++) {
     const key = sum - (sum % width);
     for (let tx = Math.max(0, sum - size + 1); tx <= Math.min(size - 1, sum); tx++) {
       const ty = sum - tx;
-      if (vertexH(tx, ty) <= 0 && vertexH(tx + 1, ty) <= 0 && vertexH(tx, ty + 1) <= 0 && vertexH(tx + 1, ty + 1) <= 0) continue;
+      const mh = Math.max(vertexH(tx, ty), vertexH(tx + 1, ty), vertexH(tx, ty + 1), vertexH(tx + 1, ty + 1));
+      if (mh <= FLAT_LEVELS) continue;
+      if (overlay && overlay[ty * size + tx] === 1 && mh <= OVERLAY_LEVELS) continue;
       let list = tiles.get(key);
       if (!list) tiles.set(key, (list = []));
       list.push(ty * size + tx);
@@ -75,6 +144,8 @@ export interface DepthBox {
   y0: number;
   x1: number;
   y1: number;
+  /** Sort-key raise of the decor's own tile (see `computeLift`); units lifted above the decor use it too. */
+  lift: number;
 }
 
 const HOUSE_SIZES: ReadonlyArray<readonly [number, number]> = [
@@ -88,12 +159,12 @@ export function decorBox(d: { kind: DecorKind; variant: number; x: number; y: nu
   switch (d.kind) {
     case 'house': {
       const [w, h] = HOUSE_SIZES[Math.min(2, d.variant >> 1)];
-      return { x0: d.x - w, y0: d.y - h, x1: d.x, y1: d.y };
+      return { x0: d.x - w, y0: d.y - h, x1: d.x, y1: d.y, lift: 0 };
     }
     case 'tower':
-      return { x0: d.x - 1, y0: d.y - 1, x1: d.x, y1: d.y };
+      return { x0: d.x - 1, y0: d.y - 1, x1: d.x, y1: d.y, lift: 0 };
     case 'keep':
-      return { x0: d.x - 4, y0: d.y - 4, x1: d.x, y1: d.y };
+      return { x0: d.x - 4, y0: d.y - 4, x1: d.x, y1: d.y, lift: 0 };
     default:
       return null;
   }
@@ -113,12 +184,14 @@ export class DepthBoxIndex {
   constructor(
     private readonly size: number,
     decor: ReadonlyArray<{ kind: DecorKind; variant: number; x: number; y: number }>,
+    liftAt?: (x: number, y: number) => number,
   ) {
     let n = 0;
     this.cells = new Array<DepthBox[] | undefined>(size * size);
     for (const d of decor) {
       const b = decorBox(d);
       if (!b) continue;
+      if (liftAt) b.lift = liftAt(d.x, d.y);
       n++;
       // Units that can be lifted lie in the strips beside the box: up to (box depth) tiles past the far edges.
       const ex = b.x1 + (b.y1 - b.y0) + MARGIN;
@@ -149,7 +222,7 @@ export class DepthBoxIndex {
     if (!list) return key;
     for (const b of list) {
       if ((ux >= b.x1 && uy > b.y0 - MARGIN) || (uy >= b.y1 && ux > b.x0 - MARGIN)) {
-        const k = b.x1 + b.y1 + eps;
+        const k = b.x1 + b.y1 + b.lift + eps;
         if (k > key) key = k;
       }
     }
@@ -186,6 +259,52 @@ export function computeCover(size: number, elevPx: (x: number, y: number) => num
     }
   }
   return cover;
+}
+
+/** How much the sort key of everything standing on an uncovered tile is raised above its x+y (see `computeLift`). */
+export const GROUND_RAISE = 1;
+/** A tile whose cover (px, widened sideways) is below this counts as uncovered. */
+export const RAISE_COVER_PX = 6;
+/** Sideways reach (tiles, along x-y) of the widened cover test: a sprite is about this wide. */
+const SIDE = 0.4;
+
+/**
+ * Per tile: 1 where nothing in front hides even the feet of a unit (also not beside it), else 0. Those entities get their sort key
+ * raised by GROUND_RAISE, so the ground tiles just in front of them (whose back tip would otherwise clip the selection ring, the
+ * shadow and the shoes) are drawn below them. All uncovered entities are raised alike, so their order among each other is unchanged;
+ * entities that terrain really hides keep the exact order. All zero on flat maps.
+ */
+export function computeLift(size: number, elevPx: (x: number, y: number) => number, maxElevPx: number): Uint8Array {
+  const lift = new Uint8Array(size * size);
+  if (maxElevPx <= 0) return lift;
+  const at = (cx: number, cy: number): number => {
+    const base = elevPx(Math.min(size - 0.001, Math.max(0, cx)), Math.min(size - 0.001, Math.max(0, cy)));
+    let best = 0;
+    for (let t = 0.5; t * PX_PER_T < maxElevPx - base + PX_PER_T; t += 0.5) {
+      const px = cx + t;
+      const py = cy + t;
+      if (px >= size || py >= size) break;
+      const v = elevPx(px, py) - PX_PER_T * t - base;
+      if (v > best) best = v;
+    }
+    return best;
+  };
+  for (let ty = 0; ty < size; ty++) {
+    for (let tx = 0; tx < size; tx++) {
+      const cx = tx + 0.5;
+      const cy = ty + 0.5;
+      const worst = Math.max(at(cx, cy), at(cx + SIDE, cy - SIDE), at(cx - SIDE, cy + SIDE));
+      lift[ty * size + tx] = worst < RAISE_COVER_PX ? GROUND_RAISE : 0;
+    }
+  }
+  return lift;
+}
+
+/** Key raise at a world point (nearest tile). */
+export function liftAt(lift: Uint8Array, size: number, x: number, y: number): number {
+  const tx = x < 0 ? 0 : x >= size ? size - 1 : x | 0;
+  const ty = y < 0 ? 0 : y >= size ? size - 1 : y | 0;
+  return lift[ty * size + tx];
 }
 
 /** Terrain in front hiding more than this many pixels of a unit's body (at scale 1) also hides its health bar and chevrons. */

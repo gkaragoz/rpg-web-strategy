@@ -93,6 +93,8 @@ export class HostLobby {
   private zones: Zone[] = [];
   private placeEndsAt = Infinity;
   private battleStart: BattleStart | null = null;
+  /** Outcome of the finished battle (kept for late joiners and rejoiners of the result phase). */
+  private lastResult: { winner: number; alive: number[] } | null = null;
   private dirtyState = false;
   private lastState = 0;
   private readonly hashes = new Map<number, number>();
@@ -363,9 +365,11 @@ export class HostLobby {
   private welcome(to: string, token: string): void {
     this.refreshCounts();
     this.sendTo(to, { t: 'welcome', you: to, token, state: this.state(), start: this.battleStart ?? undefined });
-    if (this.phase === 'battle' && this.simProvider) {
+    if ((this.phase === 'battle' || this.phase === 'result') && this.simProvider) {
+      // The snapshot carries the winner too, so a joiner of the result phase lands on the result screen without re-simulating the battle.
       this.sendSnapshot(to);
     }
+    if (this.phase === 'result' && this.lastResult) this.sendTo(to, { t: 'result', winner: this.lastResult.winner, alive: this.lastResult.alive });
     if (this.phase === 'placing') {
       // Send the existing placements (all of them with open placement, otherwise only the player's own).
       const items = this.visibleUnits(this.player(to));
@@ -615,6 +619,7 @@ export class HostLobby {
     this.resyncCount.clear();
     this.resyncBusy.clear();
     this.lastResync.clear();
+    this.lastResult = null;
     this.battleStart = { init: this.init, simSeed: 1 + Math.floor(this.rnd() * 1000000), layout: packLayout(sorted) };
     this.phase = 'battle';
     this.hashes.clear();
@@ -687,6 +692,7 @@ export class HostLobby {
   finish(winner: number, alive: number[]): void {
     if (this.phase !== 'battle') return;
     this.phase = 'result';
+    this.lastResult = { winner, alive: [...alive] };
     this.emit({ t: 'result', winner, alive });
     this.pushState();
   }
@@ -711,6 +717,7 @@ export class HostLobby {
     if (!this.init || !this.terrain) return this.toLobby();
     this.phase = 'placing';
     this.battleStart = null;
+    this.lastResult = null;
     this.hashes.clear();
     this.placeEndsAt = this.settings.placeSecs > 0 ? this.now() + this.settings.placeSecs * 1000 : Infinity;
     for (const p of this.players) p.ready = !p.connected;
@@ -726,6 +733,7 @@ export class HostLobby {
 
   private toLobby(): void {
     this.phase = 'lobby';
+    this.lastResult = null;
     this.units.clear();
     this.init = null;
     this.battleStart = null;

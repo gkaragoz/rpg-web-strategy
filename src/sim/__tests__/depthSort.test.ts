@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bandWidthFor, bandZ, computeCover, coverAt, decorBox, DepthBoxIndex, reliefBands, slabTable, slabZ } from '../../render/depthSort';
+import { bandWidthFor, bandZ, computeCover, computeLift, coverAt, decorBox, DepthBoxIndex, FLAT_LEVELS, OVERLAY_LEVELS, overlayTiles, reliefBands, slabTable, slabZ } from '../../render/depthSort';
 import { LEVEL_PX } from '../terrain';
 
 describe('relief depth bands', () => {
@@ -83,11 +83,11 @@ describe('cover of terrain in front', () => {
 
 describe('big decor footprints', () => {
   it('knows the footprint of houses, towers and the keep, and ignores small decor', () => {
-    expect(decorBox({ kind: 'house', variant: 0, x: 10, y: 10 })).toEqual({ x0: 8, y0: 8, x1: 10, y1: 10 });
-    expect(decorBox({ kind: 'house', variant: 2, x: 10, y: 10 })).toEqual({ x0: 7, y0: 8, x1: 10, y1: 10 });
-    expect(decorBox({ kind: 'house', variant: 5, x: 10, y: 10 })).toEqual({ x0: 8, y0: 7, x1: 10, y1: 10 });
-    expect(decorBox({ kind: 'tower', variant: 0, x: 5, y: 6 })).toEqual({ x0: 4, y0: 5, x1: 5, y1: 6 });
-    expect(decorBox({ kind: 'keep', variant: 0, x: 30, y: 30 })).toEqual({ x0: 26, y0: 26, x1: 30, y1: 30 });
+    expect(decorBox({ kind: 'house', variant: 0, x: 10, y: 10 })).toEqual({ x0: 8, y0: 8, x1: 10, y1: 10, lift: 0 });
+    expect(decorBox({ kind: 'house', variant: 2, x: 10, y: 10 })).toEqual({ x0: 7, y0: 8, x1: 10, y1: 10, lift: 0 });
+    expect(decorBox({ kind: 'house', variant: 5, x: 10, y: 10 })).toEqual({ x0: 8, y0: 7, x1: 10, y1: 10, lift: 0 });
+    expect(decorBox({ kind: 'tower', variant: 0, x: 5, y: 6 })).toEqual({ x0: 4, y0: 5, x1: 5, y1: 6, lift: 0 });
+    expect(decorBox({ kind: 'keep', variant: 0, x: 30, y: 30 })).toEqual({ x0: 26, y0: 26, x1: 30, y1: 30, lift: 0 });
     expect(decorBox({ kind: 'tree', variant: 1, x: 3, y: 3 })).toBeNull();
     expect(decorBox({ kind: 'wall', variant: 0, x: 3.5, y: 3.5 })).toBeNull();
   });
@@ -117,5 +117,68 @@ describe('big decor footprints', () => {
     const none = new DepthBoxIndex(10, [{ kind: 'tree', variant: 0, x: 2, y: 2 }]);
     expect(none.count).toBe(0);
     expect(none.frontKey(3, 3, 6, 0.5)).toBe(6);
+  });
+});
+
+describe('which tiles join a band', () => {
+  const size = 6;
+  it('leaves nearly flat tiles in the base layer', () => {
+    expect(reliefBands(size, (vx, vy) => (vx === 3 && vy === 3 ? FLAT_LEVELS : 0)).keys).toEqual([]);
+    expect(reliefBands(size, (vx, vy) => (vx === 3 && vy === 3 ? FLAT_LEVELS + 0.1 : 0)).keys.length).toBeGreaterThan(0);
+  });
+
+  it('keeps low tiles under overlay art out of the bands, but not steep ones', () => {
+    const mask = new Uint8Array(size * size).fill(1);
+    expect(reliefBands(size, (vx, vy) => (vx === 3 && vy === 3 ? OVERLAY_LEVELS : 0), 1, mask).keys).toEqual([]);
+    expect(reliefBands(size, (vx, vy) => (vx === 3 && vy === 3 ? OVERLAY_LEVELS + 0.5 : 0), 1, mask).keys.length).toBe(3);
+    expect(reliefBands(size, (vx, vy) => (vx === 3 && vy === 3 ? 1 : 0), 1, new Uint8Array(size * size)).keys.length).toBe(3);
+  });
+
+  it('overlayTiles marks the river, its bank and the bridge area', () => {
+    const t = {
+      size: 10,
+      riverKind: 'straight',
+      toS: (x: number, _y: number) => x,
+      toD: (_x: number, y: number) => y,
+      offsetAt: () => 5,
+      widthAt: () => 2,
+      landTiles: [] as number[],
+      crossWaterTiles: [] as number[],
+      crossBridgeTiles: [] as number[],
+      bridges: [] as Array<{ s: number; o: number; halfLen: number; halfW: number }>,
+    };
+    const m = overlayTiles(t);
+    expect(m[5 * 10 + 3]).toBe(1);
+    expect(m[1 * 10 + 3]).toBe(0);
+    expect(m[8 * 10 + 3]).toBe(0);
+    expect(overlayTiles({ ...t, riverKind: 'none' }).some((v) => v === 1)).toBe(false);
+    t.riverKind = 'none';
+    t.crossBridgeTiles = [3 * 10 + 3];
+    const mb = overlayTiles(t);
+    expect(mb[2 * 10 + 4]).toBe(1);
+    expect(mb[6 * 10 + 6]).toBe(0);
+  });
+});
+
+describe('key raise on uncovered ground', () => {
+  const size = 12;
+  // A 3-level wall across x >= 8 (steep: more than the view ray falls), flat elsewhere.
+  const elev = (x: number): number => (x >= 8 ? 3 * LEVEL_PX : 0);
+  const lift = computeLift(size, (x) => elev(x), 3 * LEVEL_PX);
+
+  it('is zero on a flat map', () => {
+    expect(computeLift(5, () => 0, 0).every((v) => v === 0)).toBe(true);
+  });
+
+  it('is 1 where nothing in front hides the feet, 0 right behind the wall', () => {
+    expect(lift[3 * size + 2]).toBe(1);
+    expect(lift[5 * size + 11]).toBe(1); // on top of the wall
+    expect(lift[6 * size + 7]).toBe(0); // in the wall's shadow: a unit here is hidden
+  });
+
+  it('decor boxes remember their raise', () => {
+    const idx = new DepthBoxIndex(size, [{ kind: 'house', variant: 0, x: 5, y: 5 }], () => 1);
+    // A unit beside the house (x >= x1) is lifted to the house front corner (10) plus its raise.
+    expect(idx.frontKey(5.5, 4, 9.5, 0.01)).toBeCloseTo(11.01);
   });
 });

@@ -2,7 +2,7 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import { isoX, isoY } from '../iso';
 import type { Atlas } from '../render/atlas';
 import { PALETTES } from '../render/biome';
-import { bandWidthFor, bandZ, computeCover, coverAt, DepthBoxIndex } from '../render/depthSort';
+import { bandWidthFor, bandZ, computeCover, computeLift, coverAt, DepthBoxIndex, liftAt } from '../render/depthSort';
 import { buildGround } from '../render/ground';
 import { buildTerrainOverlay, drawRoadTile } from '../render/terrainView';
 import { POSES } from '../render/unitView';
@@ -13,6 +13,8 @@ import type { GhostSpec, PlacedLayer, PlacedLike, WorldBackend, ZoneSpec } from 
 
 /** Screen ellipse of a circle: radius r tiles -> rx = r*TILE_W/2*sqrt2, ry = rx/2. */
 const ELLIPSE_X = 45.25;
+/** Zone tiles that terrain in front hides by more than this many pixels are not drawn. */
+const ZONE_HIDDEN_PX = 10;
 
 /** What the renderers need to order things against the terrain and the big decor (see render/depthSort.ts). */
 export interface DepthInfo {
@@ -21,6 +23,8 @@ export interface DepthInfo {
   boxes: DepthBoxIndex;
   /** Per tile: pixels of terrain in front that hide a ground point (0 on flat maps). */
   cover: Float32Array;
+  /** Per tile: key raise of entities standing there (1 where no terrain in front hides them; see computeLift). */
+  lift: Uint8Array;
   size: number;
 }
 
@@ -41,7 +45,7 @@ export class WorldView implements WorldBackend {
   private atlas: Atlas | null = null;
   private decorSprites: Sprite[] = [];
   private bandGfx: Graphics[] = [];
-  depth: DepthInfo = { cuts: [], boxes: new DepthBoxIndex(1, []), cover: new Float32Array(1), size: 1 };
+  depth: DepthInfo = { cuts: [], boxes: new DepthBoxIndex(1, []), cover: new Float32Array(1), lift: new Uint8Array(1), size: 1 };
   private readonly zoneGfx = new Graphics();
   private readonly ghostGfx = new Graphics();
 
@@ -59,7 +63,7 @@ export class WorldView implements WorldBackend {
   rebuild(config: BattleConfig, atlas: Atlas | null, decorSprites: boolean, ground = true): void {
     for (const s of this.decorSprites) s.destroy();
     this.decorSprites = [];
-    for (const c of this.staticLayer.removeChildren()) c.destroy({ children: true });
+    for (const c of this.staticLayer.removeChildren()) c.destroy({ children: true, context: true });
     for (const b of this.bandGfx) b.destroy();
     this.bandGfx = [];
 
@@ -87,10 +91,12 @@ export class WorldView implements WorldBackend {
       }
       cuts.sort((a, b) => a - b);
     }
+    const lift = t && t.hasRelief && cuts.length > 0 ? computeLift(this.mapSize, (x, y) => t.elevPx(x, y), t.maxH * LEVEL_PX) : new Uint8Array(this.mapSize * this.mapSize);
     this.depth = {
       cuts,
-      boxes: new DepthBoxIndex(this.mapSize, t ? t.decor : []),
+      boxes: new DepthBoxIndex(this.mapSize, t ? t.decor : [], (x, y) => liftAt(lift, this.mapSize, x, y)),
       cover: t && t.hasRelief ? computeCover(this.mapSize, (x, y) => t.elevPx(x, y), t.maxH * LEVEL_PX) : new Float32Array(this.mapSize * this.mapSize),
+      lift,
       size: this.mapSize,
     };
     if (this.terrain && atlas && decorSprites) this.addDecor(this.terrain, atlas);
@@ -111,7 +117,7 @@ export class WorldView implements WorldBackend {
       const s = new Sprite(spr9.texture);
       s.anchor.set(spr9.ax, spr9.ay);
       s.position.set(isoX(d.x, d.y), isoY(d.x, d.y, t.elevPx(d.x, d.y)));
-      s.zIndex = d.x + d.y;
+      s.zIndex = d.x + d.y + liftAt(this.depth.lift, this.mapSize, d.x, d.y);
       this.entityLayer.addChild(s);
       this.decorSprites.push(s);
     }
@@ -119,7 +125,7 @@ export class WorldView implements WorldBackend {
 
   /** Depth sort key of something standing at (x, y): x+y, raised above the big decor (houses, towers, keep) it stands in front of. */
   depthKey(x: number, y: number): number {
-    return this.depth.boxes.frontKey(x, y, x + y, 0.01);
+    return this.depth.boxes.frontKey(x, y, x + y + liftAt(this.depth.lift, this.depth.size, x, y), 0.01);
   }
 
   /** Pixels of terrain in front that hide a ground point (a ridge between the point and the camera); 0 on flat maps. */
@@ -182,6 +188,8 @@ export class WorldView implements WorldBackend {
     const p = (x: number, y: number): [number, number] => [isoX(x, y), isoY(x, y, e(x, y))];
     for (const z of zones) {
       for (const [tx, ty] of z.tiles) {
+        // Behind a ridge or mountain: the terrain in front hides the tile (the overlay is not depth sorted).
+        if (this.coverAt(tx + 0.5, ty + 0.5) > ZONE_HIDDEN_PX) continue;
         const a = p(tx, ty);
         const b = p(tx + 1, ty);
         const c = p(tx + 1, ty + 1);

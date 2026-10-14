@@ -24,6 +24,8 @@ const hash = hash01;
  */
 export class ComedySystem {
   readonly layer: ParticleContainer;
+  /** Pixels of terrain in front that hide a ground point (set on relief maps). */
+  cover: ((x: number, y: number) => number) | null = null;
   /** Synthetic events produced during update() (burst: element 7 = confetti/splat, 8 = whoosh). */
   readonly events: SimEvent[] = [];
   private readonly parts: Particle[] = [];
@@ -237,6 +239,8 @@ export class ComedySystem {
       p.x = isoX(this.wx[i], this.wy[i]);
       p.y = isoY(this.wx[i], this.wy[i], e + this.z[i]) - lift;
       p.rotation = this.rot[i] * (this.bit[i] ? 1 : this.flip[i]);
+      // Behind a ridge: the terrain in front hides it (until it is flung high enough to show above).
+      if (this.cover && this.cover(this.wx[i], this.wy[i]) > this.z[i] + 24) continue;
       out[w++] = p;
     }
     out.length = w;

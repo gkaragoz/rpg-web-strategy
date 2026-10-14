@@ -2,7 +2,7 @@ import { Graphics } from 'pixi.js';
 import { TILE_H, TILE_W, isoX, isoY } from '../iso';
 import { LEVEL_PX, type Terrain } from '../sim/terrain';
 import { PALETTES, type BiomePalette } from './biome';
-import { reliefBands } from './depthSort';
+import { overlayTiles, reliefBands } from './depthSort';
 
 function shade(c: number, k: number): number {
   const r = Math.min(255, Math.max(0, Math.round(((c >> 16) & 255) * k)));
@@ -55,7 +55,7 @@ export function buildGround(size: number, pal: BiomePalette = PALETTES.forest, t
   // Relief ground: each tile is a sloped quad from its corner heights; drawn back to front (x+y increasing).
   // Flat tiles go to the base layer; tiles with relief go to depth bands that live in the sorted entity layer, so that units
   // behind a ridge are covered by it and units in front draw over it (see depthSort.ts).
-  const rb = reliefBands(size, (vx, vy) => terrain.vertexH(vx, vy), bandWidth);
+  const rb = reliefBands(size, (vx, vy) => terrain.vertexH(vx, vy), bandWidth, overlayTiles(terrain));
   for (const key of rb.keys) {
     const bg = new Graphics();
     bands.set(key, bg);

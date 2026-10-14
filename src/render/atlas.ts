@@ -423,7 +423,7 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
   // GPU texture limit: for a very tall atlas the resolution drops to 1.
   const resolution = sheetH * 2 > 4096 ? 1 : 2;
   const atlas = renderer.generateTexture({ target: sheet, frame: new Rectangle(0, 0, SHEET_W, sheetH), resolution, antialias: true });
-  sheet.destroy({ children: true });
+  sheet.destroy({ children: true, context: true });
   for (const { item, x: px, y: py } of placed) {
     item.done(new Texture({ source: atlas.source, frame: new Rectangle(px, py, item.w, item.h) }));
   }

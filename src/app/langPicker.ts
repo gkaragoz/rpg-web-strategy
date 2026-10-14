@@ -89,7 +89,7 @@ export function mountLangPicker(opts: LangPickerOptions = {}): () => void {
       const u = new URL(location.href);
       if (u.searchParams.has('lang')) {
         u.searchParams.delete('lang');
-        history.replaceState(null, '', u.toString());
+        history.replaceState(history.state, '', u.toString()); // keep the app's history marker (see nav.ts)
       }
     } catch {
       /* no URL support (tests) */

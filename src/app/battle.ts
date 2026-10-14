@@ -215,8 +215,10 @@ export class BattleScene {
       // In a crowd floating numbers are unreadable: show only with few units.
       this.fx = new FxSystem(atlas, camera, quality, opts.numbers && unitCount <= 200);
       this.fx.elev = this.elev;
+      if (this.w2.depth.cuts.length > 0) this.fx.cover = (x, y) => this.w2.coverAt(x, y);
       this.fx.comicOn = opts.numbers && unitCount <= 400;
       this.comedySys = new ComedySystem(atlas, world.terrain, this.elev);
+      if (this.w2.depth.cuts.length > 0) this.comedySys.cover = (x, y) => this.w2.coverAt(x, y);
       this.w2.fxLayer.addChild(this.comedySys.layer, this.fx.layer, this.fx.numbers);
     }
 
@@ -243,6 +245,7 @@ export class BattleScene {
     };
     document.addEventListener('visibilitychange', this.visHandler);
     (window as unknown as { __sim: SimBackend }).__sim = this.sim;
+    (window as unknown as { __world: unknown }).__world = this.w2; // debug handle (depth/terrain inspection)
   }
 
   exit(): void {
@@ -254,7 +257,7 @@ export class BattleScene {
     if (this.visHandler) document.removeEventListener('visibilitychange', this.visHandler);
     this.visHandler = null;
     this.sim?.dispose();
-    for (const v of this.views) v.root.destroy({ children: true });
+    for (const v of this.views) v.root.destroy({ children: true, context: true });
     this.views = [];
     for (const a of this.arrowViews) {
       a.arrow.destroy();
@@ -822,7 +825,7 @@ export class BattleScene {
   // ---- detailed drawing ----
 
   private buildViews(): void {
-    for (const v of this.views) v.root.destroy({ children: true });
+    for (const v of this.views) v.root.destroy({ children: true, context: true });
     this.views = [];
     const u = this.sim.units;
     for (let i = 0; i < u.count; i++) {
@@ -839,7 +842,8 @@ export class BattleScene {
       shadow.ellipse(0, 0, 4, 2).fill({ color: 0x000000, alpha: 0.25 });
       const arrow = new Graphics();
       drawProjectile(arrow, 0);
-      this.w2.shadowLayer.addChild(shadow);
+      // In the sorted layer (not the shadow layer below it): on relief the ground bands live there and would cover the shadow.
+      this.w2.entityLayer.addChild(shadow);
       this.w2.fxLayer.addChild(arrow);
       v = { shadow, arrow, tag: 0 };
       this.arrowViews[i] = v;
@@ -915,6 +919,7 @@ export class BattleScene {
       v.arrow.position.set(pos.sx, pos.sy);
       v.arrow.rotation = projStyle(v.tag).orb ? 0 : Math.atan2(next.sy - pos.sy, next.sx - pos.sx);
       v.shadow.position.set(pos.gx, pos.gy);
+      v.shadow.zIndex = this.w2.depthKey(pos.wx, pos.wy) - 0.02;
       v.shadow.scale.set(1 - pos.z / 120);
     }
     for (let i = p.count; i < this.arrowViews.length; i++) {
