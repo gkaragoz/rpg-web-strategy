@@ -3,16 +3,20 @@ import { PALETTES } from '../render/biome';
 import { projStyle } from '../render/projectileStyle';
 import type { ProjView } from '../sim/backend';
 import type { Terrain } from '../sim/terrain';
+import type { SimEvent } from '../sim/battle';
 import { STATS } from '../sim/units';
 import { type AtlasGpu, decorFrame } from './atlasBridge';
 import { PX_WORLD, UnitInstances, type UnitsLike } from './billboards';
 import { clampRig, eyeOf, type Rig } from './cameraRig';
+import { drawFxAtlas, Fx3D } from './fx3d';
 import { pickGround, type GroundHit } from './pick';
 import {
   BAR_FRAG,
   BAR_VERT,
   BILLBOARD_FRAG,
   BILLBOARD_VERT,
+  FX_FRAG,
+  FX_VERT,
   PROJ_FRAG,
   PROJ_VERT,
   SHADOW_FRAG,
@@ -64,8 +68,8 @@ export class View3D {
   size = 56;
   /** Stats shown on the panel. */
   info = { draws: 0, tris: 0 };
-  private readonly sun = new THREE.DirectionalLight(0xfff0d0, 2.2);
-  private readonly hemi = new THREE.HemisphereLight(0xcfe3ff, 0x6b5a3c, 1.1);
+  private readonly sun = new THREE.DirectionalLight(0xffe9c4, 2.9);
+  private readonly hemi = new THREE.HemisphereLight(0xbcd4ff, 0x5a4a30, 0.85);
   private terrainMesh: THREE.Mesh | null = null;
   private water: THREE.Mesh | null = null;
   private zoneMesh: THREE.Mesh | null = null;
@@ -90,6 +94,14 @@ export class View3D {
   private projPos = new Float32Array(0);
   private projDir = new Float32Array(0);
   private projCol = new Float32Array(0);
+  private readonly fx = new Fx3D();
+  private fxGeo = quadGeometry();
+  private fxMesh: THREE.Mesh;
+  private fxA = new Float32Array(0);
+  private fxB = new Float32Array(0);
+  private fxC = new Float32Array(0);
+  private fxO = new Float32Array(0);
+  private fxMat: THREE.ShaderMaterial;
   private waterMat: THREE.ShaderMaterial | null = null;
   private time = 0;
   private fogColor = new THREE.Color(0x1a2332);
@@ -147,7 +159,21 @@ export class View3D {
       this.projGeo,
       new THREE.ShaderMaterial({ vertexShader: PROJ_VERT, fragmentShader: PROJ_FRAG, uniforms: { ...this.uniforms }, transparent: true, depthWrite: false, side: THREE.DoubleSide }),
     );
-    for (const m of [this.unitMesh, this.outlineMesh, this.shadowMesh, this.barMesh, this.projMesh]) {
+    const fxTex = new THREE.CanvasTexture(drawFxAtlas());
+    fxTex.colorSpace = THREE.NoColorSpace;
+    this.fxMat = new THREE.ShaderMaterial({
+      vertexShader: FX_VERT,
+      fragmentShader: FX_FRAG,
+      uniforms: { uFxMap: { value: fxTex }, uNumScale: { value: 1 }, uRight: this.uniforms.uRight, uUp: this.uniforms.uUp },
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      side: THREE.DoubleSide,
+    });
+    this.fxMesh = new THREE.Mesh(this.fxGeo, this.fxMat);
+    this.fxMesh.renderOrder = 6;
+    this.initFxGeometry(this.fx.cap);
+    for (const m of [this.unitMesh, this.outlineMesh, this.shadowMesh, this.barMesh, this.projMesh, this.fxMesh]) {
       m.frustumCulled = false;
       this.scene.add(m);
     }
@@ -196,6 +222,39 @@ export class View3D {
     instAttr(this.projGeo, 'iDir', this.projDir, 4);
     instAttr(this.projGeo, 'iCol', this.projCol, 3);
     this.projGeo.instanceCount = 0;
+  }
+
+  private initFxGeometry(cap: number): void {
+    this.fxA = new Float32Array(cap * 4);
+    this.fxB = new Float32Array(cap * 4);
+    this.fxC = new Float32Array(cap * 4);
+    this.fxO = new Float32Array(cap * 3);
+    instAttr(this.fxGeo, 'iA', this.fxA, 4);
+    instAttr(this.fxGeo, 'iB', this.fxB, 4);
+    instAttr(this.fxGeo, 'iC', this.fxC, 4);
+    instAttr(this.fxGeo, 'iO', this.fxO, 3);
+    this.fxGeo.instanceCount = 0;
+  }
+
+  /** Hit sparks, dust, bursts and floating numbers from this frame's sim events (only near the camera). */
+  updateFx(events: readonly SimEvent[], dt: number, numbers: boolean, particles: boolean): void {
+    const t = this.terrain;
+    if (!t) return;
+    const radius = this.rig.dist * 1.3 + 8;
+    const r2 = radius * radius;
+    if (events.length > 0 && (numbers || particles)) {
+      const { fx: cx, fz: cz } = this.rig;
+      this.fx.spawn(events, (x, y) => groundHeight(t, x, y), { numbers, particles, visible: (x, y) => (x - cx) * (x - cx) + (y - cz) * (y - cz) < r2 });
+    }
+    this.fx.update(dt);
+    const n = this.fx.write(this.fxA, this.fxB, this.fxC, this.fxO);
+    this.fxMat.uniforms.uNumScale.value = Math.min(3, Math.max(0.8, this.rig.dist / 45));
+    touch(this.fxGeo, ['iA', 'iB', 'iC', 'iO'], n);
+  }
+
+  clearFx(): void {
+    this.fx.clear();
+    this.fxGeo.instanceCount = 0;
   }
 
   /** Makes room for `n` soldiers (rebuilds the instance buffers when it grows). */
@@ -252,7 +311,7 @@ export class View3D {
     // Lights, shadow frustum and fog follow the map.
     const half = t.size * 0.78;
     const c = t.size / 2;
-    this.sun.position.set(c - t.size * 0.55, t.size * 0.9, c - t.size * 0.35);
+    this.sun.position.set(c - t.size * 0.75, t.size * 0.62, c - t.size * 0.4);
     this.sun.target.position.set(c, 0, c);
     const cam = this.sun.shadow.camera;
     cam.left = -half;

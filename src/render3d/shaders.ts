@@ -193,6 +193,39 @@ void main() {
 }
 `;
 
+export const FX_VERT = /* glsl */ `
+attribute vec2 corner;
+attribute vec4 iA; // x, y(up), z, size
+attribute vec4 iB; // uv rect
+attribute vec4 iC; // color, alpha
+attribute vec3 iO; // x offset (glyph sizes), unused, number flag
+uniform vec3 uRight;
+uniform vec3 uUp;
+uniform float uNumScale;
+varying vec2 vUv;
+varying vec4 vCol;
+void main() {
+  float s = iA.w * (iO.z > 0.5 ? uNumScale : 1.0);
+  vec2 c = corner - 0.5 + vec2(iO.x, 0.0);
+  vec3 world = iA.xyz + (uRight * c.x + uUp * c.y) * s;
+  vUv = vec2(iB.x + corner.x * iB.z, corner.y);
+  vCol = iC;
+  gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+}
+`;
+export const FX_FRAG = /* glsl */ `
+precision highp float;
+uniform sampler2D uFxMap;
+varying vec2 vUv;
+varying vec4 vCol;
+void main() {
+  vec4 t = texture2D(uFxMap, vUv);
+  float a = t.a * vCol.a;
+  if (a < 0.01) discard;
+  gl_FragColor = vec4(t.rgb * vCol.rgb, a);
+}
+`;
+
 export const WATER_VERT = /* glsl */ `
 varying vec3 vWorld;
 varying float vDist;

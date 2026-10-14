@@ -179,3 +179,58 @@ describe('3D watch helpers', () => {
     expect(paletteColor(-1)).toBe(paletteColor(5));
   });
 });
+
+describe('3D effects pool', () => {
+  const flat = (): number => 0;
+  const rnd = (() => {
+    let s = 1;
+    return () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  })();
+
+  it('spawns a damage number as one glyph per digit and fades it out', async () => {
+    const { Fx3D, GLYPH_CELLS } = await import('../../render3d/fx3d');
+    const fx = new Fx3D(256);
+    fx.spawn([{ type: 'hit', x: 5, y: 6, unit: 1, value: 123 }], flat, { numbers: true, particles: false }, rnd);
+    expect(fx.count).toBe(3);
+    expect([...fx.glyph.subarray(0, 3)]).toEqual([1, 2, 3]);
+    expect(fx.offX[0]).toBeLessThan(fx.offX[2]);
+    const a = new Float32Array(4 * 256);
+    const b = new Float32Array(4 * 256);
+    const c = new Float32Array(4 * 256);
+    const o = new Float32Array(3 * 256);
+    expect(fx.write(a, b, c, o)).toBe(3);
+    expect(b[2]).toBeCloseTo(1 / GLYPH_CELLS);
+    expect(o[2]).toBe(1);
+    fx.update(0.5);
+    expect(fx.py[0]).toBeGreaterThan(0.75 + 0.9);
+    fx.update(1);
+    expect(fx.count).toBe(0);
+  });
+
+  it('respects the per-call caps, the visibility test and the toggles', async () => {
+    const { Fx3D } = await import('../../render3d/fx3d');
+    const fx = new Fx3D(4096);
+    const many = Array.from({ length: 500 }, (_, i) => ({ type: 'hit' as const, x: i, y: 0, unit: i, value: 9 }));
+    fx.spawn(many, flat, { numbers: true, particles: true, maxNumbers: 10, maxParticles: 20 }, rnd);
+    expect(fx.count).toBeLessThan(10 + 20 + 40);
+    const none = new Fx3D(64);
+    none.spawn(many, flat, { numbers: false, particles: false }, rnd);
+    expect(none.count).toBe(0);
+    const far = new Fx3D(64);
+    far.spawn(many, flat, { numbers: true, particles: true, visible: () => false }, rnd);
+    expect(far.count).toBe(0);
+  });
+
+  it('never overflows the pool and keeps survivors intact when others expire', async () => {
+    const { Fx3D } = await import('../../render3d/fx3d');
+    const fx = new Fx3D(8);
+    fx.spawn(Array.from({ length: 50 }, () => ({ type: 'death' as const, x: 1, y: 1, unit: 0 })), flat, { numbers: false, particles: true, maxParticles: 1000 }, rnd);
+    expect(fx.count).toBe(8);
+    fx.life[0] = 0.01;
+    const keepX = fx.px[7];
+    fx.update(0.02);
+    expect(fx.count).toBe(7);
+    expect(Number.isFinite(fx.px[0])).toBe(true);
+    expect(keepX).toBeDefined();
+  });
+});

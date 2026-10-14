@@ -3,10 +3,11 @@ import { loc, t } from '../i18n';
 import { placeableKinds } from '../app/armies';
 import { teamColors } from '../app/state';
 import { placeBlock, teamZones, type Zone } from '../net/economy';
-import type { GuestSession } from '../net/client';
+import type { Session } from '../net/client';
+import { HostSession } from '../net/client';
 import { LockstepSim } from '../net/lockstepSim';
 import { LockstepWorkerSim } from '../net/lockstepWorkerSim';
-import { PLACE_GAP, battleConfig, layoutOf, type BattleStart } from '../net/protocol';
+import { PLACE_GAP, battleConfig, layoutOf, type BattleStart, type PlaceItem } from '../net/protocol';
 import { bakeAtlas, type Atlas } from '../render/atlas';
 import { terrainFor, type BattleConfig } from '../sim/battle';
 import { InlineSim } from '../sim/inlineSim';
@@ -19,7 +20,7 @@ import type { UnitsLike } from './billboards';
 import { Controls, type Tool } from './controls';
 import { fillFormations, type PlacedSoldier } from './formation';
 import { View3D, type ZoneOverlay } from './scene3d';
-import { teamColorsOf, watchRoom, type WatchVia } from './watch';
+import { hostRoom, teamColorsOf, watchRoom, type WatchVia } from './watch';
 
 const DEFAULT_COLORS = teamColors('classic', 6);
 let TEAM_COLORS = DEFAULT_COLORS;
@@ -87,6 +88,8 @@ interface Settings {
   brush: number;
   highlight: number;
   bars: boolean;
+  numbers: boolean;
+  particles: boolean;
 }
 
 const qp = new URLSearchParams(location.search);
@@ -101,6 +104,8 @@ const settings: Settings = {
   brush: 3,
   highlight: -1,
   bars: true,
+  numbers: qp.get('numbers') !== '0',
+  particles: qp.get('fx') !== '0',
 };
 
 let pixi: Application | null = null;
@@ -170,6 +175,7 @@ async function buildWorld(): Promise<void> {
   showZones(true);
   editUnits.set(placed);
   syncPanel();
+  hostPushSettings();
 }
 
 function showZones(on: boolean): void {
@@ -191,14 +197,22 @@ function occupied(grid: Map<number, PlacedSoldier[]>, team: number, x: number, y
 }
 
 function paint(x: number, y: number, tool: 'place' | 'erase'): void {
-  if (mode !== 'edit' || watching) return;
+  if (mode !== 'edit') return;
+  if (watching && !playing()) return;
   const r = settings.brush;
+  const net = watching && playing() ? watching.session : null;
+  const myTeam = net?.model.me?.team ?? settings.team;
   if (tool === 'erase') {
+    if (net) {
+      const ids = [...net.model.placed.values()].filter((p) => p.team === myTeam && Math.hypot(p.x - x, p.y - y) <= Math.max(0.6, r)).map((p) => p.id);
+      if (ids.length) net.send({ t: 'unplace', ids });
+    }
     const keep = placed.filter((s) => Math.hypot(s.x - x, s.y - y) > Math.max(0.6, r));
     if (keep.length !== placed.length) placed = keep;
   } else {
-    const zone = zones[settings.team];
+    const zone = zones[myTeam];
     if (!zone) return;
+    const sent: PlaceItem[] = [];
     const grid = new Map<number, PlacedSoldier[]>();
     for (const s of placed) {
       const k = hashKey(s.x, s.y);
@@ -213,22 +227,49 @@ function paint(x: number, y: number, tool: 'place' | 'erase'): void {
     }
     for (const [sx, sy] of spots) {
       if (placed.length >= MAX_SOLDIERS) break;
-      if (placeBlock(terrain, zone, sx, sy) !== null || occupied(grid, settings.team, sx, sy)) continue;
-      const s = { team: settings.team, kind: settings.kind, x: sx, y: sy };
+      if (placeBlock(terrain, zone, sx, sy) !== null || occupied(grid, myTeam, sx, sy)) continue;
+      const s = { team: myTeam, kind: settings.kind, x: sx, y: sy };
       placed.push(s);
+      if (net) sent.push({ cid: cidCounter++, kind: s.kind, x: sx, y: sy });
       const k = hashKey(sx, sy);
       const l = grid.get(k);
       if (l) l.push(s);
       else grid.set(k, [s]);
     }
+    if (net) for (let i = 0; i < sent.length; i += 80) net.send({ t: 'place', items: sent.slice(i, i + 80) });
   }
   void ensureAtlas().then(() => editUnits.set(placed));
   editUnits.set(placed);
   syncPanel();
 }
 
+/** Online fill: the formation of my team goes to the host in paced batches (guests are rate limited). */
+let fillTimer: ReturnType<typeof setInterval> | null = null;
+function fillOnline(): void {
+  const w = watching;
+  const me = w?.session.model.me;
+  if (!w || !me || !playing() || !terrain) return;
+  if (fillTimer) clearInterval(fillTimer);
+  const mine = fillFormations(terrain, zones, settings.perTeam, settings.seed + me.team).filter((u) => u.team === me.team);
+  const items: PlaceItem[] = mine.map((u) => ({ cid: cidCounter++, kind: u.kind, x: u.x, y: u.y }));
+  let at = 0;
+  const pump = (): void => {
+    const room = playing() ? 1 : 0;
+    if (!room || at >= items.length) {
+      if (fillTimer) clearInterval(fillTimer);
+      fillTimer = null;
+      return;
+    }
+    const burst = w.host ? 40 : 1;
+    for (let k = 0; k < burst && at < items.length; k++, at += 80) w.session.send({ t: 'place', items: items.slice(at, at + 80) });
+  };
+  fillTimer = setInterval(pump, 28);
+  pump();
+}
+
 async function fill(): Promise<void> {
-  if (mode !== 'edit' || watching) return;
+  if (watching) return fillOnline();
+  if (mode !== 'edit') return;
   placed = fillFormations(terrain, zones, settings.perTeam, settings.seed);
   await ensureAtlas();
   editUnits.set(placed);
@@ -238,6 +279,7 @@ async function fill(): Promise<void> {
 // ---- battle ----
 
 function stopSim(): void {
+  view?.clearFx();
   sim?.dispose();
   sim = null;
   $('banner').textContent = '';
@@ -276,10 +318,18 @@ function backToEdit(): void {
 
 // ---- watching an online room ----
 
-let watching: { session: GuestSession; via: WatchVia; code: string } | null = null;
+let watching: { session: Session; via: WatchVia; code: string; play: boolean; host: boolean } | null = null;
+let cidCounter = 1;
+
+/** True while joined as a player (not a spectator) and the room is placing. */
+function playing(): boolean {
+  const m = watching?.session.model;
+  return !!watching?.play && m?.me?.role === 'player' && m.state?.phase === 'placing';
+}
 let watchSimStart: BattleStart | null = null;
 let watchWorldKey = '';
 let watchDirty = false;
+let lastWatchRefresh = 0;
 let watchBusy = false;
 let watchRerun = false;
 
@@ -287,15 +337,14 @@ function setWatchStatus(text: string): void {
   $('w-status').textContent = text;
 }
 
-async function watchStart(code: string): Promise<void> {
+async function watchStart(code: string, play = false): Promise<void> {
   if (watching || !code.trim()) return;
   $<HTMLButtonElement>('w-go').disabled = true;
   try {
-    const w = await watchRoom(code, t('v3.watch'), (k) => setWatchStatus(t(k)));
-    watching = { ...w, code: code.trim().toUpperCase() };
+    const w = await watchRoom(code, `3D ${10 + Math.floor(Math.random() * 90)}`, (k) => setWatchStatus(t(k)), play);
+    watching = { ...w, code: code.trim().toUpperCase(), play, host: false };
     w.session.model.listeners.push((m) => {
-      if (m.t === 'placed' || m.t === 'unplaced') watchDirty = true;
-      else void watchKick();
+      watchMessage(m.t);
     });
     void watchKick();
   } catch (e) {
@@ -303,6 +352,41 @@ async function watchStart(code: string): Promise<void> {
     setWatchStatus(t(key));
   }
   syncPanel();
+}
+
+/** Reacts to a server message of the room: placement changes only mark the armies dirty, ticks and cursors are ignored. */
+function watchMessage(type: string): void {
+  if (type === 'placed' || type === 'unplaced' || type === 'placeFail') watchDirty = true;
+  else if (type !== 'tick' && type !== 'presence' && type !== 'chat') void watchKick();
+}
+
+async function hostStart(kind: 'lan' | 'net'): Promise<void> {
+  if (watching) return;
+  $<HTMLButtonElement>('w-hostbtn').disabled = true;
+  try {
+    const h = await hostRoom(kind, `3D ${10 + Math.floor(Math.random() * 90)}`, (k) => setWatchStatus(t(k)));
+    watching = { ...h, play: true, host: true };
+    h.session.model.listeners.push((m) => watchMessage(m.t));
+    hostPushSettings();
+    void watchKick();
+  } catch (e) {
+    setWatchStatus(t(e instanceof Error && e.message.startsWith('v3.') ? e.message : 'v3.err.host'));
+  }
+  syncPanel();
+}
+
+/** Sends the panel's rules (map, seed, size, gold, open placement) to the room; changing them makes the guests ready up again. */
+function hostPushSettings(): void {
+  const w = watching;
+  if (!w?.host || w.session.model.state?.phase !== 'lobby') return;
+  w.session.send({
+    t: 'settings',
+    settings: { mapMode: 'fixed', map: specOf(), mapSeed: settings.seed, mapSize: settings.size, gold: Number($<HTMLSelectElement>('h-gold').value), openPlacement: $<HTMLInputElement>('h-open').checked },
+  });
+}
+
+function hostBegin(): void {
+  if (watching?.host) watching.session.send({ t: 'start' });
 }
 
 function watchLeave(message = ''): void {
@@ -349,7 +433,7 @@ async function watchReconcile(): Promise<void> {
   if (!w) return;
   const m = w.session.model;
   if (m.closedReason) {
-    watchLeave(m.closedReason === 'lost' ? t('v3.err.dropped') : t('v3.err.closed'));
+    watchLeave(m.closedReason === 'lost' || m.closedReason === 'serverLost' ? t('v3.err.dropped') : t('v3.err.closed'));
     return;
   }
   const st = m.state;
@@ -361,7 +445,8 @@ async function watchReconcile(): Promise<void> {
       watchSimStart = null;
       mode = 'edit';
     }
-    setWatchStatus(t('v3.st.lobby'));
+    setWatchStatus(w.host ? t('v3.st.hostLobby', { code: w.code }) : t('v3.st.lobby'));
+    syncPanel();
     return;
   }
   const colors = teamColorsOf(init, st);
@@ -384,8 +469,13 @@ async function watchReconcile(): Promise<void> {
       mode = 'edit';
       showZones(true);
     }
-    setWatchStatus(t('v3.st.placing'));
+    const me = m.me;
+    if (watching?.play && me?.role === 'player') {
+      settings.team = me.team;
+      setWatchStatus(t('v3.st.placingGold', { gold: me.gold, units: me.units }));
+    } else setWatchStatus(t('v3.st.placing'));
     watchDirty = true;
+    syncPanel();
     return;
   }
   const start = m.start;
@@ -394,6 +484,7 @@ async function watchReconcile(): Promise<void> {
     await watchBattle(w, start);
   }
   if (watching === w) setWatchStatus(t(st.phase === 'result' ? 'v3.st.result' : 'v3.st.battle'));
+  syncPanel();
 }
 
 async function watchBattle(w: NonNullable<typeof watching>, start: BattleStart): Promise<void> {
@@ -405,7 +496,7 @@ async function watchBattle(w: NonNullable<typeof watching>, start: BattleStart):
   await ensureAtlas(kinds);
   if (watching !== w || watchSimStart !== start) return;
   const cfg = battleConfig(start);
-  const opts = { send: (msg: Parameters<GuestSession['send']>[0]) => w.session.send(msg) };
+  const opts = { host: w.session instanceof HostSession ? w.session.lobby : undefined, send: (msg: Parameters<Session['send']>[0]) => w.session.send(msg) };
   let next: SimBackend | null = null;
   if (self.crossOriginIsolated) {
     try {
@@ -445,19 +536,27 @@ function buildPanel(): void {
     <h1>${t('v3.title')}</h1>
     <div class="row"><a href="../">${t('v3.back')}</a></div>
     <div class="row"><label>${t('v3.watch')}</label><input id="w-code" type="text" maxlength="8" placeholder="${t('v3.code')}" autocapitalize="characters" autocomplete="off" /><button id="w-go" type="button"></button></div>
+    <div class="row" id="w-playrow"><label>${t('v3.play')}</label><input id="w-play" type="checkbox" /></div>
+    <div class="row" id="w-hostrow"><select id="w-net"><option value="net">${t('v3.net.internet')}</option><option value="lan">${t('v3.net.lan')}</option></select><button id="w-hostbtn" type="button">${t('v3.hostBtn')}</button></div>
+    <div id="host-ui" hidden>
+      <div class="row"><label>${t('v3.gold')}</label><select id="h-gold">${[500, 1000, 2000, 5000, 10000, 100000, 1000000, 10000000].map((g) => `<option value="${g}">${g}</option>`).join('')}</select></div>
+      <div class="row"><label>${t('v3.open')}</label><input id="h-open" type="checkbox" checked /></div>
+      <div class="row"><button id="h-start" class="primary" type="button">${t('v3.startRoom')}</button></div>
+    </div>
+    <div class="row" id="w-ready-row" hidden><button id="w-ready" class="primary" type="button"></button><button id="w-fill" type="button">${t('v3.fill')}</button></div>
     <div class="row"><span id="w-status" class="hint"></span></div>
-    <div class="row"><label>${t('v3.map')}</label><select id="p-map">${PRESETS.map((p) => `<option value="${p.id}">${loc(p.name)}</option>`).join('')}</select></div>
+    <div class="row"><label>${t('v3.map')}</label><select id="p-map">${PRESETS.map((p) => `<option value="${p.id}">${loc(p.name)}</option>`).join('')}<option value="__room" hidden>${t('v3.roomMap')}</option></select></div>
     <div class="row"><label>${t('v3.seed')}</label><input id="p-seed" type="number" min="1" max="999999" /><button id="p-rnd" type="button">${t('v3.random')}</button></div>
     <div class="row"><label>${t('v3.size')}</label><select id="p-size">${sizeOptions().map((s) => `<option value="${s}">${t(`v3.sizeOpt.${s}`)}</option>`).join('')}</select></div>
     <div class="row"><label>${t('v3.teams')}</label><select id="p-teams">${[2, 3, 4, 5, 6].map((n) => `<option value="${n}">${n}</option>`).join('')}</select></div>
     <div id="edit-ui">
       <div class="row"><label>${t('v3.perTeam')}</label><input id="p-per" type="range" min="0" max="15000" step="100" /><span id="p-per-v"></span></div>
-      <div class="row"><button id="p-fill" type="button">${t('v3.fill')}</button><button id="p-clear" type="button">${t('v3.clear')}</button></div>
-      <div class="row"><label>${t('v3.team')}</label><select id="p-team"></select></div>
+      <div class="row solo-only"><button id="p-fill" type="button">${t('v3.fill')}</button><button id="p-clear" type="button">${t('v3.clear')}</button></div>
+      <div class="row solo-only"><label>${t('v3.team')}</label><select id="p-team"></select></div>
       <div class="row"><label>${t('v3.unit')}</label><select id="p-kind">${kinds.map((k) => `<option value="${k}">${unitDisplayName(k)}</option>`).join('')}</select></div>
       <div class="row seg" id="p-tool"><button type="button" data-tool="look">${t('v3.tool.look')}</button><button type="button" data-tool="place">${t('v3.tool.place')}</button><button type="button" data-tool="erase">${t('v3.tool.erase')}</button></div>
       <div class="row"><label>⌀</label><input id="p-brush" type="range" min="0" max="12" step="1" /></div>
-      <div class="row"><button id="p-start" class="primary" type="button">${t('v3.start')}</button></div>
+      <div class="row solo-only"><button id="p-start" class="primary" type="button">${t('v3.start')}</button></div>
     </div>
     <div id="battle-ui" hidden>
       <div class="row"><button id="b-pause" type="button"></button><button id="b-restart" type="button">${t('v3.restart')}</button><button id="b-edit" type="button">${t('v3.edit')}</button></div>
@@ -465,6 +564,8 @@ function buildPanel(): void {
     </div>
     <div class="row"><label>${t('v3.highlight')}</label><select id="p-hl"></select></div>
     <div class="row"><label>${t('v3.bars')}</label><input id="p-bars" type="checkbox" /></div>
+    <div class="row"><label>${t('v3.numbers')}</label><input id="p-numbers" type="checkbox" /></div>
+    <div class="row"><label>${t('v3.fx')}</label><input id="p-fx" type="checkbox" /></div>
     <div class="help">${t('v3.help')}</div>`;
   const sel = (id: string): HTMLSelectElement => $<HTMLSelectElement>(id);
   const inp = (id: string): HTMLInputElement => $<HTMLInputElement>(id);
@@ -493,7 +594,16 @@ function buildPanel(): void {
     settings.perTeam = Number(inp('p-per').value);
     $('p-per-v').textContent = String(settings.perTeam);
   };
-  $('w-go').onclick = () => (watching ? watchLeave() : void watchStart(inp('w-code').value));
+  $('w-go').onclick = () => (watching ? watchLeave() : void watchStart(inp('w-code').value, inp('w-play').checked));
+  $('w-hostbtn').onclick = () => void hostStart(sel('w-net').value as 'lan' | 'net');
+  $('h-start').onclick = hostBegin;
+  $('h-gold').onchange = hostPushSettings;
+  $('h-open').onchange = hostPushSettings;
+  $('w-fill').onclick = fillOnline;
+  $('w-ready').onclick = () => {
+    const me = watching?.session.model.me;
+    if (watching && me) watching.session.send({ t: 'ready', ready: !me.ready });
+  };
   $('p-fill').onclick = () => void fill();
   $('p-clear').onclick = () => {
     placed = [];
@@ -519,12 +629,16 @@ function buildPanel(): void {
     syncPanel();
   };
   $('b-restart').onclick = () => {
+    if (watching?.host) {
+      watching.session.send({ t: 'rematch' });
+      return;
+    }
     if (!sim) return;
     $('banner').textContent = '';
     seedCounter = settings.seed;
     void sim.reset(seedCounter);
   };
-  $('b-edit').onclick = backToEdit;
+  $('b-edit').onclick = () => (watching?.host ? watching.session.send({ t: 'lobby' }) : backToEdit());
   document.querySelectorAll<HTMLElement>('#b-speed button').forEach((b) =>
     b.addEventListener('click', () => {
       speed = Number(b.dataset.s);
@@ -536,6 +650,8 @@ function buildPanel(): void {
     settings.highlight = Number(sel('p-hl').value);
   };
   inp('p-bars').onchange = () => (settings.bars = inp('p-bars').checked);
+  inp('p-numbers').onchange = () => (settings.numbers = inp('p-numbers').checked);
+  inp('p-fx').onchange = () => (settings.particles = inp('p-fx').checked);
   $('toggle').onclick = () => $('panel').classList.toggle('hidden');
   if (matchMedia('(max-width: 760px)').matches) $('panel').classList.add('hidden');
 }
@@ -543,7 +659,7 @@ function buildPanel(): void {
 function syncPanel(): void {
   const sel = (id: string): HTMLSelectElement => $<HTMLSelectElement>(id);
   const inp = (id: string): HTMLInputElement => $<HTMLInputElement>(id);
-  sel('p-map').value = settings.preset;
+  sel('p-map').value = specOverride ? '__room' : settings.preset;
   inp('p-seed').value = String(settings.seed);
   sel('p-size').value = String(settings.size);
   sel('p-teams').value = String(settings.teams);
@@ -556,12 +672,28 @@ function syncPanel(): void {
   sel('p-hl').value = String(settings.highlight);
   inp('p-brush').value = String(settings.brush);
   inp('p-bars').checked = settings.bars;
-  $('edit-ui').hidden = mode !== 'edit' || !!watching;
-  $('battle-ui').hidden = mode !== 'battle' || !!watching;
+  inp('p-numbers').checked = settings.numbers;
+  inp('p-fx').checked = settings.particles;
+  const isPlaying = playing();
+  document.querySelectorAll<HTMLElement>('.solo-only').forEach((e) => (e.hidden = !!watching));
+  const hosting = !!watching?.host;
+  // The host picks the map in the lobby (a local preview until the game starts).
+  const lobbyHost = hosting && watching?.session.model.state?.phase === 'lobby';
+  $('edit-ui').hidden = mode !== 'edit' || (!!watching && !isPlaying);
+  $('w-playrow').hidden = !!watching;
+  const rm = watching?.session.model;
+  const canReady = !!watching?.play && rm?.me?.role === 'player' && (rm.state?.phase === 'lobby' || rm.state?.phase === 'placing');
+  $('w-ready-row').hidden = !canReady;
+  if (canReady) $('w-ready').textContent = watching?.session.model.me?.ready ? t('v3.unready') : t('v3.ready');
+  $('battle-ui').hidden = mode !== 'battle' || (!!watching && !watching.host);
+  $('host-ui').hidden = !watching?.host || watching.session.model.state?.phase !== 'lobby';
+  $('w-hostrow').hidden = !!watching;
   $('w-go').textContent = watching ? t('v3.leaveBtn') : t('v3.watchBtn');
   $<HTMLButtonElement>('w-go').disabled = false;
   inp('w-code').disabled = !!watching;
-  for (const id of ['p-map', 'p-seed', 'p-rnd', 'p-size', 'p-teams']) ($(id) as HTMLInputElement).disabled = !!watching;
+  inp('w-play').disabled = !!watching;
+  for (const id of ['p-map', 'p-seed', 'p-rnd', 'p-size']) ($(id) as HTMLInputElement).disabled = !!watching && !lobbyHost;
+  ($('p-teams') as HTMLInputElement).disabled = !!watching;
   $('b-pause').textContent = paused ? t('v3.resume') : t('v3.pause');
   document.querySelectorAll<HTMLElement>('#p-tool button').forEach((b) => b.classList.toggle('on', b.dataset.tool === controls.tool));
   document.querySelectorAll<HTMLElement>('#b-speed button').forEach((b) => b.classList.toggle('on', Number(b.dataset.s) === speed));
@@ -576,7 +708,16 @@ function frame(now: number, last: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   fps += (1 / Math.max(0.001, dt) - fps) * 0.08;
   controls.update(dt);
-  if (watchDirty) {
+  if (watching && !watching.host) {
+    const rm = watching.session.model;
+    if (rm.paused !== paused || rm.speed !== speed) {
+      paused = rm.paused;
+      speed = rm.speed;
+      syncPanel();
+    }
+  }
+  if (watchDirty && now - lastWatchRefresh > 150) {
+    lastWatchRefresh = now;
     watchDirty = false;
     watchRefreshPlaced();
   }
@@ -587,9 +728,11 @@ function frame(now: number, last: number): void {
     battleStep += info.steps;
     view.setUnits(sim.units as UnitsLike, info.alpha, dt, focus, settings.bars);
     view.setProjectiles(sim.projectiles, info.alpha * sim.stepDt);
+    view.updateFx(sim.events, dt * (paused ? 0 : 1), settings.numbers, settings.particles);
     sim.events.length = 0;
     if (sim.winner !== -1) $('banner').textContent = sim.winner >= 0 ? t('v3.winner', { n: sim.winner + 1 }) : t('v3.draw');
   } else {
+    view.updateFx([], dt, false, false);
     view.setUnits(editUnits, 1, dt, focus, false);
     view.setProjectiles({ count: 0 } as never, 0);
   }
@@ -644,9 +787,13 @@ async function main(): Promise<void> {
   syncPanel();
   // Automation / sharing links: ?auto=1 fills the armies and starts the battle.
   const watchCode = qp.get('watch');
-  if (watchCode) {
+  const hostKind = qp.get('host');
+  if (hostKind === 'lan' || hostKind === 'net') {
+    void hostStart(hostKind);
+  } else if (watchCode) {
     $<HTMLInputElement>('w-code').value = watchCode;
-    void watchStart(watchCode);
+    $<HTMLInputElement>('w-play').checked = qp.get('play') === '1';
+    void watchStart(watchCode, qp.get('play') === '1');
   } else if (qp.get('auto')) {
     await fill();
     await startBattle();
@@ -656,7 +803,7 @@ async function main(): Promise<void> {
       syncPanel();
     }
   }
-  (window as unknown as { __v3: unknown }).__v3 = { view, settings, get sim() { return sim; }, get placed() { return placed; }, get zones() { return zones; }, get terrain() { return terrain; }, fill, startBattle, buildWorld, };
+  (window as unknown as { __v3: unknown }).__v3 = { view, get watching() { return watching; }, settings, get sim() { return sim; }, get placed() { return placed; }, get zones() { return zones; }, get terrain() { return terrain; }, fill, startBattle, buildWorld, };
 }
 
 void main();
