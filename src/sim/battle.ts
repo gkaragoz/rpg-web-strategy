@@ -1,7 +1,7 @@
 import { Grid } from './grid';
 import { Terrain, T_WATER } from './terrain';
 import type { MapSpec } from './mapSpec';
-import { simDtFor } from './constants';
+import { PATH_MAX, simDtFor } from './constants';
 import { MovePool, PH_GRID, PH_MOVE, PH_PICK, PH_SEP_APPLY, PH_SEP_SCAN, phaseChunk, type HelperInit } from './movePool';
 import { PICK_KEEP, Picker } from './picker';
 import { Separator } from './separator';
@@ -810,6 +810,18 @@ export class Battle {
    */
   private chaseWatchdog(i: number, t: number, dist: number, dt: number): boolean {
     const u = this.units;
+    // A unit following a detour (a ramp around a cliff) gets farther from its target in a straight line before it gets closer:
+    // while it walks a path, progress is measured along that path.
+    if (u.pathN[i] > 0) {
+      const m = this.chaseWalk(i, t);
+      if (m > u.chaseBest[i] + 4) {
+        // A new, longer route was found: it is the new baseline, not a lack of progress.
+        u.chaseBest[i] = m;
+        u.chaseT[i] = 0;
+        return false;
+      }
+      dist = m;
+    }
     if (dist < u.chaseBest[i] - 0.5) {
       u.chaseBest[i] = dist;
       u.chaseT[i] = 0;
@@ -827,6 +839,18 @@ export class Battle {
     u.chaseBest[i] = Infinity;
     this.dbg.bans++;
     return true;
+  }
+
+  /** Remaining walking distance to the target along the unit's current path (its waypoints, then the straight leg to the target). */
+  private chaseWalk(i: number, t: number): number {
+    const u = this.units;
+    const m = u.pathN[i];
+    const pts = u.pathPts;
+    const base = i * PATH_MAX * 2;
+    let k = Math.min(u.pathK[i], m - 1);
+    let d = Math.hypot(pts[base + k * 2] - u.x[i], pts[base + k * 2 + 1] - u.y[i]);
+    for (; k < m - 1; k++) d += Math.hypot(pts[base + (k + 1) * 2] - pts[base + k * 2], pts[base + (k + 1) * 2 + 1] - pts[base + k * 2 + 1]);
+    return d + Math.hypot(u.x[t] - pts[base + (m - 1) * 2], u.y[t] - pts[base + (m - 1) * 2 + 1]);
   }
 
   /** Leash: true if it is holding the unit back; if the wait was too long, temporarily disables it. */

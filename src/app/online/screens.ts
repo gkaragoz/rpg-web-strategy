@@ -165,6 +165,8 @@ export class MenuScreen {
 }
 
 const GOLDS = [500, 1000, 2000, 5000, 10000, 100000, 1000000];
+/** Short label for a starting-gold choice (500, 1k, 10k, 1M) so the seven buttons fit a phone width. */
+const goldLabel = (g: number): string => (g >= 1e6 ? `${g / 1e6}M` : g >= 1000 ? `${g / 1000}k` : String(g));
 const TIMES: number[] = [60, 120, 300, 0];
 const SIZES: readonly number[] = ONLINE_MAP_SIZES;
 
@@ -257,7 +259,7 @@ export class LobbyScreen {
 
   private build(): void {
     const q = this.q.bind(this);
-    q('#l-gold').innerHTML = GOLDS.map((g) => `<button type="button" data-g="${g}">${g}</button>`).join('');
+    q('#l-gold').innerHTML = GOLDS.map((g) => `<button type="button" data-g="${g}">${goldLabel(g)}</button>`).join('');
     q('#l-gold').querySelectorAll('button').forEach((b) =>
       b.addEventListener('click', () => this.patch({ gold: Number((b as HTMLElement).dataset.g) })),
     );

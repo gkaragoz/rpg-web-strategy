@@ -379,6 +379,11 @@ kbd {
   left: 50%;
   transform: translateX(-50%);
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  /* Natural width (not squeezed to the right half by left: 50%), wrapping only when the window is narrower. */
+  width: max-content;
+  max-width: calc(100vw - 24px);
   gap: 8px;
   align-items: center;
   padding: 8px 12px;
@@ -388,8 +393,12 @@ kbd {
 }
 .hud-hint {
   position: absolute;
-  left: 12px;
-  bottom: 12px;
+  /* Centered above the bottom bar (and the picker / badge when they are stacked above it): see bottomStack.ts (--hint-b). */
+  left: 50%;
+  bottom: var(--hint-b, 66px);
+  transform: translateX(-50%);
+  max-width: min(calc(100vw - 24px), 640px);
+  text-align: center;
   padding: 4px 8px;
   border-radius: 8px;
   background: rgba(10, 14, 20, 0.6);
@@ -1701,6 +1710,8 @@ button.on {
     left: 0;
     right: 0;
     bottom: 0;
+    width: auto;
+    max-width: none;
     transform: none;
     justify-content: flex-start;
     flex-wrap: nowrap;
@@ -1722,7 +1733,8 @@ button.on {
   .hud-hint {
     left: 8px;
     right: 8px;
-    bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+    transform: none;
+    max-width: none;
     text-align: center;
     background: rgba(10, 14, 20, 0.6);
     animation: hint-out 1s ease 6s forwards;
@@ -1858,6 +1870,11 @@ button.on {
   }
   .on-ingame-chat {
     left: 8px;
+    /* Chat lines stay left of the picker / badge column (bottomStack.ts); the open input may use the full width. */
+    width: min(360px, max(120px, calc(100vw - var(--lp-w, 0px) - 24px)));
+  }
+  .on-ingame-chat:has(.on-ig-in:not([hidden])) {
+    width: calc(100vw - 16px);
   }
 }
 .on-tabs {
@@ -2056,16 +2073,13 @@ button.on {
 .cam3d {
   position: fixed;
   right: calc(10px + env(safe-area-inset-right, 0px));
-  bottom: calc(max(var(--bar-h, 0px), env(safe-area-inset-bottom, 0px)) + 50px);
+  bottom: calc(max(var(--bar-h, 0px), env(safe-area-inset-bottom, 0px)) + var(--cam-lift, 50px));
   z-index: 10;
   display: grid;
   grid-template-columns: repeat(2, 34px);
   gap: 6px;
 }
-/* The connection badge (online) sits in the same corner: stand above it. */
-body:has(.on-badge) .cam3d {
-  bottom: calc(max(var(--bar-h, 0px), env(safe-area-inset-bottom, 0px)) + 100px);
-}
+/* --cam-lift (bottomStack.ts) keeps the buttons above the picker bar and a stacked connection badge. */
 .cam3d button {
   height: 34px;
   padding: 0;
@@ -2358,10 +2372,33 @@ dialog {
   .dps {
     top: calc(52px + env(safe-area-inset-top, 0px));
     left: 8px;
-    width: min(300px, calc(100vw - 16px));
+    box-sizing: border-box;
+    width: min(318px, calc(100vw - 16px));
   }
   .dps-list {
     max-height: 38vh;
+  }
+}
+
+/* Mid-width windows: the side panels and the centered, wrapping dock share the bottom: stop the panels above the dock. */
+@media (min-width: 901px) and (max-width: 1260px) {
+  .panel {
+    max-height: calc(100dvh - 340px);
+  }
+}
+
+/* Mid-width windows: the centered team bar would run into the damage meter (left) and the stats panel (right): drop them below it. */
+@media (min-width: 761px) and (max-width: 1300px) and (min-height: 521px) {
+  .dps,
+  #stats {
+    top: 64px;
+  }
+}
+
+/* Desktop: the chat lines (bottom left) stay clear of the centered key hint above the bottom bar. */
+@media (min-width: 761px) and (min-height: 521px) {
+  .on-ingame-chat {
+    width: min(360px, max(140px, calc(50vw - 340px)));
   }
 }
 

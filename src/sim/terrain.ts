@@ -1,6 +1,6 @@
 import { DEFAULT_MAP, type LayoutType, type MapSpec, type ReliefType, type RiverType } from './mapSpec';
 import { mulberry32 } from './random';
-import { COVER_SAMPLE, COVER_STEPS, PATH_SLOPE_COST, PATH_SMOOTH_MAX_GRADE } from './data/combat';
+import { COVER_SAMPLE, COVER_STEPS, PATH_SLOPE_COST, PATH_SMOOTH_MAX_GRADE, PATH_STEEP_COST, PATH_STEEP_FROM } from './data/combat';
 
 export const T_GRASS = 0;
 export const T_WATER = 1;
@@ -682,8 +682,10 @@ export class Terrain {
           const idx = ny * n + nx;
           if (!nav[idx]) continue;
           if (dx && dy && !(nav[cy * n + nx] && nav[ny * n + cx])) continue;
-          const climb = relief ? Math.max(0, this.height[idx] - this.height[cur]) / H_UNITS : 0;
-          const ng = G[cur] + (dx && dy ? 1.414 : 1) * (1 + PATH_SLOPE_COST * climb);
+          const dh = relief ? (this.height[idx] - this.height[cur]) / H_UNITS : 0;
+          const climb = dh > 0 ? dh : 0;
+          const steep = Math.abs(dh) > PATH_STEEP_FROM ? Math.abs(dh) - PATH_STEEP_FROM : 0;
+          const ng = G[cur] + (dx && dy ? 1.414 : 1) * (1 + PATH_SLOPE_COST * climb + PATH_STEEP_COST * steep);
           if (S[idx] === gen && ng >= G[idx]) continue;
           S[idx] = gen;
           G[idx] = ng;
@@ -1035,7 +1037,11 @@ export class Terrain {
           // Two high ridges parallel to the middle axis; only one pass (gate) is open near s ~ 0.
           const R = n * 0.17;
           const hw = n * 0.05 * (1 - 0.97 * Math.exp(-((s / (n * 0.075)) ** 2)));
-          H = 7 * smooth(0, 1, (hw - Math.abs(ad - R)) / 0.9 + 0.5) + 0.5 * noise(x / 6, y / 6, seed + 4);
+          // The gate is a flat corridor: the ridge profile alone never drops to zero on its centre line (a thin wall stayed
+          // there and the armies walked around the map edge on big maps), so the ridge is cut out explicitly.
+          const gate = Math.max(4.5, n * 0.055);
+          const open = smooth(gate * 0.55, gate, Math.abs(s));
+          H = 7 * smooth(0, 1, (hw - Math.abs(ad - R)) / 0.9 + 0.5) * open + 0.5 * noise(x / 6, y / 6, seed + 4);
         } else if (rl === 'ridge') {
           const R = n * 0.2;
           const pass = 0.5 + 0.5 * Math.cos((s * Math.PI * 2) / (n * 0.5));

@@ -5,7 +5,6 @@ export const maps: StringTable = {
   en: {
     'maps.dlg.title': 'Pick a map',
     'maps.dlg.desc': 'Biomes and layouts; cards are previewed with the current seed and size.',
-    'maps.dlg.activity': 'Picking a map',
     'maps.filter.aria': 'Biome filter',
     'maps.filter.all': 'All',
     'maps.label.random': 'Random map',
@@ -30,8 +29,7 @@ export const maps: StringTable = {
   },
   tr: {
     'maps.dlg.title': 'Harita seç',
-    'maps.dlg.desc': 'Biyom ve yapı çeşitleri; kartlar mevcut tohum ve boyutla önizlenir.',
-    'maps.dlg.activity': 'Harita seçiyor',
+    'maps.dlg.desc': 'Biyomlar ve düzenler; kartlar mevcut tohum ve boyutla önizlenir.',
     'maps.filter.aria': 'Biyom filtresi',
     'maps.filter.all': 'Hepsi',
     'maps.label.random': 'Rastgele harita',
@@ -48,8 +46,8 @@ export const maps: StringTable = {
     'maps.field.river': 'Nehir',
     'maps.field.forest': 'Orman',
     'maps.field.village': 'Köy',
-    'maps.field.layout': 'Kurgu',
-    'maps.field.relief': 'Kabartma',
+    'maps.field.layout': 'Düzen',
+    'maps.field.relief': 'Engebe',
     'maps.field.crossing': 'Geçit',
     'maps.selected': 'Seçili: {name}',
     'maps.ok': 'Tamam',

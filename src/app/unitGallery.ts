@@ -1,4 +1,4 @@
-import { getLang, loc, t } from '../i18n';
+import { fmtNum, getLang, loc, t } from '../i18n';
 import { RACE_NAMES, RARITY_NAMES, TROOP_BY_ID, type Race, type Rarity } from '../sim/data/troops';
 import { KIND_COUNT, LEGACY_COUNT, STATS, isHealer, isMelee, unitDisplayName } from '../sim/units';
 import { unitGold } from '../net/economy';
@@ -71,7 +71,7 @@ export class UnitGallery {
   }
 
   private kinds(): number[] {
-    const q = this.query.trim().toLocaleLowerCase('tr');
+    const q = this.query.trim().toLocaleLowerCase(getLang());
     const out: number[] = [];
     for (let k = 0; k < KIND_COUNT; k++) {
       const tr = k >= LEGACY_COUNT ? TROOP_BY_ID[STATS[k].troop ?? ''] : undefined;
@@ -83,7 +83,7 @@ export class UnitGallery {
         if (!tr || tr.rarity !== this.rarity) continue;
       }
       if (this.race !== 'all' && (!tr || tr.race !== this.race)) continue;
-      if (q && !unitDisplayName(k).toLocaleLowerCase('tr').includes(q)) continue;
+      if (q && !unitDisplayName(k).toLocaleLowerCase(getLang()).includes(q)) continue;
       out.push(k);
     }
     return sortKinds(out, this.sortKey, this.sortDir, (k, key) => this.sortValue(k, key));
@@ -144,7 +144,7 @@ export class UnitGallery {
     const skillArea = !!s.skill && skillParams(s.skill).radius > 0;
     const area =
       (radius > 0
-        ? `<span class="ug-chip area" title="${esc(t('units.area.tip'))}">${cardIcon('burst', 14)}${esc(t('units.area.area', { r: radius.toFixed(1) }))}</span>`
+        ? `<span class="ug-chip area" title="${esc(t('units.area.tip'))}">${cardIcon('burst', 14)}${esc(t('units.area.area', { r: fmtNum(radius) }))}</span>`
         : `<span class="ug-chip single" title="${esc(t('units.area.singleTip'))}">${cardIcon('target', 14)}${esc(t('units.area.single'))}</span>`) +
       (skillArea ? `<span class="ug-chip area skill" title="${esc(t('units.area.skillTip'))}">${cardIcon('star', 14)}${esc(t('units.area.skill'))}</span>` : '');
     const dmgId = DMG_IDS[s.dmgType];
@@ -164,8 +164,8 @@ export class UnitGallery {
     const stats =
       this.stat('hp' + hot('hp'), 'heart', t('units.stat.hp.label'), Math.sqrt(s.hp / mx.hp), String(Math.round(s.hp))) +
       this.stat('pw' + hot('pw'), 'flame', t('units.stat.power.label'), Math.sqrt(s.power / mx.power), String(Math.round(s.power))) +
-      this.stat('rg' + hot('rg'), 'range', t('units.stat.range.label'), s.range / mx.range, s.range.toFixed(1)) +
-      this.stat('sp' + hot('sp'), 'bolt', t('units.stat.speed.label'), s.speed / mx.speed, s.speed.toFixed(1));
+      this.stat('rg' + hot('rg'), 'range', t('units.stat.range.label'), s.range / mx.range, fmtNum(s.range)) +
+      this.stat('sp' + hot('sp'), 'bolt', t('units.stat.speed.label'), s.speed / mx.speed, fmtNum(s.speed));
     return `<button type="button" class="ug-card r-${tr ? tr.rarity : 'legacy'}${sel ? ' sel' : ''}" data-kind="${k}" aria-pressed="${sel}">${price}
   <span class="ug-icon" data-icon="${k}"></span>
   <span class="ug-name">${esc(unitDisplayName(k))}</span>

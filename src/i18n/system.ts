@@ -19,8 +19,8 @@ export const system: StringTable = {
     'sys.error.unknown': 'unknown',
     'sys.gl.lost': 'The graphics context was lost.',
     'sys.gl.reload': 'Reload page',
-    'sys.mapChanged': 'Map changed: {moved} soldiers moved.',
-    'sys.mapChangedRemoved': 'Map changed: {moved} soldiers moved, {removed} soldiers removed.',
+    'sys.mapChanged': 'Map changed: {moved} {moved?soldier|soldiers} moved.',
+    'sys.mapChangedRemoved': 'Map changed: {moved} {moved?soldier|soldiers} moved, {removed} {removed?soldier|soldiers} removed.',
     'sys.slow': 'Frames are slow: graphics resolution lowered ({res}×)',
   },
   tr: {

@@ -2,8 +2,8 @@ import type { BattleConfig } from '../sim/battle';
 import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
 
-/** Protocol version: a client with a different version cannot join the lobby. */
-export const PROTOCOL = 10;
+/** Protocol version: a client with a different version cannot join the lobby. Bumped for wire changes and also when simulation or map generation results change (v11: valley gates, path costs, chase watchdog), because lockstep needs identical results. */
+export const PROTOCOL = 11;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;

@@ -13,8 +13,9 @@ export interface StatsInfo {
 }
 
 /** FPS / profiler panel at the top right. */
-/** On touch devices the stats panel is hidden by default (it covers the screen); opened with the HUD button. */
-export const STATS_DEFAULT_SHOWN = typeof matchMedia === 'undefined' || !matchMedia('(pointer: coarse)').matches;
+/** On touch devices and small windows the stats panel is hidden by default (it covers the HUD); opened with the HUD button. */
+export const STATS_DEFAULT_SHOWN =
+  typeof matchMedia === 'undefined' || !matchMedia('(pointer: coarse), (max-width: 760px), (max-height: 520px)').matches;
 
 export class StatsPanel {
   private readonly el: HTMLElement;

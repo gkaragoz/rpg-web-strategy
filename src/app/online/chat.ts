@@ -45,8 +45,8 @@ export class ChatOverlay {
     window.addEventListener('keydown', this.keys);
     // Stay above the bottom dock (tall on phones).
     const place = (): void => {
-      const d = document.querySelector('.on-dock');
-      const dockBottom = d ? Math.round(window.innerHeight - d.getBoundingClientRect().top + 8) : 96;
+      const d = document.querySelector('.on-dock') ?? document.querySelector('.hud-bottom');
+      const dockBottom = d && d.getClientRects().length > 0 ? Math.round(window.innerHeight - d.getBoundingClientRect().top + 8) : 96;
       // The on-screen keyboard only shrinks the visual viewport on phones: keep the input above it.
       const vv = window.visualViewport;
       const kb = vv && !this.input.hidden ? Math.max(0, Math.round(window.innerHeight - (vv.offsetTop + vv.height))) + 8 : 0;

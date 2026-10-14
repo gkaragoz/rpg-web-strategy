@@ -68,11 +68,27 @@ const TR: Strings = Object.assign({}, ...TABLES.map((x) => x.tr));
 /** All keys of both languages (used by the consistency test). */
 export const allStrings = (): { en: Strings; tr: Strings } => ({ en: EN, tr: TR });
 
-/** Looks up a UI string; falls back to English, then to the key itself. `{name}` placeholders come from `vars`. */
+/**
+ * Looks up a UI string; falls back to English, then to the key itself. `{name}` placeholders come from `vars`.
+ * A plural form `{n?one|other}` picks `one` when `vars.n` is exactly 1 and `other` otherwise (Turkish needs none:
+ * a counted noun stays singular, so its tables simply write the noun after `{n}`).
+ */
 export function t(key: string, vars?: Record<string, string | number>): string {
   let s = (lang === 'tr' ? TR[key] : EN[key]) ?? EN[key] ?? key;
-  if (vars) for (const k of Object.keys(vars)) s = s.split(`{${k}}`).join(String(vars[k]));
+  if (vars) {
+    s = s.replace(PLURAL_RE, (_m, name: string, one: string, other: string) => (Number(vars[name]) === 1 ? one : other));
+    for (const k of Object.keys(vars)) s = s.split(`{${k}}`).join(String(vars[k]));
+  }
   return s;
+}
+
+/** `{n?one|other}` plural placeholder (see `t`). */
+const PLURAL_RE = /\{([a-zA-Z0-9]+)\?([^|{}]*)\|([^{}]*)\}/g;
+
+/** Number with `digits` decimals using the current language's decimal separator (Turkish uses a comma). */
+export function fmtNum(n: number, digits = 1): string {
+  const s = n.toFixed(digits);
+  return lang === 'tr' ? s.replace('.', ',') : s;
 }
 
 /** Language switch that persists and reloads so every screen is rebuilt in the new language. */

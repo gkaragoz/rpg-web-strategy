@@ -1,4 +1,4 @@
-import { loc, t } from '../i18n';
+import { fmtNum, loc, t } from '../i18n';
 import { RACE_NAMES, RARITY_NAMES, TROOP_BY_ID, type Rarity } from '../sim/data/troops';
 import { DEFAULT_STATS, KIND_COUNT, LEGACY_COUNT, STATS, TUNABLE, isTank, unitDisplayName, type StatKey } from '../sim/units';
 import { trackDialog } from '../net/act';
@@ -114,7 +114,7 @@ export class UnitSettings {
   }
 
   private dps(k: number): string {
-    return (this.value(k, 'power') / this.value(k, 'cooldown')).toFixed(1);
+    return fmtNum(this.value(k, 'power') / this.value(k, 'cooldown'));
   }
 
   private effHp(k: number): string {

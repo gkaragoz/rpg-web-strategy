@@ -15,7 +15,7 @@ export const FORBIDDEN = [
 ];
 
 /** Files that legitimately contain Turkish text (UI tables and bilingual data). */
-export const TURKISH_ALLOWED = [/^src\/i18n\//, /^src\/i18n\.ts$/, /^src\/sim\/data\/troops\.ts$/, /^src\/sim\/mapSpec\.ts$/, /^src\/sim\/__tests__\/i18n\.test\.ts$/, /^index\.html$/];
+export const TURKISH_ALLOWED = [/^src\/i18n\//, /^src\/i18n\.ts$/, /^src\/sim\/data\/troops\.ts$/, /^src\/sim\/mapSpec\.ts$/, /^src\/sim\/__tests__\/i18n\.test\.ts$/, /^index\.html$/, /^scripts\/lib\/rules\.mjs$/];
 
 const TURKISH_RE = /[çğıöşüÇĞİÖŞÜ]/;
 
@@ -26,9 +26,10 @@ export function problemsIn(file, text) {
     const m = re.exec(text);
     if (m) out.push(`${file}: forbidden term "${m[0]}" (${why})`);
   }
-  const isCode = /^src\/.*\.ts$/.test(file) && !/__tests__\//.test(file);
+  // Application code: the TypeScript sources, the relay worker, the helper scripts, the public scripts and the 3D redirect page.
+  const isCode = (/^src\/.*\.ts$/.test(file) && !/__tests__\//.test(file)) || /^(relay\/src|scripts|public)\/.*\.m?js$/.test(file) || file === '3d/index.html';
   if (isCode && !TURKISH_ALLOWED.some((r) => r.test(file))) {
-    const line = text.split(/\r?\n/).findIndex((l) => TURKISH_RE.test(l.replace(/\/\/.*$/, '')));
+    const line = text.split(/\r?\n/).findIndex((l) => TURKISH_RE.test(l.replace(/(^|[\s;,{(])\/\/.*$/, '$1')));
     if (line >= 0) out.push(`${file}:${line + 1}: Turkish text in code (UI strings must go through src/i18n; comments are English)`);
   }
   return out;

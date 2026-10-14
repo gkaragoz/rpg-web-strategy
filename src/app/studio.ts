@@ -241,6 +241,8 @@ export class Studio {
       s.options.volume = Number((e.target as HTMLInputElement).value) / 100;
       this.optionsChanged(false);
     });
+    // The comedy look and the debug overlay are drawn by the 2D renderers only.
+    if (this.d.view3d) for (const id of ['#cv', '#dbg']) $in(id).closest<HTMLElement>('label')!.style.display = 'none';
     $in('#cv').addEventListener('change', (e) => {
       s.options.comedyVisual = (e.target as HTMLInputElement).checked;
       this.optionsChanged();

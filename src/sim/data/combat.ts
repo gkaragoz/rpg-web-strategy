@@ -29,6 +29,9 @@ export const DOWNHILL_MAX = 0.1;
 /** Path-finding: extra cost per step climbed, and the steepest line (steps per tile) path smoothing may cut across. */
 export const PATH_SLOPE_COST = 1.5;
 export const PATH_SMOOTH_MAX_GRADE = 0.9;
+/** Extra cost per step of height difference beyond PATH_STEEP_FROM on one tile move, both uphill and downhill (the near-cliff slopes that are walkable but crawl-slow): routes prefer the gentler ramps. */
+export const PATH_STEEP_COST = 7;
+export const PATH_STEEP_FROM = 0.8;
 
 /** Damage multiplier for an attacker standing `dh` steps above (positive) or below the target. */
 export function highGroundDamage(dh: number, melee: boolean): number {

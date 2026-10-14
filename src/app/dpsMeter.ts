@@ -1,11 +1,11 @@
-import { t } from '../i18n';
+import { fmtNum, t } from '../i18n';
 import type { SimBackend } from '../sim/backend';
 import { KIND_COUNT, MAX_TEAMS, unitDisplayName } from '../sim/units';
 
 /** Damage with a short suffix: 950, 4.2k, 48.2k, 1.3m. */
 export function fmtDamage(n: number): string {
-  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}m`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  if (n >= 1e6) return `${fmtNum(n / 1e6)}m`;
+  if (n >= 1000) return `${fmtNum(n / 1000)}k`;
   return String(Math.round(n));
 }
 
@@ -107,13 +107,17 @@ export class DpsMeter {
     const tabsEl = this.el.querySelector('.dps-tabs') as HTMLElement;
     this.head = this.el.querySelector('.dps-head') as HTMLElement;
     this.list = this.el.querySelector('.dps-list') as HTMLElement;
+    const narrow = window.matchMedia('(max-width: 760px)').matches;
     for (let ti = 0; ti < teamCount; ti++) {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'dps-tab';
       b.setAttribute('role', 'tab');
       b.style.background = d.colors[ti];
-      b.textContent = d.teamName(ti);
+      // On a narrow screen a default name ("Team 3" / "Takım 3") does not fit the tab: show the number, keep the name as the tooltip.
+      const full = d.teamName(ti);
+      b.textContent = narrow && full === t('battle.team.name', { n: ti + 1 }) ? String(ti + 1) : full;
+      b.title = full;
       b.addEventListener('click', () => {
         this.team = ti;
         this.paintTabs();

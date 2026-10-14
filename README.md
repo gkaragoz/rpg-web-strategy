@@ -47,12 +47,12 @@ This project is **source-available, but closed to commercial use**. The source c
 
 ## Features
 
-- Isometric auto-battles with up to 6 teams, 49 units (5 classics + 44 roster units), skills such as
+- Auto-battles in an isometric 2D view or a 3D view, with up to 6 teams, 49 units (5 classics + 44 roster units), skills such as
   summoning, resurrection, healing, stuns, fear, shields, area and line damage.
 - Map generator with biomes, rivers, forests, villages, relief and layouts (valley, central fortress, islands and bridges,
-  crossroads), 21 presets and a fully random mode.
+  crossroads), 33 presets and a fully random mode.
 - **Online play:** host a lobby, friends join with a code; budget-based unit placement; deterministic lockstep simulation;
-  spectators, reconnection, chat, player cursors. LAN, internet relay and WebRTC fallback.
+  spectators, reconnection, chat, player cursors, up to 30 000 soldiers in a room. LAN, internet relay and WebRTC fallback. A room only accepts players on the same game version.
 - **Mobile:** touch controls, bottom-sheet toolbar, adaptive resolution.
 - **Comedy mode:** ragdoll deaths, cartoon sounds, physics launches.
 - Bilingual UI: English (default) and Türkçe, switchable from the flag dropdown at the bottom right.
@@ -112,10 +112,11 @@ palette, soldier placement and a benchmark.
 | Right click / drag | Erase (Shift: only the selected team) |
 | Q / E | Switch team · 1–5: soldier type · B: brush · X: place/erase |
 | Ctrl+Z / Ctrl+Y (or Z / Y) | Undo / redo |
-| Wheel, WASD, middle button | Zoom, pan |
+| Wheel, WASD, middle button | Zoom, pan (2D view) |
+| Middle button or Alt + drag · Shift + middle button · `[` `]` · PageUp / PageDown | (3D view) rotate and tilt · pan · turn · tilt; the buttons at the bottom right do the same |
 | Space · R · Esc · 1-2-3 · F3 · V | (in battle) pause · restart · edit · speed · statistics · debug |
 
-**Maps:** *Map → Choose map…* in the studio opens a preview gallery (21 presets, biome filter, *Customize* dropdowns, a
+**Maps:** *Map → Choose map…* in the studio opens a preview gallery (33 presets, biome filter, *Customize* dropdowns, a
 **Random** card: everything random + seed; *Reroll* / *Lock*). The recipe is a `MapSpec` (`src/sim/mapSpec.ts`) shared by the
 simulation and the renderer; every map is symmetric around the center and both armies can reach each other.
 - **Biome:** Forest, Desert, Snow, Swamp (ground, trees/cacti/snowy pines/dead trees, house style, water color).

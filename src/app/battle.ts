@@ -679,7 +679,10 @@ export class BattleScene {
       this.resultShown = false;
       const res = document.getElementById('hud-result');
       if (res) res.hidden = true;
-      if (this.mass) this.mass.rebuild();
+      // The 3D view has no per-unit PixiJS views to rebuild (World3D.reset below clears its effects).
+      if (this.d.battle3d) {
+        /* nothing to rebuild */
+      } else if (this.mass) this.mass.rebuild();
       else this.buildViews();
       this.fx?.clear();
       this.comedySys?.clear();
