@@ -78,6 +78,7 @@ export class MenuScreen {
       <h3>${t('online.spec.title')}</h3>
       <p class="note">${t('online.spec.note')}</p>
       <label>${t('online.code')} <input id="m-scode" maxlength="8" placeholder="K7Q2XM" autocomplete="off" /></label>
+      <label>${t('online.pass')} <input id="m-spass" type="password" placeholder="${esc(t('online.passHint'))}" autocomplete="off" /></label>
       <button type="button" class="wide" id="m-spec">${t('online.spec.btn')}</button>
     </section>
   </div>
@@ -126,7 +127,7 @@ export class MenuScreen {
       const code = q<HTMLInputElement>('#m-scode').value.trim().toUpperCase();
       if (!code) return this.setError(t('online.err.needCode'));
       const p = prof();
-      this.h.onJoin(p.name, p.color, code, '', true);
+      this.h.onJoin(p.name, p.color, code, q<HTMLInputElement>('#m-spass').value, true);
     });
   }
 
@@ -387,7 +388,9 @@ export class LobbyScreen {
     ready.classList.toggle('on', !!me?.ready);
 
     const pkey = JSON.stringify(st.players);
-    if (pkey !== this.lastPlayers) {
+    // Repainting the list would throw away a name that is being typed (any other player's change triggers it): wait for the edit to end.
+    const typing = document.activeElement instanceof HTMLInputElement && document.activeElement.classList.contains('on-nameinp') && this.el.contains(document.activeElement);
+    if (pkey !== this.lastPlayers && !typing) {
       this.lastPlayers = pkey;
       this.paintPlayers(st.players);
     }
@@ -460,6 +463,8 @@ export class LobbyScreen {
       const me = m.me;
       if (me) this.session.send({ t: 'profile', name: inp.value, color: me.color });
     });
+    // Leaving the field without a change: show the updates that were held back while typing.
+    inp?.addEventListener('blur', () => setTimeout(() => this.update(), 0));
   }
 
   private paintChat(): void {

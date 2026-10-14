@@ -35,6 +35,18 @@ guest see exactly the same battle). Cross-view online play works (3D host + 2D g
   W A S D / arrows pan, [ ] turn, PageUp/PageDown tilt (Q/E, R and F stay with the studio and battle). The buttons at the bottom right (↺ ↻ ⤒ ⤓) rotate and tilt.
 - Touch: one finger paints (pans in battle), two fingers pinch-zoom, twist-rotate and drag; tilt with the buttons.
 
+## Depth and anchoring of sprites
+The 2D art is drawn for an isometric view, so a plain camera-facing quad looked wrong in 3D. What the shaders do now:
+- **One depth per sprite**: the billboard vertex shader sets the clip depth of every vertex to the depth of the sprite's *feet* (nudged toward the
+  camera by `0.12 + 0.1 * width`). Sprites never sink into terrain in front of or behind them (units on slopes were half buried at steep tilts)
+  and sort by where they stand; depth stays constant over the quad so early-z still works. Health bars use the same trick.
+- **Leaning quads**: the sprite's up axis follows the camera tilt only up to 50 degrees (`MAX_LEAN`), then stays; the height is stretched by
+  `1/cos(tilt - lean)` (max 1.35) to keep the screen size. The camera-facing `uUp` is only used by effects and bar thickness.
+- **Footprint anchors**: houses, towers, walls and the keep are drawn with the sprite anchored at the footprint *centre* (`footprintOf`; the map stores the
+  front corner of the iso diamond), so the base touches the ground on all sides at low tilt instead of floating.
+- The packed tint (0xRRGGBB) is decoded in the vertex shader: interpolating a number near 2^24 across a tilted quad rounds per row and drew
+  coloured scanlines.
+
 ## Differences from 2D
 The comedy look (ragdolls) and the debug overlay are 2D-only (their buttons are hidden in 3D); health bars follow the Health bars option
 (damaged / always → shown, never → hidden). Effects are drawn on top of everything and capped per frame in huge battles.

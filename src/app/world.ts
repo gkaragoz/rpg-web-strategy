@@ -2,33 +2,46 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import { isoX, isoY } from '../iso';
 import type { Atlas } from '../render/atlas';
 import { PALETTES } from '../render/biome';
+import { bandWidthFor, bandZ, computeCover, coverAt, DepthBoxIndex } from '../render/depthSort';
 import { buildGround } from '../render/ground';
-import { buildTerrainOverlay } from '../render/terrainView';
+import { buildTerrainOverlay, drawRoadTile } from '../render/terrainView';
 import { POSES } from '../render/unitView';
-import { mapSizeFor, terrainFor, type BattleConfig } from '../sim/battle';
-import type { Terrain } from '../sim/terrain';
+import { mapSizeFor, terrainFor, unitCapacity, type BattleConfig } from '../sim/battle';
+import { LEVEL_PX, type Terrain } from '../sim/terrain';
 import { MAX_TEAMS } from '../sim/units';
 import type { GhostSpec, PlacedLayer, PlacedLike, WorldBackend, ZoneSpec } from './backend';
 
 /** Screen ellipse of a circle: radius r tiles -> rx = r*TILE_W/2*sqrt2, ry = rx/2. */
 const ELLIPSE_X = 45.25;
 
+/** What the renderers need to order things against the terrain and the big decor (see render/depthSort.ts). */
+export interface DepthInfo {
+  /** Origin sums of the relief depth bands, ascending (empty on flat maps). */
+  cuts: number[];
+  boxes: DepthBoxIndex;
+  /** Per tile: pixels of terrain in front that hide a ground point (0 on flat maps). */
+  cover: Float32Array;
+  size: number;
+}
+
 /**
- * The world shared by the scenes: ground + river/bridge layer (static), unit/decor layer
- * (sorted by zIndex = x+y) and the effects layer. This is the PixiJS (isometric 2D) implementation of `WorldBackend`.
+ * The world shared by the scenes: flat ground + river/bridge layer (static), the sorted entity layer (units, decor sprites and
+ * the relief ground bands, sorted by zIndex = x+y) and the effects layer. This is the PixiJS (isometric 2D) implementation of `WorldBackend`.
  */
 export class WorldView implements WorldBackend {
   readonly root = new Container();
   readonly staticLayer = new Container();
   /** Unit shadows/arrow shadows: below the units. */
   readonly shadowLayer = new Container();
-  /** Units and (in detailed mode) decor sprites live here, sorted by zIndex = x+y. */
+  /** Units, (in detailed mode) decor sprites and the relief ground bands live here, sorted by zIndex = x+y. */
   readonly entityLayer = new Container();
   readonly fxLayer = new Container();
   terrain: Terrain | null = null;
   mapSize = 56;
   private atlas: Atlas | null = null;
   private decorSprites: Sprite[] = [];
+  private bandGfx: Graphics[] = [];
+  depth: DepthInfo = { cuts: [], boxes: new DepthBoxIndex(1, []), cover: new Float32Array(1), size: 1 };
   private readonly zoneGfx = new Graphics();
   private readonly ghostGfx = new Graphics();
 
@@ -47,12 +60,39 @@ export class WorldView implements WorldBackend {
     for (const s of this.decorSprites) s.destroy();
     this.decorSprites = [];
     for (const c of this.staticLayer.removeChildren()) c.destroy({ children: true });
+    for (const b of this.bandGfx) b.destroy();
+    this.bandGfx = [];
 
     this.atlas = atlas;
     this.mapSize = mapSizeFor(config);
     this.terrain = terrainFor(config);
-    if (ground) this.staticLayer.addChild(buildGround(this.mapSize, PALETTES[config.map?.biome ?? 'forest'], this.terrain));
-    if (this.terrain) this.staticLayer.addChild(buildTerrainOverlay(this.terrain));
+    const t = this.terrain;
+    const parts = ground ? buildGround(this.mapSize, PALETTES[config.map?.biome ?? 'forest'], t, bandWidthFor(unitCapacity(config))) : null;
+    if (parts) this.staticLayer.addChild(parts.base);
+    // Road tiles on terrain with relief belong to their depth band (otherwise the band would cover them).
+    if (t) this.staticLayer.addChild(buildTerrainOverlay(t, parts ? (idx) => parts.bandOfTile.has(idx) : undefined));
+    if (t && parts) {
+      for (const idx of t.pathTiles) {
+        const bg = parts.bandOfTile.get(idx);
+        if (bg) drawRoadTile(bg, t, idx);
+      }
+    }
+    const cuts: number[] = [];
+    if (parts) {
+      for (const [key, g] of parts.bands) {
+        g.zIndex = bandZ(key);
+        this.entityLayer.addChild(g);
+        this.bandGfx.push(g);
+        cuts.push(key);
+      }
+      cuts.sort((a, b) => a - b);
+    }
+    this.depth = {
+      cuts,
+      boxes: new DepthBoxIndex(this.mapSize, t ? t.decor : []),
+      cover: t && t.hasRelief ? computeCover(this.mapSize, (x, y) => t.elevPx(x, y), t.maxH * LEVEL_PX) : new Float32Array(this.mapSize * this.mapSize),
+      size: this.mapSize,
+    };
     if (this.terrain && atlas && decorSprites) this.addDecor(this.terrain, atlas);
   }
 
@@ -75,6 +115,16 @@ export class WorldView implements WorldBackend {
       this.entityLayer.addChild(s);
       this.decorSprites.push(s);
     }
+  }
+
+  /** Depth sort key of something standing at (x, y): x+y, raised above the big decor (houses, towers, keep) it stands in front of. */
+  depthKey(x: number, y: number): number {
+    return this.depth.boxes.frontKey(x, y, x + y, 0.01);
+  }
+
+  /** Pixels of terrain in front that hide a ground point (a ridge between the point and the camera); 0 on flat maps. */
+  coverAt(x: number, y: number): number {
+    return coverAt(this.depth.cover, this.depth.size, x, y);
   }
 
   // ---- WorldBackend: picking ----
@@ -156,7 +206,7 @@ export class WorldView implements WorldBackend {
     const spr = new Sprite(tex);
     spr.anchor.set(anc.ax, anc.ay);
     spr.position.set(isoX(u.x, u.y), isoY(u.x, u.y, this.elevAt(u.x, u.y)));
-    spr.zIndex = u.x + u.y;
+    spr.zIndex = this.depthKey(u.x, u.y);
     // Faces the center of the map.
     const c = this.mapSize / 2;
     spr.scale.x = isoX(c, c) - isoX(u.x, u.y) >= 0 ? 1 : -1;

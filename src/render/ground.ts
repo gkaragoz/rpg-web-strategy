@@ -2,6 +2,7 @@ import { Graphics } from 'pixi.js';
 import { TILE_H, TILE_W, isoX, isoY } from '../iso';
 import { LEVEL_PX, type Terrain } from '../sim/terrain';
 import { PALETTES, type BiomePalette } from './biome';
+import { reliefBands } from './depthSort';
 
 function shade(c: number, k: number): number {
   const r = Math.min(255, Math.max(0, Math.round(((c >> 16) & 255) * k)));
@@ -15,8 +16,18 @@ function mix(a: number, b: number, t: number): number {
   return (ch(16) << 16) | (ch(8) << 8) | ch(0);
 }
 
-export function buildGround(size: number, pal: BiomePalette = PALETTES.forest, terrain: Terrain | null = null): Graphics {
+/** The ground: `base` (flat ground, static, below everything) and the depth bands (tiles with relief, one Graphics per band key). */
+export interface GroundParts {
+  base: Graphics;
+  bands: Map<number, Graphics>;
+  /** Band Graphics of each tile with relief (tile index ty * size + tx): lets overlays that sit on the surface join the band. */
+  bandOfTile: Map<number, Graphics>;
+}
+
+export function buildGround(size: number, pal: BiomePalette = PALETTES.forest, terrain: Terrain | null = null, bandWidth = 1): GroundParts {
   const g = new Graphics();
+  const bands = new Map<number, Graphics>();
+  const bandOfTile = new Map<number, Graphics>();
   const depth = 26;
 
   // Side faces of the map (sense of depth).
@@ -38,10 +49,19 @@ export function buildGround(size: number, pal: BiomePalette = PALETTES.forest, t
         g.poly([cx, cy - TILE_H / 2, cx + TILE_W / 2, cy, cx, cy + TILE_H / 2, cx - TILE_W / 2, cy]).fill(light ? pal.grassA : pal.grassB);
       }
     }
-    return g;
+    return { base: g, bands, bandOfTile };
   }
 
   // Relief ground: each tile is a sloped quad from its corner heights; drawn back to front (x+y increasing).
+  // Flat tiles go to the base layer; tiles with relief go to depth bands that live in the sorted entity layer, so that units
+  // behind a ridge are covered by it and units in front draw over it (see depthSort.ts).
+  const rb = reliefBands(size, (vx, vy) => terrain.vertexH(vx, vy), bandWidth);
+  for (const key of rb.keys) {
+    const bg = new Graphics();
+    bands.set(key, bg);
+    for (const idx of rb.tiles.get(key)!) bandOfTile.set(idx, bg);
+  }
+  const base = g;
   const bright = (pal.grassA & 255) > 0xe0; // snow: only shadow is applied, to avoid saturating the white
   const P = (vx: number, vy: number): [number, number] => [isoX(vx, vy), isoY(vx, vy, terrain.vertexH(vx, vy) * LEVEL_PX)];
   for (let sum = 0; sum <= 2 * size - 2; sum++) {
@@ -65,10 +85,11 @@ export function buildGround(size: number, pal: BiomePalette = PALETTES.forest, t
       const b = P(tx + 1, ty);
       const c = P(tx + 1, ty + 1);
       const d = P(tx, ty + 1);
-      g.poly([a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]]).fill(col);
+      const tg = bandOfTile.get(ty * size + tx) ?? base;
+      tg.poly([a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]]).fill(col);
       // Steep faces get a dark outline so cliffs and ridges read clearly from a distance.
-      if (steep > 0.6) g.poly([a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]]).stroke({ width: 1, color: 0x10161f, alpha: Math.min(0.4, (steep - 0.6) * 0.5) });
+      if (steep > 0.6) tg.poly([a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]]).stroke({ width: 1, color: 0x10161f, alpha: Math.min(0.4, (steep - 0.6) * 0.5) });
     }
   }
-  return g;
+  return { base: g, bands, bandOfTile };
 }

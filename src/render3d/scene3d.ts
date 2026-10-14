@@ -8,6 +8,7 @@ import { STATS } from '../sim/units';
 import { type AtlasGpu, decorFrame } from './atlasBridge';
 import { PX_WORLD, UnitInstances, type UnitsLike } from './billboards';
 import { clampRig, eyeOf, type Rig } from './cameraRig';
+import { footprintOf, leanUpVector } from './depth';
 import { drawFxAtlas, Fx3D } from './fx3d';
 import { pickGround, type GroundHit } from './pick';
 import {
@@ -109,10 +110,14 @@ export class View3D {
   private fogColor = new THREE.Color(0x1a2332);
   private readonly right = new THREE.Vector3();
   private readonly up = new THREE.Vector3();
+  private readonly fwd = new THREE.Vector3();
+  private readonly leanTmp = { x: 0, y: 1, z: 0 };
   private readonly ray = new THREE.Raycaster();
   private readonly uniforms = {
     uRight: { value: new THREE.Vector3(1, 0, 0) },
     uUp: { value: new THREE.Vector3(0, 1, 0) },
+    /** Up axis of the leaning billboards (soldiers, decor, bars' head offset): upright-ish instead of tilting with the camera. */
+    uLean: { value: new THREE.Vector3(0, 1, 0) },
     uFogColor: { value: new THREE.Color(0x1a2332) },
     uFogDensity: { value: 0.0045 },
   };
@@ -143,6 +148,7 @@ export class View3D {
       uOutlineColor: { value: new THREE.Color(0xffffff) },
       uTexel: { value: new THREE.Vector2(1 / 2048, 1 / 2048) },
       ...this.uniforms,
+      uUp: this.uniforms.uLean,
     };
     this.unitMat = new THREE.ShaderMaterial({ vertexShader: BILLBOARD_VERT, fragmentShader: BILLBOARD_FRAG, uniforms: { ...common, uOutline: { value: 0 } }, side: THREE.DoubleSide, transparent: false, alphaToCoverage: true });
     this.outlineMat = new THREE.ShaderMaterial({ vertexShader: BILLBOARD_VERT, fragmentShader: BILLBOARD_FRAG, uniforms: { ...common, uOutline: { value: 1 } }, side: THREE.DoubleSide, transparent: false });
@@ -212,7 +218,7 @@ export class View3D {
 
   private initBarGeometry(cap: number): void {
     instAttr(this.barGeo, 'iBar', this.inst.bar, 4);
-    instAttr(this.barGeo, 'iW', this.inst.barB.subarray(0, cap), 1);
+    instAttr(this.barGeo, 'iWH', this.inst.barB.subarray(0, cap * 2), 2);
     this.barGeo.instanceCount = 0;
   }
 
@@ -355,23 +361,26 @@ export class View3D {
       const f = decorFrame(d.kind, d.variant);
       if (this.gpu.decor.has[f] === 0) continue;
       const o = count * 4;
-      const gy = groundHeight(t, d.x, d.y);
-      iA[o] = d.x;
+      // Structures stand on their footprint centre (anchor moved up the sprite to match), not on the front corner of the iso diamond.
+      const fp = footprintOf(d.kind, d.variant, d.x, d.y);
+      const gy = groundHeight(t, fp.x, fp.z);
+      const sizeH = this.gpu.decor.size[f * 2 + 1];
+      iA[o] = fp.x;
       iA[o + 1] = gy;
-      iA[o + 2] = d.y;
+      iA[o + 2] = fp.z;
       iA[o + 3] = 1;
       iB[o] = this.gpu.decor.size[f * 2];
-      iB[o + 1] = this.gpu.decor.size[f * 2 + 1];
+      iB[o + 1] = sizeH;
       iB[o + 2] = this.gpu.decor.anchor[f * 2];
-      iB[o + 3] = this.gpu.decor.anchor[f * 2 + 1];
+      iB[o + 3] = this.gpu.decor.anchor[f * 2 + 1] - (fp.rise * PX_WORLD) / sizeH;
       iUV.set(this.gpu.decor.uv.subarray(f * 4, f * 4 + 4), o);
       iC[o] = 0;
       iC[o + 1] = 0;
       iC[o + 2] = 0xffffff;
       iC[o + 3] = 1;
-      iS[o] = d.x;
+      iS[o] = fp.x;
       iS[o + 1] = gy;
-      iS[o + 2] = d.y;
+      iS[o + 2] = fp.z;
       iS[o + 3] = d.kind === 'tree' ? 1.5 : d.kind === 'house' || d.kind === 'keep' || d.kind === 'tower' ? 2.4 : 0.9;
       count++;
     }
@@ -469,7 +478,7 @@ export class View3D {
     const n = this.inst.count;
     touch(this.unitGeo, ['iA', 'iB', 'iUV', 'iC'], n);
     touch(this.shadowGeo, ['iS'], n);
-    touch(this.barGeo, ['iBar', 'iW'], this.inst.barCount);
+    touch(this.barGeo, ['iBar', 'iWH'], this.inst.barCount);
   }
 
   /** Arrows and bolts in flight, as stretched quads along the 3D direction of travel. */
@@ -561,6 +570,10 @@ export class View3D {
     this.up.setFromMatrixColumn(this.camera.matrixWorld, 1);
     this.uniforms.uRight.value.copy(this.right);
     this.uniforms.uUp.value.copy(this.up);
+    // Leaning billboards: the top leans away from the camera, at most MAX_LEAN, however steep the view.
+    this.camera.getWorldDirection(this.fwd);
+    leanUpVector(Math.asin(Math.min(1, Math.max(-1, -this.fwd.y))), this.fwd.x, this.fwd.z, this.leanTmp);
+    this.uniforms.uLean.value.set(this.leanTmp.x, this.leanTmp.y, this.leanTmp.z);
   }
 
   /** Draws the frame. */

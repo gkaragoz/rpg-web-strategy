@@ -42,6 +42,8 @@ export interface PlacedUnit {
   /** Online: the unit id assigned by the host and the pending client id. */
   id?: number;
   cid?: number;
+  /** Online: how many times the host asked to retry this placement (rate limited). */
+  retry?: number;
 }
 
 /** Display and sound options. */

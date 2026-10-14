@@ -81,6 +81,7 @@ export class UnitView {
   private readonly legL = new Graphics();
   private readonly legR = new Graphics();
   private readonly bar = new Graphics();
+  private covered = false;
   /** Gold chevrons above the head while the unit stands on high ground (0-3). */
   private readonly mark = new Graphics();
   private markLevel = 0;
@@ -148,6 +149,14 @@ export class UnitView {
     this.root.filters = color < 0 ? null : [outlineFilter(color)];
   }
 
+  /** True while terrain in front hides most of the unit: its bar and high-ground chevrons are hidden too (they would float over the ridge). */
+  setCovered(on: boolean): void {
+    if (on === this.covered) return;
+    this.covered = on;
+    this.mark.visible = this.markLevel > 0 && !on;
+    if (on) this.bar.visible = false;
+  }
+
   /** High-ground marker: `level` chevrons (0 hides it); only redrawn when the level changes. */
   setHighGround(level: number): void {
     if (level === this.markLevel) return;
@@ -157,7 +166,7 @@ export class UnitView {
       const y = -c * 5;
       this.mark.poly([0, y, 8, y + 8, 5.5, y + 10.5, 0, y + 5, -5.5, y + 10.5, -8, y + 8]).fill(0xf2c14e).stroke({ width: 1.2, color: 0x2a1f05, alpha: 0.85 });
     }
-    this.mark.visible = level > 0;
+    this.mark.visible = level > 0 && !this.covered;
   }
 
   /** Roster unit: draws from the recipe table (looks.ts). */
@@ -565,6 +574,6 @@ export class UnitView {
       const col = ratio > 0.5 ? 0x4cc35b : ratio > 0.25 ? 0xe6b73a : 0xe0463b;
       if (ratio > 0) this.bar.roundRect(-w / 2, 1, w * ratio, 4, 1.5).fill(col);
     }
-    this.bar.visible = barVisible;
+    this.bar.visible = barVisible && !this.covered;
   }
 }

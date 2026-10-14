@@ -33,6 +33,8 @@ interface LastSession {
   name: string;
   color: number;
   at: number;
+  /** A spectator comes back as a spectator (the host drops spectators when their connection ends). */
+  spectator?: boolean;
 }
 /** Reconnect window (the host keeps the slot for 60 s); a small margin is left. */
 const REJOIN_MS = 55000;
@@ -153,7 +155,7 @@ export class OnlineApp {
         onOwn: () => this.exit(false, false, true),
         onRejoin: () => {
           const l = loadLast();
-          if (l) void this.join(l.name, l.color, l.code, '', false, l.token);
+          if (l) void this.join(l.name, l.color, l.code, '', !!l.spectator, l.token);
         },
       },
       true,
@@ -274,7 +276,7 @@ export class OnlineApp {
         s.leave();
         return this.fail(ok);
       }
-      saveLast({ code, token: s.model.token, name, color, at: Date.now() });
+      saveLast({ code, token: s.model.token, name, color, at: Date.now(), spectator });
       this.attach(s);
     } catch (e) {
       const detail = e instanceof NetError ? e.message : '';
@@ -579,7 +581,8 @@ export class OnlineApp {
     this.dead = true;
     if (!keepRejoin) saveLast(null);
     try {
-      this.session?.leave();
+      // A kept rejoin entry needs the host to keep the slot too: only drop the connection, do not announce a leave.
+      this.session?.leave(keepRejoin);
     } catch {
       /* connection already closed */
     }

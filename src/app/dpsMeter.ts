@@ -29,6 +29,12 @@ export interface MeterRow {
   fellAt: number;
 }
 
+/** The battle clock the meter shows: -1 while the battle runs, then the time of the first update after a winner is known (it stays frozen on the result screen). */
+export function latchEndTime(endTime: number, winner: number, time: number): number {
+  if (winner === -1) return -1;
+  return endTime >= 0 ? endTime : time;
+}
+
 /**
  * Builds the ranked rows of one team: kinds that have soldiers (or damage), sorted by damage, ties by kind.
  * `dmg[kind]`, `alive[kind]`, `total[kind]` and `fellAt[kind]` are per kind of that team.
@@ -81,6 +87,8 @@ export class DpsMeter {
   private readonly peak = new Int32Array(MAX_TEAMS * KIND_COUNT);
   private readonly fell = new Float32Array(MAX_TEAMS * KIND_COUNT).fill(-1);
   private started = false;
+  /** Battle time latched when the battle ended, so the clock and the dps stop with the result screen (-1 while running). */
+  private endTime = -1;
   // Scratch buffers: update() runs 5 times a second and must not allocate.
   private readonly aliveBuf = new Int32Array(MAX_TEAMS * KIND_COUNT);
   private readonly sDmg = new Float64Array(KIND_COUNT);
@@ -182,7 +190,8 @@ export class DpsMeter {
       this.total.set(alive);
       this.started = true;
     }
-    const time = sim.time;
+    this.endTime = latchEndTime(this.endTime, sim.winner, sim.time);
+    const time = this.endTime >= 0 ? this.endTime : sim.time;
     for (let k = 0; k < alive.length; k++) {
       if (alive[k] > this.peak[k]) this.peak[k] = alive[k];
       if (alive[k] === 0 && this.peak[k] > 0 && this.fell[k] < 0) this.fell[k] = time;
@@ -246,6 +255,7 @@ export class DpsMeter {
     this.peak.fill(0);
     this.fell.fill(-1);
     this.started = false;
+    this.endTime = -1;
     this.rows.forEach((r) => r.el.remove());
     this.rows.clear();
   }

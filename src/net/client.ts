@@ -166,7 +166,8 @@ export interface Session {
   readonly model: OnlineModel;
   readonly isHost: boolean;
   send(msg: ClientMsg): void;
-  leave(): void;
+  /** Ends the session. A guest with `keepSlot` only drops the connection (no "leave" message), so it can take its place in a running game back with its token. */
+  leave(keepSlot?: boolean): void;
 }
 
 export class HostSession implements Session {
@@ -225,8 +226,8 @@ export class GuestSession implements Session {
     this.tp.send('host', msg);
   }
 
-  leave(): void {
-    this.send({ t: 'leave' });
+  leave(keepSlot = false): void {
+    if (!keepSlot) this.send({ t: 'leave' });
     this.tp.close();
   }
 }

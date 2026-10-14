@@ -33,6 +33,7 @@
   width: 270px;
   max-height: calc(100dvh - 140px);
   overflow-y: auto;
+  color-scheme: dark;
   background: var(--panel);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
@@ -115,7 +116,9 @@ button:disabled {
   cursor: not-allowed;
 }
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible,
+.trow:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -409,6 +412,7 @@ kbd {
 .result {
   position: absolute;
   inset: 0;
+  z-index: 12; /* above the damage meter (z-index 8) so the scoreboard is never half hidden */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -463,6 +467,7 @@ kbd {
   padding: 0;
   color: var(--text);
   background: #121a27;
+  color-scheme: dark;
   border: 1px solid var(--panel-border);
   border-radius: 14px;
   font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -1548,12 +1553,12 @@ button.on {
     min-height: 40px;
   }
   .seg button {
-    min-height: 38px;
+    min-height: 40px;
     padding: 6px 12px;
   }
   .stepper button {
-    min-width: 38px;
-    min-height: 38px;
+    min-width: 40px;
+    min-height: 40px;
   }
   button.mini {
     min-height: 34px;
@@ -1582,8 +1587,8 @@ button.on {
     font-size: 16px; /* keep iOS from zooming on focus */
   }
   .on-sw {
-    width: 34px;
-    height: 34px;
+    width: 40px;
+    height: 40px;
   }
   .on-sw.sm {
     width: 28px;
@@ -1936,6 +1941,13 @@ button.on {
 }
 .legal a {
   color: var(--accent);
+}
+@media (pointer: coarse) {
+  .legal a {
+    display: inline-block;
+    padding: 13px 6px; /* >= 40 px tap target */
+    margin: -13px -6px;
+  }
 }
 
 /* ---------------- Language picker (bottom right) + connection badge stacking ---------------- */
@@ -2381,9 +2393,26 @@ dialog {
 }
 
 /* Mid-width windows: the side panels and the centered, wrapping dock share the bottom: stop the panels above the dock. */
-@media (min-width: 901px) and (max-width: 1260px) {
+@media (min-width: 761px) and (max-width: 1260px) {
   .panel {
     max-height: calc(100dvh - 340px);
+  }
+}
+/* The right panel also stays above the language bar that bottomStack.ts lifts over the dock (--bar-h): 8 px gap + 8 px air + 38 px panel chrome. */
+@media (min-width: 901px) and (max-width: 1260px) {
+  .panel.right {
+    max-height: min(calc(100dvh - 340px), calc(100dvh - var(--bar-h, 0px) - var(--lp-h, 28px) - 54px));
+  }
+}
+/* 3D view: the rotate / tilt buttons (.cam3d, 74 px tall) sit above the language bar; the right panel ends above them (120 = 74 + 8 air + 38 chrome). */
+@media (min-width: 901px) {
+  :root:has(.cam3d) .panel.right {
+    max-height: calc(100dvh - var(--bar-h, 0px) - var(--cam-lift, 50px) - 120px);
+  }
+}
+@media (min-width: 901px) and (max-width: 1260px) {
+  :root:has(.cam3d) .panel.right {
+    max-height: min(calc(100dvh - 340px), calc(100dvh - var(--bar-h, 0px) - var(--cam-lift, 50px) - 120px));
   }
 }
 
@@ -2504,4 +2533,9 @@ dialog {
 }
 .ug-stat.hot .ug-meter {
   outline: 1px solid currentColor;
+}
+
+/* The statistics panel (shown by default in battle) must not sit over the result card. */
+body:has(.result:not([hidden])) #stats {
+  display: none;
 }

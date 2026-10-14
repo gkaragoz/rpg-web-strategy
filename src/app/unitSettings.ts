@@ -75,7 +75,7 @@ export class UnitSettings {
             const tr = STATS[k].troop ? TROOP_BY_ID[STATS[k].troop!] : undefined;
             const meta = tr ? `${loc(RARITY_NAMES[tr.rarity])} · ${loc(RACE_NAMES[tr.race])}` : t('units.classic');
             const skill = tr?.skillText ? `<small class="us-skill">${esc(loc(tr.skillText))}</small>` : '';
-            return `<tr><th scope="row" class="us-unit"><span class="us-icon" data-icon="${k}"></span><span class="us-name"><b>${esc(unitDisplayName(k))}</b><small>${esc(meta)}</small>${skill}</span></th>${cells}<td class="derived" data-derived="dps" data-k="${k}">${this.dps(k)}</td><td class="derived" data-derived="ehp" data-k="${k}">${this.effHp(k)}</td><td><button type="button" class="mini" data-reset-kind="${k}" ${has ? '' : 'disabled'}>${esc(t('units.settings.reset'))}</button></td></tr>`;
+            return `<tr><th scope="row" class="us-unit"><span class="us-icon" data-icon="${k}"></span><span class="us-name"><b>${esc(unitDisplayName(k))}</b><small>${esc(meta)}</small>${skill}</span></th>${cells}<td class="derived" data-derived="dps" data-k="${k}">${this.dps(k)}</td><td class="derived" data-derived="ehp" data-k="${k}">${this.effHp(k)}</td><td><button type="button" class="mini" data-reset-kind="${k}" aria-label="${esc(t('units.settings.reset'))}: ${esc(unitDisplayName(k))}" ${has ? '' : 'disabled'}>${esc(t('units.settings.reset'))}</button></td></tr>`;
           })
           .join('');
         return `<tr class="grp"><th colspan="${TUNABLE.length + 4}">${esc(grp.title)} · ${grp.kinds.length}</th></tr>${body}`;

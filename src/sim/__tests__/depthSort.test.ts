@@ -1,0 +1,121 @@
+import { describe, expect, it } from 'vitest';
+import { bandWidthFor, bandZ, computeCover, coverAt, decorBox, DepthBoxIndex, reliefBands, slabTable, slabZ } from '../../render/depthSort';
+import { LEVEL_PX } from '../terrain';
+
+describe('relief depth bands', () => {
+  // 6x6 map; a single raised vertex at (3,3) makes the four tiles around it relief tiles.
+  const size = 6;
+  const vh = (vx: number, vy: number): number => (vx === 3 && vy === 3 ? 2 : 0);
+
+  it('keeps flat tiles out and groups the relief tiles by origin sum', () => {
+    const b = reliefBands(size, vh);
+    // Tiles (2,2) (3,2) (2,3) (3,3) touch vertex (3,3): origin sums 4, 5, 5, 6.
+    expect(b.keys).toEqual([4, 5, 6]);
+    expect(b.tiles.get(4)).toEqual([2 * size + 2]);
+    expect([...b.tiles.get(5)!].sort((a, c) => a - c)).toEqual([2 * size + 3, 3 * size + 2]);
+    expect(b.tiles.get(6)).toEqual([3 * size + 3]);
+  });
+
+  it('wider bands merge neighbouring sums into one key', () => {
+    const b = reliefBands(size, vh, 2);
+    expect(b.keys).toEqual([4, 6]);
+    expect(b.tiles.get(4)).toHaveLength(3);
+    expect(b.tiles.get(6)).toHaveLength(1);
+  });
+
+  it('a flat map has no bands', () => {
+    expect(reliefBands(8, () => 0).keys).toEqual([]);
+  });
+
+  it('bandZ sits just below a unit standing on the first sum of the band', () => {
+    expect(bandZ(7)).toBeLessThan(7);
+    expect(bandZ(7)).toBeGreaterThan(6.99);
+  });
+
+  it('crowds get a coarser band width', () => {
+    expect(bandWidthFor(100)).toBe(1);
+    expect(bandWidthFor(5000)).toBe(2);
+    expect(bandWidthFor(12000)).toBe(3);
+    expect(bandWidthFor(30000)).toBe(4);
+  });
+});
+
+describe('slabs between the bands', () => {
+  const cuts = [4, 5, 9];
+  const table = slabTable(cuts, 12);
+
+  it('maps every integer sum to the count of cuts at or below it', () => {
+    expect([...table].slice(0, 12)).toEqual([0, 0, 0, 0, 1, 2, 2, 2, 2, 3, 3, 3]);
+  });
+
+  it('slab z follows the band it sits after', () => {
+    expect(slabZ(cuts, 0)).toBe(-1);
+    expect(slabZ(cuts, 1)).toBe(4);
+    expect(slabZ(cuts, 3)).toBe(9);
+    // A unit at the first sum of slab j is drawn after band cuts[j-1] and before band cuts[j-1] + 1.
+    expect(slabZ(cuts, 2)).toBeGreaterThan(bandZ(cuts[1]));
+    expect(slabZ(cuts, 2)).toBeLessThan(bandZ(cuts[1] + 1));
+  });
+});
+
+describe('cover of terrain in front', () => {
+  const size = 20;
+  // A wall rising 3 levels at tiles with x+y >= 20 (distance along the diagonal), flat elsewhere.
+  const wall = (x: number, y: number): number => (x + y >= 20 ? 3 * LEVEL_PX : 0);
+
+  it('hides ground behind a high wall and nothing in front of or on it', () => {
+    const c = computeCover(size, wall, 3 * LEVEL_PX);
+    // Tile (9,9) centre x+y = 19: right behind the wall. Its column reaches the wall (t = 1 -> (10.5,10.5)).
+    expect(coverAt(c, size, 9.5, 9.5)).toBeGreaterThan(40);
+    // Further back the wall's top (78 px) is hidden by 32 px per tile of distance: no cover beyond ~2.4 tiles.
+    expect(coverAt(c, size, 5.5, 5.5)).toBe(0);
+    // On the wall and in front of it: nothing hides them.
+    expect(coverAt(c, size, 14.5, 14.5)).toBe(0);
+    expect(coverAt(c, size, 18.5, 2.5)).toBe(0);
+  });
+
+  it('is all zero on flat ground and when sampled outside the map', () => {
+    const flat = computeCover(size, () => 0, 0);
+    expect(flat.every((v) => v === 0)).toBe(true);
+    expect(coverAt(flat, size, -3, 99)).toBe(0);
+  });
+});
+
+describe('big decor footprints', () => {
+  it('knows the footprint of houses, towers and the keep, and ignores small decor', () => {
+    expect(decorBox({ kind: 'house', variant: 0, x: 10, y: 10 })).toEqual({ x0: 8, y0: 8, x1: 10, y1: 10 });
+    expect(decorBox({ kind: 'house', variant: 2, x: 10, y: 10 })).toEqual({ x0: 7, y0: 8, x1: 10, y1: 10 });
+    expect(decorBox({ kind: 'house', variant: 5, x: 10, y: 10 })).toEqual({ x0: 8, y0: 7, x1: 10, y1: 10 });
+    expect(decorBox({ kind: 'tower', variant: 0, x: 5, y: 6 })).toEqual({ x0: 4, y0: 5, x1: 5, y1: 6 });
+    expect(decorBox({ kind: 'keep', variant: 0, x: 30, y: 30 })).toEqual({ x0: 26, y0: 26, x1: 30, y1: 30 });
+    expect(decorBox({ kind: 'tree', variant: 1, x: 3, y: 3 })).toBeNull();
+    expect(decorBox({ kind: 'wall', variant: 0, x: 3.5, y: 3.5 })).toBeNull();
+  });
+
+  // One 3 x 2 house: footprint x 10..13, y 20..22, front corner (13,22): its sort key is 35.
+  const idx = new DepthBoxIndex(40, [{ kind: 'house', variant: 2, x: 13, y: 22 }]);
+
+  it('lifts a unit beside the house above the decor key', () => {
+    // To the right of the house (x past x1): x+y = 13.5+20.5 = 34 < 35, yet the unit is in front of the house.
+    expect(idx.frontKey(13.5, 20.5, 34, 0.01)).toBeCloseTo(35.01);
+    // To the left (y past y1).
+    expect(idx.frontKey(11, 22.5, 33.5, 0.01)).toBeCloseTo(35.01);
+  });
+
+  it('leaves units behind the house and units far away alone', () => {
+    expect(idx.frontKey(11, 19, 30, 0.01)).toBe(30); // behind (y < y0)
+    expect(idx.frontKey(9, 21, 30, 0.01)).toBe(30); // behind-left (x < x0)
+    expect(idx.frontKey(2, 2, 4, 0.01)).toBe(4);
+    expect(idx.frontKey(-1, 50, 49, 0.01)).toBe(49); // outside the map
+  });
+
+  it('never lowers a key that is already in front', () => {
+    expect(idx.frontKey(14, 23, 37, 0.01)).toBe(37);
+  });
+
+  it('an index without big decor is a no-op', () => {
+    const none = new DepthBoxIndex(10, [{ kind: 'tree', variant: 0, x: 2, y: 2 }]);
+    expect(none.count).toBe(0);
+    expect(none.frontKey(3, 3, 6, 0.5)).toBe(6);
+  });
+});

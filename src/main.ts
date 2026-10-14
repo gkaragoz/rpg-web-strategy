@@ -1,4 +1,4 @@
-import { Application, Container, Rectangle } from 'pixi.js';
+import { Application, Container, Rectangle, Texture } from 'pixi.js';
 import { getLang, t } from './i18n';
 import { startBottomStack } from './app/bottomStack';
 import { mountLangPicker } from './app/langPicker';
@@ -47,8 +47,33 @@ function showError(msg: string): void {
   document.body.appendChild(el);
   window.setTimeout(() => el.remove(), 6000);
 }
+/**
+ * Replaces textures whose GPU source was destroyed (an atlas freed while something still drew from it) with an empty texture, so the next
+ * frame renders instead of throwing "reading 'addressModeU' of null" every frame. Returns how many were replaced.
+ */
+function healTextures(node: Container & { particleChildren?: Array<{ texture?: Texture }> }): number {
+  let healed = 0;
+  const bad = (tx: Texture | undefined): boolean => !!tx && !!tx.source && (tx.destroyed || tx.source.destroyed || !tx.source.style);
+  const holder = node as unknown as { texture?: Texture };
+  if (bad(holder.texture)) {
+    holder.texture = Texture.EMPTY;
+    healed++;
+  }
+  if (node.particleChildren) for (const p of node.particleChildren) if (bad(p.texture)) {
+    p.texture = Texture.EMPTY;
+    healed++;
+  }
+  for (const c of node.children ?? []) healed += healTextures(c as Container);
+  return healed;
+}
+const looksLikeDeadTexture = (msg: string): boolean => /addressMode|reading 'style'|texture.*destroyed/i.test(msg);
+/** Heals the whole stage once it exists (assigned after the Pixi app is created). */
+let healScene: () => number = () => 0;
+
 window.addEventListener('error', (e) => {
   console.error(e.error ?? e.message);
+  // A render error caused by a destroyed texture is repaired in place; nothing worth a notice for the player.
+  if (looksLikeDeadTexture(String(e.message)) && healScene() > 0) return;
   showError(e.message || t('sys.error.unknown'));
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -94,6 +119,12 @@ app.canvas.addEventListener('webglcontextlost', (e) => {
   document.body.appendChild(el);
   el.querySelector('#reload-btn')!.addEventListener('click', () => location.reload());
 });
+// The browser restored the context by itself: the dialog is obsolete (Pixi re-uploads textures lazily; dead ones are replaced first).
+app.canvas.addEventListener('webglcontextrestored', () => {
+  healScene();
+  document.querySelector('.fatal')?.remove();
+});
+healScene = (): number => healTextures(app.stage);
 
 const state = loadState();
 if (params.get('env') === 'off') state.env = false;
@@ -469,13 +500,21 @@ async function enterBattle(opts: BattleOptions): Promise<void> {
   mode = 'battle';
 }
 
+/** A double click / double tap on Start must not start two battles (the stale one would leave `mode` at 'battle' with no simulation). */
+let startingBattle = false;
 async function startBattle(): Promise<void> {
-  saveState(state);
-  ensureAtlas();
-  const opts = battleOptions();
-  studio.hide();
-  editor.exit();
-  await enterBattle(opts);
+  if (startingBattle || mode !== 'studio') return;
+  startingBattle = true;
+  try {
+    saveState(state);
+    ensureAtlas();
+    const opts = battleOptions();
+    studio.hide();
+    editor.exit();
+    await enterBattle(opts);
+  } finally {
+    startingBattle = false;
+  }
 }
 
 async function backToStudio(): Promise<void> {
@@ -593,6 +632,7 @@ function frame(now: number): void {
 }
 
 (window as unknown as { __audio: AudioSystem }).__audio = audio;
+(window as unknown as { __app: Application }).__app = app; // diagnostics (scene walks, context-loss tests)
 
 if (isBench) {
   await startBench();
@@ -609,6 +649,11 @@ if (isBench) {
   // The game opens on the home page (the former online menu); "Your own simulation" leads to the studio.
   const joinHash = /^#join=([A-Za-z0-9]{4,8})$/.exec(location.hash);
   startOnline(joinHash ? joinHash[1].toUpperCase() : undefined);
+  // A join link pasted into an already open page only changes the hash (no reload): put its code into the home page.
+  window.addEventListener('hashchange', () => {
+    const h = /^#join=([A-Za-z0-9]{4,8})$/.exec(location.hash);
+    if (h && online && online.active && !online.inSession) online.openMenu(h[1].toUpperCase());
+  });
 }
 loading?.remove();
 requestAnimationFrame(frame);

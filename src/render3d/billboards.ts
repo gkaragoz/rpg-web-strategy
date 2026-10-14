@@ -60,7 +60,7 @@ export function statusRGB(st: number): number {
 /**
  * Per-instance data of the unit billboards, rewritten every frame:
  * iA = x, y (up), z, facing; iB = width, height, anchorX, anchorY(from top); iUV = u0, v0, u1, v1; iC = flash, outline, tint (0xRRGGBB), fade.
- * `bars` collects health bars of damaged units: x, y (up), z, ratio / width.
+ * `bars` collects health bars of damaged units: feet x, y (up), z, ratio / width, head height above the feet.
  */
 export class UnitInstances {
   readonly iA: Float32Array;
@@ -158,10 +158,11 @@ export class UnitInstances {
       if (opts.showBars && alive && u.hp[i] < u.maxHp[i]) {
         const bo = b * 4;
         this.bar[bo] = wx;
-        this.bar[bo + 1] = gy + bob + lift + h + 0.12;
+        this.bar[bo + 1] = gy + bob + lift; // feet; the shader adds the head height along the leaning axis
         this.bar[bo + 2] = wy;
         this.bar[bo + 3] = u.hp[i] / u.maxHp[i];
         this.barB[b * 2] = Math.max(0.55, Math.min(1.4, w * 0.7));
+        this.barB[b * 2 + 1] = h * frames.anchor[f * 2 + 1] + 0.12;
         b++;
       }
       n++;

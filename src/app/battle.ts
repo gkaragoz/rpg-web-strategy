@@ -9,6 +9,7 @@ import { AudioSystem } from '../render/audio';
 import { DebugOverlay } from '../render/debugOverlay';
 import { ComedySystem, comedy } from '../render/comedy';
 import { FxSystem, type FxQuality } from '../render/fx';
+import { HIDDEN_BODY_PX } from '../render/depthSort';
 import { MassRenderer, type MassOptions, type MassViewport } from '../render/massRenderer';
 import { DEATH_FADE, UnitView, type TeamColors } from '../render/unitView';
 import type { SimBackend } from '../sim/backend';
@@ -204,9 +205,9 @@ export class BattleScene {
     } else if (detailed) {
       this.buildViews();
     } else {
-      this.mass = new MassRenderer(app, this.sim, atlas, world.terrain);
+      this.mass = new MassRenderer(app, this.sim, atlas, world.terrain, this.w2.depth);
       if (opts.bench && !reliefMap) this.w2.staticLayer.addChildAt(this.mass.buildGround(), 0);
-      this.w2.entityLayer.addChild(this.mass.layer);
+      this.mass.mount(this.w2.entityLayer);
     }
 
     if (!opts.bench && !r3) {
@@ -694,6 +695,7 @@ export class BattleScene {
   }
 
   frame(now: number, frameMs: number): void {
+    if (!this.sim) return; // enter() is still waiting for its simulation
     // Long pauses (tab/window waiting) do not advance the simulation.
     const dt = frameMs > 500 ? 0 : Math.min(frameMs / 1000, 0.1);
     this.time += dt;
@@ -848,6 +850,7 @@ export class BattleScene {
   private syncViews(dt: number, alpha: number): void {
     const u = this.sim.units;
     const vdt = this.paused ? 0 : dt;
+    const reliefDepth = this.w2.depth.cuts.length > 0;
 
     for (let i = 0; i < u.count; i++) {
       const v = this.views[i];
@@ -867,7 +870,9 @@ export class BattleScene {
       // Height advantage over its current target (half steps): gold chevrons, one per step of advantage (max 3).
       const adv = u.hgAdv[i];
       v.setHighGround(alive ? (adv >= 6 ? 3 : adv >= 4 ? 2 : adv >= 2 ? 1 : 0) : 0);
-      v.root.zIndex = wx + wy;
+      // A ridge in front hides most of the unit: its bar and chevrons go too.
+      if (reliefDepth) v.setCovered(this.w2.coverAt(wx, wy) > HIDDEN_BODY_PX * STATS[u.kind[i]].scale);
+      v.root.zIndex = this.w2.depthKey(wx, wy);
       const swingTotal = u.swing[i] > 0 ? STATS[u.kind[i]].swing : 0;
       v.update(
         {
@@ -899,7 +904,10 @@ export class BattleScene {
       const k = Math.min(1, (p.t[i] + advance) / p.dur[i]);
       const pos = arcPoint(p, i, k, this.elev);
       const next = arcPoint(p, i, Math.min(1, k + 0.03), this.elev);
-      v.arrow.visible = v.shadow.visible = true;
+      // Behind a ridge or mountain: the projectile (and the shadow on the ground) is hidden by the terrain in front of it.
+      const cover = this.w2.depth.cuts.length > 0 ? this.w2.coverAt(pos.wx, pos.wy) : 0;
+      v.arrow.visible = cover <= pos.z;
+      v.shadow.visible = cover <= 0.5;
       if (v.tag !== p.tag[i]) {
         v.tag = p.tag[i];
         drawProjectile(v.arrow, v.tag);
@@ -1000,5 +1008,5 @@ function arcPoint(p: SimBackend['projectiles'], i: number, k: number, elev: (x: 
   const wy = p.sy[i] + (p.ty[i] - p.sy[i]) * k;
   const e = elev(wx, wy);
   const z = 4 * p.height[i] * k * (1 - k);
-  return { sx: isoX(wx, wy), sy: isoY(wx, wy, e + z), gx: isoX(wx, wy), gy: isoY(wx, wy, e), z };
+  return { sx: isoX(wx, wy), sy: isoY(wx, wy, e + z), gx: isoX(wx, wy), gy: isoY(wx, wy, e), z, wx, wy };
 }

@@ -8,12 +8,13 @@ attribute vec4 iB;   // width, height, anchorX, anchorY (from top)
 attribute vec4 iUV;  // u0, v0, u1, v1
 attribute vec4 iC;   // flash, outline, tint (0xRRGGBB), fade
 uniform vec3 uRight;
-uniform vec3 uUp;
+uniform vec3 uUp;   // leaning up axis (see depth.ts), length = height scale
 uniform float uOutline;
 uniform float uMargin;
 varying vec2 vCorner;
 varying vec4 vUv4;
 varying vec4 vC;
+varying vec3 vTint;
 varying float vDist;
 void main() {
   vec2 c = corner;
@@ -26,11 +27,18 @@ void main() {
   vCorner = c;
   vUv4 = iUV;
   vC = iC;
+  // The packed 0xRRGGBB tint is decoded here: interpolating a number near 2^24 across a quad that is tilted against the view
+  // rounds it differently per row, which flipped the channels and drew coloured scanlines.
+  vTint = vec3(floor(iC.z / 65536.0), mod(floor(iC.z / 256.0), 256.0), mod(iC.z, 256.0)) / 255.0;
   vec2 local = vec2((c.x - iB.z) * iB.x * iA.w, (c.y - (1.0 - iB.w)) * iB.y);
   vec3 world = iA.xyz + uRight * local.x + uUp * local.y;
-  if (uOutline > 0.5) world -= normalize(cameraPosition - world) * 0.04;
   vDist = length(world - cameraPosition);
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+  // The whole sprite takes the depth of its feet (nudged toward the camera): it never sinks into terrain in front of or behind
+  // it, and sprites sort by where they stand. The depth is constant over the quad, so early-z still works.
+  vec3 feet = iA.xyz + normalize(cameraPosition - iA.xyz) * (0.12 + 0.1 * iB.x);
+  vec4 fc = projectionMatrix * viewMatrix * vec4(feet, 1.0);
+  gl_Position.z = max(fc.z / fc.w, -0.999) * gl_Position.w;
 }
 `;
 
@@ -46,6 +54,7 @@ uniform vec2 uTexel;
 varying vec2 vCorner;
 varying vec4 vUv4;
 varying vec4 vC;
+varying vec3 vTint;
 varying float vDist;
 
 float alphaAt(vec2 corner) {
@@ -72,9 +81,7 @@ void main() {
   if (alpha < 0.04) discard;
   vec3 col = tex.rgb;
   col = mix(col, vec3(1.0, 0.55, 0.55), vC.x * 0.55);
-  float t = vC.z;
-  vec3 tint = vec3(floor(t / 65536.0), mod(floor(t / 256.0), 256.0), mod(t, 256.0)) / 255.0;
-  col *= tint * uLight;
+  col *= vTint * uLight;
   col = mix(col, uFogColor, fogK);
   gl_FragColor = vec4(col, alpha);
 }
@@ -109,19 +116,24 @@ void main() {
 /** Health bars above damaged soldiers (camera-facing). */
 export const BAR_VERT = /* glsl */ `
 attribute vec2 corner;
-attribute vec4 iBar; // x, y(up), z, ratio
-attribute float iW;
+attribute vec4 iBar; // x, y(up), z (feet), ratio
+attribute vec2 iWH;  // bar width, height of the head above the feet
 uniform vec3 uRight;
 uniform vec3 uUp;
+uniform vec3 uLean;
 varying vec2 vC;
 varying float vRatio;
 varying float vDist;
 void main() {
   vC = corner;
   vRatio = iBar.w;
-  vec3 world = iBar.xyz + uRight * (corner.x - 0.5) * iW + uUp * corner.y * 0.1;
+  // Above the head of the (leaning) sprite; the bar itself faces the camera.
+  vec3 world = iBar.xyz + uLean * iWH.y + uRight * (corner.x - 0.5) * iWH.x + uUp * corner.y * 0.1;
   vDist = length(world - cameraPosition);
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+  vec3 feet = iBar.xyz + normalize(cameraPosition - iBar.xyz) * 0.6;
+  vec4 fc = projectionMatrix * viewMatrix * vec4(feet, 1.0);
+  gl_Position.z = max(fc.z / fc.w, -0.999) * gl_Position.w;
 }
 `;
 export const BAR_FRAG = /* glsl */ `

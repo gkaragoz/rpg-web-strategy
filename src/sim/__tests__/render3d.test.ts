@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { newFrameTable, unitFrame, UnitInstances, type UnitsLike, DEATH_FADE } from '../../render3d/billboards';
+import { billboardLean, footprintOf, leanUpVector, MAX_LEAN, MAX_LEAN_SCALE } from '../../render3d/depth';
 import { clampRig, eyeOf, panAxes, TILT_MAX, TILT_MIN } from '../../render3d/cameraRig';
 import { pickGround } from '../../render3d/pick';
 import { groundHeight, HEIGHT_PER_STEP, terrainGeometry, WATER_DEPTH } from '../../render3d/terrainMesh';
@@ -125,6 +126,8 @@ describe('billboard instance writer', () => {
     expect(w.iC[5]).toBe(1); // team 1 is highlighted
     expect(w.barCount).toBe(1);
     expect(w.bar[3]).toBeCloseTo(0.5, 5);
+    expect(w.bar[1]).toBeCloseTo(2, 5); // feet; the shader adds the head height
+    expect(w.barB[1]).toBeCloseTo(1.5 * 0.95 + 0.12, 5); // frame top above the anchor + gap
     expect(run(fakeUnits(3), -1, false).barCount).toBe(0);
   });
 
@@ -261,5 +264,42 @@ describe('view switch persistence', () => {
       g.window = prev.window;
       g.localStorage = prev.localStorage;
     }
+  });
+});
+
+describe('sprite lean and footprints', () => {
+  it('leans like the camera up to the cap, then stays and compensates the height', () => {
+    const low = billboardLean((30 * Math.PI) / 180);
+    expect(low.lean).toBeCloseTo((30 * Math.PI) / 180, 6);
+    expect(low.scale).toBeCloseTo(1, 6);
+    const high = billboardLean((86 * Math.PI) / 180);
+    expect(high.lean).toBe(MAX_LEAN);
+    expect(high.scale).toBeGreaterThan(1);
+    expect(high.scale).toBeLessThanOrEqual(MAX_LEAN_SCALE);
+    expect(billboardLean(0).lean).toBe(0);
+  });
+
+  it('builds the up axis away from the camera and keeps the screen height', () => {
+    const tilt = (70 * Math.PI) / 180;
+    const up = leanUpVector(tilt, 0, 2, { x: 0, y: 0, z: 0 });
+    expect(up.x).toBeCloseTo(0, 9);
+    expect(up.z).toBeGreaterThan(0); // leans along the view direction
+    expect(up.y).toBeGreaterThan(0);
+    // The camera's up axis is (0, cos t, sin t) for a camera looking toward +z: the lean projects to ~1 on it.
+    const onCam = up.y * Math.cos(tilt) + up.z * Math.sin(tilt);
+    expect(onCam).toBeCloseTo(1, 5);
+    const flat = leanUpVector(0.2, 3, 0, { x: 0, y: 0, z: 0 });
+    expect(flat.x).toBeGreaterThan(0);
+    expect(flat.z).toBeCloseTo(0, 9);
+  });
+
+  it('moves structures from the iso front corner to the footprint centre', () => {
+    expect(footprintOf('house', 0, 10, 10)).toEqual({ x: 9, z: 9, rise: 32 });
+    expect(footprintOf('house', 2, 10, 10)).toEqual({ x: 8.5, z: 9, rise: 40 }); // 3 x 2
+    expect(footprintOf('house', 4, 10, 10)).toEqual({ x: 9, z: 8.5, rise: 40 }); // 2 x 3
+    expect(footprintOf('keep', 0, 30, 30)).toEqual({ x: 28, z: 28, rise: 64 });
+    expect(footprintOf('tower', 0, 5, 7)).toEqual({ x: 4.5, z: 6.5, rise: 16 });
+    expect(footprintOf('wall', 0, 5.5, 7.5)).toEqual({ x: 5.5, z: 7.5, rise: 16 });
+    expect(footprintOf('tree', 1, 3, 4)).toEqual({ x: 3, z: 4, rise: 0 });
   });
 });

@@ -7,6 +7,7 @@ import type { GameInit, PlacedItem, ServerMsg } from '../../net/protocol';
 import type { TeamColors } from '../../render/unitView';
 import { KIND_OF_TROOP, LEGACY_COUNT, STATS, unitDisplayName } from '../../sim/units';
 import { initSheet } from '../sheet';
+import { OUTBOX_MS, PlaceQueue } from './placeQueue';
 import type { UnitPreview } from '../unitPreview';
 import { Editor } from '../editor';
 import { UnitGallery } from '../unitGallery';
@@ -41,6 +42,11 @@ export class Placement {
   private readonly remoteIds = new Set<number>();
   private readonly pending = new Map<number, PlacedUnit>();
   private readonly cancelled = new Set<number>();
+  /** Outgoing placements/removals: merged into batches and paced under the host's rate limit (see placeQueue.ts). */
+  private readonly outbox = new PlaceQueue();
+  private outTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastOut = 0;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
   /** cids whose unit was erased and re-added (undo) before the host answered: the late answer must only undo that stale copy. */
   private readonly stale = new Set<number>();
   /** Units removed locally (by host id), so a refused removal can restore the very same objects and drop their undo entries. */
@@ -131,6 +137,7 @@ export class Placement {
       this.gallery = null;
       this.dock = null;
     }
+    (window as unknown as { __placement: Placement }).__placement = this; // diagnostics / scripted tests (like __session)
     this.keys = (e) => this.onKey(e);
     window.addEventListener('keydown', this.keys);
     this.timer = setInterval(() => this.paintTop(), 250);
@@ -178,7 +185,8 @@ export class Placement {
       this.pending.set(u.cid, u);
       return { cid: u.cid, kind: u.kind, x: u.x, y: u.y };
     });
-    for (let i = 0; i < items.length; i += 80) this.session.send({ t: 'place', items: items.slice(i, i + 80) });
+    this.outbox.add(items);
+    this.pumpOutbox();
   }
 
   private sendRemoved(units: PlacedUnit[]): void {
@@ -189,7 +197,37 @@ export class Placement {
         this.removedById.set(u.id, u);
       } else if (u.cid !== undefined) this.cancelled.add(u.cid); // not confirmed yet: removed once the confirmation arrives
     }
-    if (ids.length) this.session.send({ t: 'unplace', ids });
+    if (ids.length) {
+      this.outbox.remove(ids);
+      this.pumpOutbox();
+    }
+  }
+
+  /** Sends queued edits at most one message per OUTBOX_MS (the first one at once when the line is idle); READY waits for an empty outbox. */
+  private pumpOutbox(): void {
+    if (this.outTimer) return;
+    const run = (): void => {
+      this.outTimer = null;
+      const msg = this.outbox.next();
+      if (msg) {
+        this.session.send(msg);
+        this.lastOut = performance.now();
+      }
+      if (this.outbox.size > 0) this.outTimer = setTimeout(run, OUTBOX_MS);
+      else this.flushReady();
+    };
+    const wait = this.lastOut + OUTBOX_MS - performance.now();
+    if (wait <= 0) run();
+    else this.outTimer = setTimeout(run, wait);
+  }
+
+  /** The host refused edits because of its rate limit: send them again shortly instead of dropping them from the player's view. */
+  private retryLater(run: () => void): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      run();
+    }, 450);
   }
 
   /** Handles the server messages that concern placement. */
@@ -239,13 +277,38 @@ export class Placement {
             this.pending.delete(cid);
           }
         }
-        if (bad.length && this.editor) this.editor.removeSilently(bad);
-        this.env.toast(t(`online.reason.${msg.reason}`));
+        if (bad.length && this.editor) {
+          // 'busy' while not ready is the host's rate limit (fast painting): the edits were not applied, so send them again.
+          const again = msg.reason === 'busy' && !this.locked ? bad.filter((u) => (u.retry ?? 0) < 4) : [];
+          const drop = bad.filter((u) => !again.includes(u));
+          if (drop.length) this.editor.removeSilently(drop);
+          if (again.length) {
+            for (const u of again) u.retry = (u.retry ?? 0) + 1;
+            this.retryLater(() => {
+              const live = new Set(this.state.units);
+              const left = again.filter((u) => live.has(u));
+              if (left.length && !this.locked) this.sendAdded(left);
+            });
+          }
+        }
+        if (msg.reason !== 'busy' || this.locked) this.env.toast(t(`online.reason.${msg.reason}`));
         this.refreshUi();
         this.flushReady();
         break;
       }
       case 'unplaceFail': {
+        if (!this.locked) {
+          // Not ready: the host only refused because of its rate limit. Ask again; the units stay removed here.
+          const ids = msg.ids.slice();
+          this.retryLater(() => {
+            const still = ids.filter((id) => this.session.model.placed.get(id)?.team === this.myTeam);
+            if (still.length && !this.locked) {
+              this.outbox.remove(still);
+              this.pumpOutbox();
+            }
+          });
+          break;
+        }
         // The host kept these units (we were ready): restore them locally so what we see is what will fight.
         let back = 0;
         const old: PlacedUnit[] = [];
@@ -285,7 +348,8 @@ export class Placement {
         this.pending.delete(it.cid);
         if (this.cancelled.delete(it.cid)) {
           // It was deleted before confirmation: remove it from the host as well.
-          this.session.send({ t: 'unplace', ids: [it.id] });
+          this.outbox.remove([it.id]);
+          this.pumpOutbox();
           this.editor.removeSilently([u]);
         } else u.id = it.id;
         return null;
@@ -396,13 +460,13 @@ export class Placement {
       this.locked = !!this.session.model.me?.ready;
       this.refreshUi();
     }, 4000);
-    if (next && this.pending.size > 0) this.readyDeferred = true;
+    if (next && (this.pending.size > 0 || this.outbox.size > 0 || this.outTimer)) this.readyDeferred = true;
     else this.session.send({ t: 'ready', ready: next });
     this.refreshUi();
   }
 
   private flushReady(): void {
-    if (!this.readyDeferred || this.pending.size > 0) return;
+    if (!this.readyDeferred || this.pending.size > 0 || this.outbox.size > 0) return;
     this.readyDeferred = false;
     this.session.send({ t: 'ready', ready: true });
   }
@@ -476,6 +540,9 @@ export class Placement {
     window.removeEventListener('keydown', this.keys);
     if (this.timer) clearInterval(this.timer);
     if (this.readyTimer) clearTimeout(this.readyTimer);
+    if (this.outTimer) clearTimeout(this.outTimer);
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.outbox.clear();
     this.editor?.exit();
     this.top.remove();
     this.sheet?.destroy();

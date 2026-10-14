@@ -1,6 +1,6 @@
 import { PALETTES } from './biome';
 import { comedy, hash01 } from './comedyFlag';
-import { Application, Container, Graphics, Particle, ParticleContainer, Rectangle, Texture, TilingSprite, type IParticle } from 'pixi.js';
+import { Application, Container, Graphics, Particle, ParticleContainer, Rectangle, Sprite, Texture, TilingSprite, type IParticle } from 'pixi.js';
 import type { Terrain } from '../sim/terrain';
 import type { Atlas } from './atlas';
 import { isoX, isoY } from '../iso';
@@ -9,7 +9,9 @@ import { SIM_DT } from '../sim/constants';
 import { MAX_TEAMS, STATS, isMelee, isRanged, isTank } from '../sim/units';
 import { DEATH_FADE, POSES, statusTint } from './unitView';
 import { projStyle } from './projectileStyle';
-import { flatColorFilter, setFlatColor } from './outlineFilter';
+import { flatColorFilter } from './outlineFilter';
+import { coverAt, HIDDEN_BODY_PX, slabTable, slabZ } from './depthSort';
+import type { DepthInfo } from '../app/world';
 
 const DEPTH_SCALE = 4;
 /** Below this camera zoom units are drawn idle-pose only (no walk/strike animation math). */
@@ -43,10 +45,20 @@ export interface MassOptions {
    * atlas texture (no Container/Graphics per unit).
  */
 export class MassRenderer {
-  readonly layer: Container;
-  private readonly units = new ParticleContainer({
-    dynamicProperties: { vertex: true, position: true, rotation: true, uvs: true, color: true },
-  });
+  /**
+   * Depth slabs: with relief the units are split between the terrain bands (slab j holds the units whose floor(x+y) lies between
+   * band cuts[j-1] and cuts[j]); each slab is its own particle container with the zIndex of its place among the bands in the entity
+   * layer. Flat maps have a single slab. A slab also owns the outline silhouettes of its units (drawn just below them).
+   */
+  private readonly slabs: Array<{ units: ParticleContainer; focus: ParticleContainer; uOut: IParticle[]; fOut: IParticle[] }> = [];
+  private slabOf = new Uint16Array(0);
+  private slabFirst = new Int32Array(0);
+  private slabBase = new Int32Array(0);
+  private slabLen = new Int32Array(0);
+  private focusLen = new Int32Array(0);
+  private readonly cuts: number[];
+  /** Everything that is not depth sorted (arrows, bars, chevrons): above all slabs. */
+  private readonly top = new Container();
   private readonly arrows = new ParticleContainer({
     dynamicProperties: { vertex: true, position: true, rotation: true, uvs: true, color: true },
   });
@@ -63,11 +75,8 @@ export class MassRenderer {
   private markSy = new Float32Array(0);
   private markLevel = new Uint8Array(0);
   /** Coloured silhouettes (4 offset copies per soldier) under the units: together they read as an outline. */
-  private readonly focusLayer = new ParticleContainer({
-    dynamicProperties: { vertex: true, position: true, rotation: true, uvs: true, color: false },
-  });
-  private readonly focusFilter = flatColorFilter(0xffffff);
-  private focusColorNow = -1;
+  private silTex = new Map<Texture, Texture>();
+  private silSource: Texture | null = null;
   private focusParticles: Particle[] = [];
   private readonly unitTex: Texture[]; // [(kind*MAX_TEAMS + team)*2 + pose]
   private readonly unitAnchor: Array<{ ax: number; ay: number }>;
@@ -105,8 +114,9 @@ export class MassRenderer {
     private readonly sim: SimView,
     atlas: Atlas,
     private readonly terrain: Terrain | null,
+    private readonly depth: DepthInfo | null = null,
   ) {
-    this.layer = new Container();
+    this.cuts = depth ? depth.cuts : [];
     this.unitTex = atlas.unitTex;
     this.unitAnchor = atlas.unitAnchor;
     this.arrowTex = atlas.arrowTex;
@@ -115,12 +125,56 @@ export class MassRenderer {
     this.chevronTex = this.makeChevron();
     this.buildDecor(atlas);
     this.maxRise = this.computeMaxRise();
-    const span = this.sim.mapSize * 34 + 300;
-    this.focusLayer.boundsArea = new Rectangle(-span, -400, span * 2, span + 800);
-    this.focusLayer.filters = [this.focusFilter];
-    this.focusLayer.visible = false;
-    this.layer.addChild(this.focusLayer, this.units, this.arrows, this.bars, this.marks);
+    this.buildSlabs();
+    this.top.zIndex = 1e6;
+    this.top.addChild(this.arrows, this.bars, this.marks);
     this.rebuild();
+  }
+
+  private buildSlabs(): void {
+    const dyn = { vertex: true, position: true, rotation: true, uvs: true, color: true };
+    const n = this.cuts.length + 1;
+    const maxKey = Math.ceil(this.sim.mapSize * 2 * DEPTH_SCALE) + 4;
+    const table = slabTable(this.cuts, (maxKey >> 2) + 1);
+    this.slabOf = new Uint16Array(maxKey + 1);
+    this.slabFirst = new Int32Array(n);
+    for (let j = 0; j < n; j++) this.slabFirst[j] = j === 0 ? 0 : this.cuts[j - 1] * DEPTH_SCALE;
+    for (let k = 0; k < this.slabOf.length; k++) this.slabOf[k] = table[k >> 2];
+    this.slabBase = new Int32Array(n);
+    this.slabLen = new Int32Array(n);
+    this.focusLen = new Int32Array(n);
+    for (let j = 0; j < n; j++) {
+      const units = new ParticleContainer({ dynamicProperties: dyn });
+      const focus = new ParticleContainer({ dynamicProperties: dyn });
+      units.zIndex = slabZ(this.cuts, j);
+      focus.zIndex = units.zIndex - 0.0002;
+      focus.visible = units.visible = false;
+      units.particleChildren = [];
+      focus.particleChildren = [];
+      this.slabs.push({ units, focus, uOut: units.particleChildren, fOut: focus.particleChildren });
+    }
+  }
+
+  /** Adds the depth slabs and the overlay layer to the sorted entity layer (they interleave with the relief ground bands). */
+  mount(parent: Container): void {
+    for (const sl of this.slabs) parent.addChild(sl.focus, sl.units);
+    parent.addChild(this.top);
+  }
+
+  /** Flat white copy of the unit atlas (lazily): the outline silhouettes are these frames tinted with the focus colour. */
+  private silhouette(tex: Texture): Texture {
+    let t = this.silTex.get(tex);
+    if (t) return t;
+    if (!this.silSource) {
+      const src = tex.source;
+      const spr = new Sprite(new Texture({ source: src }));
+      spr.filters = [flatColorFilter(0xffffff)];
+      this.silSource = this.app.renderer.generateTexture({ target: spr, resolution: src.resolution, frame: new Rectangle(0, 0, src.width, src.height) });
+      spr.destroy();
+    }
+    t = new Texture({ source: this.silSource.source, frame: tex.frame.clone() });
+    this.silTex.set(tex, t);
+    return t;
   }
 
   /** Small gold chevron (^) drawn above units standing on high ground. */
@@ -132,7 +186,12 @@ export class MassRenderer {
 
   /** Releases the layer and the textures this renderer created (called when the battle ends). */
   destroy(): void {
-    this.layer.destroy({ children: true });
+    for (const sl of this.slabs) {
+      sl.units.destroy();
+      sl.focus.destroy();
+    }
+    this.top.destroy({ children: true });
+    this.silSource?.destroy(true);
     this.chevronTex.destroy(true);
   }
 
@@ -216,19 +275,26 @@ export class MassRenderer {
     this.keys = new Int32Array(u.count + this.decorParticles.length);
     this.order = new Int32Array(u.count + this.decorParticles.length);
     this.counts = new Int32Array(Math.ceil(this.sim.mapSize * 2 * DEPTH_SCALE) + 4);
-    this.units.particleChildren = [];
+    for (const sl of this.slabs) {
+      sl.uOut.length = 0;
+      sl.fOut.length = 0;
+      sl.units.visible = sl.focus.visible = false;
+    }
     this.arrows.particleChildren = [];
     this.bars.particleChildren = [];
     this.marks.particleChildren = [];
-    this.focusLayer.particleChildren = [];
   }
 
   /** Four copies shifted by ~2 px behind the unit = an outline (returns the new particle count of the focus layer). */
-  private pushOutline(fn: number, p: Particle, fOut: IParticle[], fd: number): number {
+  private pushOutline(fn: number, p: Particle, slab: number, fd: number, color: number): number {
+    const fOut = this.slabs[slab].fOut;
+    let at = this.focusLen[slab];
+    const tex = this.silhouette(p.texture);
     for (let c = 0; c < 4; c++) {
       let f = this.focusParticles[fn];
-      if (!f) f = this.focusParticles[fn] = new Particle({ texture: p.texture, anchorX: p.anchorX, anchorY: p.anchorY });
-      f.texture = p.texture;
+      if (!f) f = this.focusParticles[fn] = new Particle({ texture: tex, anchorX: p.anchorX, anchorY: p.anchorY });
+      f.texture = tex;
+      f.tint = color;
       f.anchorX = p.anchorX;
       f.anchorY = p.anchorY;
       f.x = p.x + (c === 0 ? fd : c === 1 ? -fd : 0);
@@ -236,14 +302,15 @@ export class MassRenderer {
       f.scaleX = p.scaleX;
       f.scaleY = p.scaleY;
       f.rotation = p.rotation;
-      fOut[fn++] = f;
+      fOut[at++] = f;
+      fn++;
     }
+    this.focusLen[slab] = at;
     return fn;
   }
 
   sync(time: number, alpha: number, view: MassViewport, opt: MassOptions): void {
     const u = this.sim.units;
-    const out = this.units.particleChildren;
     const keys = this.keys;
     const order = this.order;
     let n = 0;
@@ -261,7 +328,11 @@ export class MassRenderer {
     // 1) Collect visible units, write positions.
     this.markLevel.fill(0);
     const focus = opt.focusTeam ?? -1;
-    const fOut = this.focusLayer.particleChildren;
+    this.focusLen.fill(0);
+    const focusColor = opt.focusColor ?? 0xffffff;
+    const boxes = this.depth && this.depth.boxes.count > 0 ? this.depth.boxes : null;
+    const slabOf = this.slabOf;
+    const maxKey = this.counts.length - 2;
     let fn = 0;
     const fd = 2.4 / Math.max(0.3, zoom);
     for (let i = 0; i < u.count; i++) {
@@ -296,7 +367,9 @@ export class MassRenderer {
       if (alive && relief) {
         // Standing higher than its current target (half steps): that is what earns the damage and range bonus.
         const adv = u.hgAdv[i];
-        this.markLevel[i] = adv >= 6 ? 3 : adv >= 4 ? 2 : adv >= 2 ? 1 : 0;
+        // Chevrons (like health bars) are not shown for a unit that a ridge in front mostly hides.
+        const hidden = this.covered(wx, wy) > HIDDEN_BODY_PX * STATS[u.kind[i]].scale;
+        this.markLevel[i] = hidden ? 0 : adv >= 6 ? 3 : adv >= 4 ? 2 : adv >= 2 ? 1 : 0;
         this.markSx[i] = sx;
         this.markSy[i] = sy;
       }
@@ -313,11 +386,11 @@ export class MassRenderer {
         p.texture = this.unitTex[(kind * MAX_TEAMS + u.team[i]) * POSES];
         p.tint = u.flash[i] > 0 ? 0xff9a9a : u.status[i] !== 0 ? statusTint(u.status[i]) : 0xffffff;
         p.alpha = 1;
-        if (focus >= 0 && u.team[i] === focus && fn < FOCUS_MAX) fn = this.pushOutline(fn, p, fOut, fd);
-        let key = Math.min(this.counts.length - 2, Math.max(0, ((wx + wy) * DEPTH_SCALE) | 0));
+        let key = Math.min(maxKey, Math.max(0, ((boxes ? boxes.frontKey(wx, wy, wx + wy, 0.3) : wx + wy) * DEPTH_SCALE) | 0));
         const lk = this.lastKey[i];
         if (lk >= 0 && Math.abs(key - lk) < 2) key = lk;
         this.lastKey[i] = key;
+        if (focus >= 0 && u.team[i] === focus && fn < FOCUS_MAX) fn = this.pushOutline(fn, p, slabOf[key], fd, focusColor);
         keys[n] = key;
         order[n] = i;
         n++;
@@ -367,22 +440,21 @@ export class MassRenderer {
       }
       // In the air (comedy physics): spins fast.
       if (alive && lift > 0.04) p.rotation = (time * 13 + i) * u.facing[i];
-      if (focus >= 0 && alive && u.team[i] === focus && fn < FOCUS_MAX) fn = this.pushOutline(fn, p, fOut, fd);
       // Depth key hysteresis: on small changes the order stays the same (overlapping units do not flicker).
-      let key = Math.min(this.counts.length - 2, Math.max(0, ((wx + wy) * DEPTH_SCALE) | 0));
+      let key = Math.min(maxKey, Math.max(0, ((boxes ? boxes.frontKey(wx, wy, wx + wy, 0.3) : wx + wy) * DEPTH_SCALE) | 0));
       const lk = this.lastKey[i];
       if (lk >= 0 && Math.abs(key - lk) < 2) key = lk;
       this.lastKey[i] = key;
+      if (focus >= 0 && alive && u.team[i] === focus && fn < FOCUS_MAX) fn = this.pushOutline(fn, p, slabOf[key], fd, focusColor);
       keys[n] = key;
       order[n] = i;
       n++;
     }
 
-    fOut.length = fn;
-    this.focusLayer.visible = fn > 0;
-    if (fn > 0 && (opt.focusColor ?? 0xffffff) !== this.focusColorNow) {
-      this.focusColorNow = opt.focusColor ?? 0xffffff;
-      setFlatColor(this.focusFilter, this.focusColorNow);
+    for (let j = 0; j < this.slabs.length; j++) {
+      const sl = this.slabs[j];
+      sl.fOut.length = this.focusLen[j];
+      sl.focus.visible = this.focusLen[j] > 0;
     }
 
     // Decor: static; enters the same sort (index >= unit count).
@@ -397,16 +469,25 @@ export class MassRenderer {
       n++;
     }
 
-    // 2) Depth: counting sort by the x+y key (O(n)).
-    out.length = n;
-    if (opt.sort) {
-      const counts = this.counts;
-      counts.fill(0);
-      for (let k = 0; k < n; k++) counts[keys[k] + 1]++;
-      for (let c = 1; c < counts.length; c++) counts[c] += counts[c - 1];
-      for (let k = 0; k < n; k++) out[counts[keys[k]]++] = order[k] < uc ? this.particles[order[k]] : this.decorParticles[order[k] - uc];
-    } else {
-      for (let k = 0; k < n; k++) out[k] = order[k] < uc ? this.particles[order[k]] : this.decorParticles[order[k] - uc];
+    // 2) Depth: counting sort by the x+y key (O(n)), scattered straight into the depth slabs (slab = range of keys).
+    const counts = this.counts;
+    const slabs = this.slabs;
+    const first = this.slabFirst;
+    if (!opt.sort) for (let k = 0; k < n; k++) keys[k] = first[slabOf[keys[k]]];
+    counts.fill(0);
+    for (let k = 0; k < n; k++) counts[keys[k] + 1]++;
+    for (let c = 1; c < counts.length; c++) counts[c] += counts[c - 1];
+    const ns = slabs.length;
+    for (let j = 0; j < ns; j++) {
+      this.slabBase[j] = counts[first[j]];
+      this.slabLen[j] = (j + 1 < ns ? counts[first[j + 1]] : n) - this.slabBase[j];
+      slabs[j].uOut.length = this.slabLen[j];
+      slabs[j].units.visible = this.slabLen[j] > 0;
+    }
+    for (let k = 0; k < n; k++) {
+      const key = keys[k];
+      const j = slabOf[key];
+      slabs[j].uOut[counts[key]++ - this.slabBase[j]] = order[k] < uc ? this.particles[order[k]] : this.decorParticles[order[k] - uc];
     }
     this.drawnUnits = nUnits;
     this.drawnDecor = n - nUnits;
@@ -414,6 +495,12 @@ export class MassRenderer {
     this.syncArrows(view, alpha * (opt.stepDt ?? SIM_DT));
     this.syncBars(alpha, view, opt.bars);
     this.syncMarks(zoom);
+  }
+
+  /** Pixels of terrain in front that hide a ground point (0 without relief). */
+  private covered(x: number, y: number): number {
+    const d = this.depth;
+    return d && d.cuts.length > 0 ? coverAt(d.cover, d.size, x, y) : 0;
   }
 
   private syncMarks(zoom: number): void {
@@ -456,7 +543,9 @@ export class MassRenderer {
       const wy2 = p.sy[i] + (p.ty[i] - p.sy[i]) * k2;
       const x = isoX(wx, wy);
       const ez = this.terrain && this.terrain.hasRelief ? this.terrain.elevPx(wx, wy) : 0;
-      const y = isoY(wx, wy, ez + 4 * p.height[i] * k * (1 - k));
+      const lift = 4 * p.height[i] * k * (1 - k);
+      const y = isoY(wx, wy, ez + lift);
+      if (this.covered(wx, wy) > lift) continue; // behind a ridge
       if (x < view.left || x > view.right || y < view.top || y > view.bottom) continue;
       let part = this.arrowParticles[n];
       if (!part) {
@@ -493,6 +582,7 @@ export class MassRenderer {
       const barW = 34 * Math.sqrt(k);
       const sy = isoY(wx, wy, (this.terrain && this.terrain.hasRelief ? this.terrain.elevPx(wx, wy) : 0) + (u.lift ? u.lift[i] * 38 : 0)) - 72 * k;
       if (sx < view.left || sx > view.right || sy < view.top || sy > view.bottom) continue;
+      if (this.covered(wx, wy) > HIDDEN_BODY_PX * k) continue; // unit mostly hidden by a ridge in front
       const ratio = u.hp[i] / u.maxHp[i];
       let bg = this.barBg[n];
       let fill = this.barFill[n];

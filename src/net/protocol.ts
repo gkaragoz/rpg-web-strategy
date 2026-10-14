@@ -170,7 +170,7 @@ export function battleConfig(s: BattleStart): BattleConfig {
 }
 
 export function cleanName(raw: string): string {
-  const s = raw.replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, NAME_MAX);
+  const s = (typeof raw === 'string' ? raw : '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, NAME_MAX);
   return s || 'Player';
 }
 

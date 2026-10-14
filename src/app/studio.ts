@@ -98,7 +98,7 @@ export class Studio {
     <button id="map-btn" type="button" class="wide map-btn" aria-haspopup="dialog">${t('studio.map.pick')}</button>
     <label class="row"><span>${t('studio.env')} <small>${t('studio.env.hint')}</small></span><input type="checkbox" id="env" role="switch" /></label>
     <div class="row"><span>${t('studio.seed')}</span><span class="inline"><input id="seed" type="number" min="1" max="999999" inputmode="numeric" aria-label="${t('studio.seed.aria')}" /><button id="dice" type="button" title="${t('studio.dice.title')}" aria-label="${t('studio.dice.title')}">${t('studio.dice')}</button></span></div>
-    <div class="row"><span>${t('studio.size')}</span><div class="seg" id="mapsize" role="group" aria-label="${t('studio.size.aria')}"></div></div>
+    <div class="row stack"><span>${t('studio.size')}</span><div class="seg" id="mapsize" role="group" aria-label="${t('studio.size.aria')}"></div></div>
   </section>
   <section>
     <h2>${t('studio.battle.h')}</h2>
@@ -372,7 +372,7 @@ export class Studio {
       .map((c, ti) => {
         const total = counts[ti].reduce((a, b) => a + b, 0);
         const detail = counts[ti].map((n, k) => (n > 0 ? `${unitDisplayName(k)} ${n}` : '')).filter(Boolean).join(' · ');
-        return `<div class="trow${ti === s.selTeam ? ' sel' : ''}" data-team="${ti}"><i class="dot" style="background:${hex(c.main)}"></i><span class="tname">${t('studio.team.name', { n: ti + 1 })} <b>${total}</b></span><small>${esc(detail || t('studio.team.empty'))}</small><button type="button" data-clear="${ti}" ${total === 0 ? 'disabled' : ''} title="${t('studio.team.clear.title', { n: ti + 1 })}">${t('studio.team.clear')}</button></div>`;
+        return `<div class="trow${ti === s.selTeam ? ' sel' : ''}" data-team="${ti}" tabindex="0" role="group" aria-label="${t('studio.team.name', { n: ti + 1 })} ${total}"${ti === s.selTeam ? ' aria-current="true"' : ''}><i class="dot" style="background:${hex(c.main)}"></i><span class="tname">${t('studio.team.name', { n: ti + 1 })} <b>${total}</b></span><small>${esc(detail || t('studio.team.empty'))}</small><button type="button" data-clear="${ti}" ${total === 0 ? 'disabled' : ''} title="${t('studio.team.clear.title', { n: ti + 1 })}">${t('studio.team.clear')}</button></div>`;
       })
       .join('');
     this.$('#teamrows').querySelectorAll('.trow').forEach((row) =>
@@ -380,6 +380,17 @@ export class Studio {
         if ((e.target as HTMLElement).dataset.clear !== undefined) return;
         s.selTeam = Number((row as HTMLElement).dataset.team);
         this.render();
+      }),
+    );
+    // Keyboard: Enter / Space on a focused team row picks the team (the rows are rebuilt, so focus moves to the new row).
+    this.$('#teamrows').querySelectorAll('.trow').forEach((row) =>
+      row.addEventListener('keydown', (e) => {
+        const ke = e as KeyboardEvent;
+        if (ke.target !== row || (ke.key !== 'Enter' && ke.key !== ' ')) return;
+        ke.preventDefault();
+        s.selTeam = Number((row as HTMLElement).dataset.team);
+        this.render();
+        this.$('#teamrows').querySelector<HTMLElement>(`.trow[data-team="${s.selTeam}"]`)?.focus();
       }),
     );
     this.$('#teamrows').querySelectorAll('button[data-clear]').forEach((b) =>

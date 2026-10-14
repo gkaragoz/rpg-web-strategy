@@ -12,7 +12,7 @@ const scr = (x: number, y: number, z = 0): Pt => [isoX(x, y), isoY(x, y, z + ele
 const flat = (p: Pt[]): number[] => p.flatMap((q) => q);
 
 /** River, bridges and roads: a static layer sitting between the ground and the units. */
-export function buildTerrainOverlay(t: Terrain): Container {
+export function buildTerrainOverlay(t: Terrain, skipRoad?: (idx: number) => boolean): Container {
   const root = new Container();
   const g = new Graphics();
   root.addChild(g);
@@ -21,10 +21,8 @@ export function buildTerrainOverlay(t: Terrain): Container {
 
   // Dirt road tiles.
   for (const idx of t.pathTiles) {
-    const tx = idx % t.size;
-    const ty = Math.floor(idx / t.size);
-    const c = [scr(tx + 0.5, ty), scr(tx + 1, ty + 0.5), scr(tx + 0.5, ty + 1), scr(tx, ty + 0.5)];
-    g.poly(flat(c)).fill({ color: pal.path, alpha: 0.9 });
+    if (skipRoad && skipRoad(idx)) continue;
+    drawRoadTile(g, t, idx, pal);
   }
 
   // River: two bank point arrays from the center line -> a single polygon instead of triangle strips.
@@ -121,6 +119,15 @@ export function buildTerrainOverlay(t: Terrain): Container {
   root.addChild(mask);
   root.mask = mask;
   return root;
+}
+
+/** One dirt road tile (diamond between the tile edge midpoints), on the terrain surface. */
+export function drawRoadTile(g: Graphics, t: Terrain, idx: number, pal: BiomePalette = PALETTES[t.spec.biome]): void {
+  elev = t.hasRelief ? (x, y) => t.elevPx(x, y) : () => 0;
+  const tx = idx % t.size;
+  const ty = Math.floor(idx / t.size);
+  const c = [scr(tx + 0.5, ty), scr(tx + 1, ty + 0.5), scr(tx + 0.5, ty + 1), scr(tx, ty + 0.5)];
+  g.poly(flat(c)).fill({ color: pal.path, alpha: 0.9 });
 }
 
 /** Ford: a light-colored shallow water strip and stepping stones. */

@@ -84,6 +84,8 @@ export class HostLobby {
   private passHashed: string | null = null;
   private readonly slots = new Map<string, Slot>();
   private readonly kickedTokens = new Set<string>();
+  /** Tokens handed out in this room: whoever holds one has passed the password once (a reloaded guest of a locked lobby has no password, only its token). */
+  private readonly issuedTokens = new Set<string>();
   private readonly units = new PlaceIndex(PLACE_GAP, (k) => this.init?.costs[k] ?? 0);
   private nextUnitId = 1;
   private init: GameInit | null = null;
@@ -325,8 +327,7 @@ export class HostLobby {
     // A second join from the same connection (double click / resend): ignore.
     if (this.player(from)) return;
     if (msg.token && this.kickedTokens.has(msg.token)) return this.reject(from, 'kicked');
-    if (this.passHashed !== null && (msg.pass ?? '') !== this.passHashed) return this.reject(from, 'password');
-    // Reconnect: the player whose token matches. If the old connection does not look dropped yet (half-open connection), it is taken over.
+    // Reconnect: the player whose token matches (the token is a secret of that slot, so it also bypasses the password a reloaded guest no longer has). If the old connection does not look dropped yet (half-open connection), it is taken over.
     if (msg.token) {
       for (const [oldId, slot] of this.slots) {
         const p = this.player(oldId);
@@ -345,12 +346,14 @@ export class HostLobby {
         }
       }
     }
+    if (this.passHashed !== null && (msg.pass ?? '') !== this.passHashed && !(msg.token && this.issuedTokens.has(msg.token))) return this.reject(from, 'password');
     const wantSpec = !!msg.spectator || this.phase !== 'lobby';
     if (!wantSpec && this.playerCount >= MAX_PLAYERS) return this.reject(from, 'full');
     if (this.phase !== 'lobby' && !msg.spectator) return this.reject(from, 'started');
     const role: PlayerInfo['role'] = wantSpec ? 'spectator' : 'player';
     const token = Math.floor(this.rnd() * 1e9).toString(36) + from;
     this.slots.set(from, { token, disconnectedAt: 0, lastPresence: 0, chatTimes: [] });
+    this.issuedTokens.add(token);
     this.players.push(this.newPlayer(from, msg.name, msg.color, role));
     this.reteam();
     this.welcome(from, token);
@@ -371,8 +374,8 @@ export class HostLobby {
   }
 
   private onChat(p: PlayerInfo, raw: string): void {
-    if (p.muted) return;
-    const text = String(raw).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, CHAT_MAX);
+    if (p.muted || typeof raw !== 'string') return;
+    const text = raw.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, CHAT_MAX);
     if (!text) return;
     const slot = this.slots.get(p.id);
     const t = this.now();
@@ -412,7 +415,15 @@ export class HostLobby {
     if (typeof patch.comedyPhysics === 'boolean') s.comedyPhysics = patch.comedyPhysics;
     if (typeof patch.comedyVisual === 'boolean') s.comedyVisual = patch.comedyVisual;
     if (Array.isArray(patch.banned)) s.banned = patch.banned.filter((r) => ['common', 'rare', 'epic', 'legendary'].includes(r));
-    if (password !== undefined) this.passHashed = password ? passHash(password) : null;
+    if (password !== undefined) {
+      const next = password ? passHash(password) : null;
+      // A new password locks out everybody who is not in the room any more.
+      if (next !== this.passHashed) {
+        this.issuedTokens.clear();
+        for (const sl of this.slots.values()) this.issuedTokens.add(sl.token);
+      }
+      this.passHashed = next;
+    }
     // When a setting really changes, clear everyone's ready flag (except the host): players must see the new rules.
     if (JSON.stringify(s) + String(this.passHashed) !== before) for (const p of this.players) if (p.id !== this.hostId) p.ready = false;
     this.pushState();
