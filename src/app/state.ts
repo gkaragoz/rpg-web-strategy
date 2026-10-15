@@ -79,6 +79,8 @@ export interface AppState {
   kite: boolean;
   /** Game mode of the studio battle (classic = last team standing). */
   rules: SelectableMode;
+  /** Siege mode: the team that defends the core (the others attack). */
+  siegeDefender: number;
   seed: number;
   teamCount: number;
   palette: string;
@@ -116,6 +118,7 @@ export function defaultState(): AppState {
     mapPreset: 'pine-valley',
     kite: true,
     rules: 'classic',
+    siegeDefender: 0,
     seed: 1,
     teamCount: 2,
     palette: 'classic',
@@ -183,6 +186,7 @@ export function loadState(): AppState {
       mapPreset: o.mapPreset === 'random' || o.mapPreset === 'custom' || PRESETS.some((p) => p.id === o.mapPreset) ? (o.mapPreset as string) : 'custom',
       kite: typeof o.kite === 'boolean' ? o.kite : d.kite,
       rules: isSelectableMode(o.rules) ? o.rules : d.rules,
+      siegeDefender: Math.floor(num(o.siegeDefender, 0, MAX_TEAMS - 1, d.siegeDefender)),
       seed: Math.floor(num(o.seed, 1, 999999, d.seed)),
       teamCount: Math.floor(num(o.teamCount, 2, MAX_TEAMS, d.teamCount)),
       palette: PALETTES.some((p) => p.id === o.palette) ? (o.palette as string) : d.palette,

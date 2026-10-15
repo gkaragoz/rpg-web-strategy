@@ -3,12 +3,12 @@ import { MAX_TEAMS } from '../units';
 
 /**
  * Game modes: extra win conditions and goals on top of the normal fight. All modes are autonomous (no player orders during
- * a battle). 'classic', 'hill', 'vip' and 'ctf' have rules.
+ * a battle). 'classic', 'hill', 'vip', 'ctf' and 'siege' have rules.
  */
-export type GameModeId = 'classic' | 'hill' | 'vip' | 'ctf';
+export type GameModeId = 'classic' | 'hill' | 'vip' | 'ctf' | 'siege';
 
 /** Every mode id the lobby accepts (host-side validation uses this list). */
-export const GAME_MODE_IDS: readonly GameModeId[] = ['classic', 'hill', 'vip', 'ctf'];
+export const GAME_MODE_IDS: readonly GameModeId[] = ['classic', 'hill', 'vip', 'ctf', 'siege'];
 
 export function isGameModeId(v: unknown): v is GameModeId {
   return typeof v === 'string' && (GAME_MODE_IDS as readonly string[]).includes(v);
@@ -61,6 +61,22 @@ export type ModeHud =
       flags: CtfFlagHud[];
       /** Seconds of sim time left before the time limit decides the battle (most captures wins). */
       timeLeft: number;
+    }
+  | {
+      kind: 'siege';
+      /** Team index of the defender (every other team attacks). */
+      defender: number;
+      /** Core health fraction 0..1 (0 once destroyed). */
+      coreHp: number;
+      /** Core maximum health. */
+      coreMaxHp: number;
+      /** Unit index of the core (stable for the battle, also after it died; -1 only if no core could be spawned). */
+      coreUnit: number;
+      /** Core position (tiles). */
+      x: number;
+      y: number;
+      /** Seconds of sim time left before the defender wins. */
+      timeLeft: number;
     };
 
 /** One flag: `team` owns it; at home x/y is the base and carrier/carrierTeam are -1, in transit x/y is the carrier's position. */
@@ -90,6 +106,8 @@ export interface ModeRules {
   step(b: Battle, dt: number): void;
   /** Optional: called from killUnit after unit `j` died (`src` = killer unit or -1). Must not allocate. */
   onKill?(b: Battle, j: number, src: number): void;
+  /** Optional: called from damage() after unit `j` lost `dealt` health to `src` (-1: environment / damage over time). Must not allocate. */
+  onDamage?(b: Battle, j: number, dealt: number, src: number): void;
   /**
    * Optional: per-unit override called from Battle.updateUnit after the stun/fear checks. Return true when the mode took
    * over unit `i` this step (it queued its own move); the normal AI is skipped. Must not allocate.

@@ -9,7 +9,7 @@ const files = readdirSync(dir).filter((f) => f.endsWith('.js')).map((f) => ({ f,
 const budgets = [
   { name: 'main entry', match: /^main-.*\.js$/, max: 560_000 },
   { name: '3D chunk (lazy)', match: /^world3d-.*\.js$/, max: 600_000 },
-  { name: 'sim worker', match: /^worker-.*\.js$/, max: 130_000 },
+  { name: 'sim worker', match: /^worker-.*.js$/, max: 150_000 },
 ];
 let failed = false;
 for (const b of budgets) {

@@ -22,8 +22,10 @@ function duel(kind: number, foe: number, n = 6): Scenario {
 }
 
 describe('roster birimleri', () => {
-  it('45 units are defined and their stats are valid', () => {
-    expect(TROOPS.length).toBe(45);
+  it('45 units plus the siege-core structure are defined and their stats are valid', () => {
+    expect(TROOPS.length).toBe(46);
+    expect(TROOPS.filter((t) => t.structure).map((t) => t.id)).toEqual(['siege-core']);
+    expect(TROOPS[TROOPS.length - 1].id).toBe('siege-core'); // appended last: older kind numbers never change
     for (let i = 0; i < TROOPS.length; i++) {
       const s = STATS[LEGACY_COUNT + i];
       for (const key of ['hp', 'speed', 'range', 'power', 'cooldown', 'armor'] as const) {
@@ -34,7 +36,7 @@ describe('roster birimleri', () => {
   });
 
   const foe = KIND_OF_TROOP.militia;
-  for (const t of TROOPS) {
+  for (const t of TROOPS.filter((x) => !x.structure)) {
     {
       it(`${t.name}: no stall/loop, reaches a result`, () => {
         applyStats(undefined);

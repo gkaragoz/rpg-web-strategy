@@ -14,6 +14,8 @@ export const STALE_AFTER = 20;
 export const STALE_RAMP = 0.08;
 /** Extra close-combat range margin against tank targets (tank push radius 1.8 > 1.4). */
 export const TANK_REACH = 0.6;
+/** Extra close-combat range margin against structures (the keep is a big body). */
+export const STRUCT_REACH = 1.0;
 /** Comedy physics: longest launch distance (tiles). */
 export const MAX_LAUNCH = 14;
 /** Progress watchdog: a unit that cannot get closer to its target bans it after this time. */
@@ -95,6 +97,8 @@ export interface BattleConfig {
    * modes and by the demo / bench layouts.
    */
   vips?: number[];
+  /** Siege mode only: team index of the defender (the others attack). Missing, non-integer or out of range: team 0. */
+  siegeDefender?: number;
 }
 
 export const DBG_KEYS = ['kites', 'kiteSteps', 'snapShots', 'archerDeaths', 'archerDeathsKiting', 'stuck', 'cornered'] as const;
@@ -116,13 +120,15 @@ function benchMapSize(perTeam: number): number {
 }
 
 export function unitCapacity(config: BattleConfig): number {
+  // Modes that spawn structures reserve a slot for each (Siege: the core).
+  const extra = config.rules === 'siege' ? 1 : 0;
   if (config.mode === 'custom') {
     const L = config.layout;
     let necro = 0;
     if (L) for (let k = 1; k < L.length; k += 4) if (L[k] === KIND_OF_TROOP['bone-caller']) necro++;
-    return Math.floor((L?.length ?? 0) / 4) + 16 + necro * SUMMON_POOL;
+    return Math.floor((L?.length ?? 0) / 4) + 16 + necro * SUMMON_POOL + extra;
   }
-  return config.perTeam * 2 + 16;
+  return config.perTeam * 2 + 16 + extra;
 }
 
 export function projectileCapacity(config: BattleConfig): number {

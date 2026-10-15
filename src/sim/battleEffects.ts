@@ -1,4 +1,4 @@
-import { F_RAGE } from './units';
+import { F_RAGE, STRUCT_OF } from './units';
 import { SKILL_ELEMENT, skillParams, type SkillParams } from './data/skills';
 import { CC_IMMUNE } from './data/combat';
 import type { SkillId } from './data/troops';
@@ -105,14 +105,14 @@ export function applySlow(b: Battle, j: number, dur: number, moveK: number, atkK
 
 export function applyStun(b: Battle, j: number, dur: number): void {
   const u = b.units;
-  if (u.invulnT[j] > 0 || !u.alive[j] || u.ccImmT[j] > 0) return;
+  if (u.invulnT[j] > 0 || !u.alive[j] || u.ccImmT[j] > 0 || STRUCT_OF[u.kind[j]] !== 0) return;
   u.stunT[j] = Math.max(u.stunT[j], dur);
   u.ccImmT[j] = dur + CC_IMMUNE;
 }
 
 export function applyFear(b: Battle, j: number, dur: number, fx: number, fy: number): void {
   const u = b.units;
-  if (u.invulnT[j] > 0 || !u.alive[j] || u.ccImmT[j] > 0) return;
+  if (u.invulnT[j] > 0 || !u.alive[j] || u.ccImmT[j] > 0 || STRUCT_OF[u.kind[j]] !== 0) return;
   u.fearT[j] = Math.max(u.fearT[j], dur);
   u.ccImmT[j] = dur + CC_IMMUNE;
   u.fearX[j] = fx;
@@ -133,7 +133,7 @@ export function applyShield(b: Battle, j: number, dur: number, k: number): void 
 
 export function applyTaunt(b: Battle, j: number, by: number, dur: number): void {
   const u = b.units;
-  if (u.invulnT[j] > 0) return;
+  if (u.invulnT[j] > 0 || STRUCT_OF[u.kind[j]] !== 0) return;
   // If another tank is already taunting, do not switch targets (to avoid oscillation).
   if (u.tauntT[j] > 0 && u.tauntBy[j] !== by && u.tauntBy[j] >= 0 && u.alive[u.tauntBy[j]]) return;
   u.tauntBy[j] = by;

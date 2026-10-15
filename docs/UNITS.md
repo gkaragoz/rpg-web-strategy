@@ -1,6 +1,6 @@
 # Units
 
-- The roster lives in `src/sim/data/troops.ts` (45 original units) with skills in `skills.ts`. Each unit has a race, role, rarity, optional skill and localized text.
+- The roster lives in `src/sim/data/troops.ts` (45 original units, plus structure kinds appended at the end) with skills in `skills.ts`. Each unit has a race, role, rarity, optional skill and localized text.
 - Stats come from a role/rarity **budget** (`BUDGET`: common 1000, rare 1450, epic 2250, legendary 3500) split into hp/attack/defense by role archetype; `src/sim/units.ts` normalizes to sim units.
 - Visuals: `src/render/looks.ts` recipes keyed by troop id; projectile style by tag in `projectileStyle.ts`.
 - Adding or rebalancing: use the `add-unit` and `balance-check` skills. Names, numbers and texts must be original.
@@ -16,3 +16,4 @@
 ## Balance harness (headless, deterministic)
 
 `npm run balance:quick` (about 15 s) and `npm run balance` run gold-equal single-type tournaments on worker threads without any graphics; results go to `.balance/<name>.txt|json` (git-ignored) and end with a `hash` that is identical for identical inputs. `node scripts/balance.mjs --calibrate 12 --scenarios open,forest --seeds 2 --gold 900 --cap 120 --write` re-fits the cost factors. Healers are tested behind a Warrior line.
+- **Structures** (`TroopDef.structure`, currently only `siege-core`) are game-mode objects, not units: they are listed last in `TROOPS` so no kind number ever changes, are flagged `summoned` too (hidden from the gallery, placement and gold costs), have speed 0 / power 0 / no skill, and are immune to knockback, launch, stun, fear and taunt. See `docs/SIMULATION.md` (Siege).

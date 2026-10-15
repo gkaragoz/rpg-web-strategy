@@ -2,11 +2,15 @@ import { ClassicRules } from './classic';
 import { CtfRules } from './ctf';
 import { HillRules } from './hill';
 import { VipRules } from './vip';
+import { SiegeRules } from './siege';
+import { SIEGE_CORE_KIND } from '../units';
 import type { GameModeId, ModeRules } from './types';
 
 export * from './types';
 export { VIP_TIME_LIMIT } from './vip';
 export { CTF_TARGET, CTF_TIME_LIMIT, ctfRadius, ctfBasePoint } from './ctf';
+export { SIEGE_TIME_LIMIT, SIEGE_CORE_HP, siegeCorePoint } from './siege';
+export { SIEGE_CORE_KIND } from '../units';
 export { HILL_TARGET, HILL_TIME_LIMIT, hillControlPoints, hillRadius } from './hill';
 
 const FACTORIES: Record<GameModeId, () => ModeRules> = {
@@ -14,7 +18,13 @@ const FACTORIES: Record<GameModeId, () => ModeRules> = {
   hill: () => new HillRules(),
   vip: () => new VipRules(),
   ctf: () => new CtfRules(),
+  siege: () => new SiegeRules(),
 };
+
+/** Structure kinds a mode spawns: the app must bake them into the unit atlas / draw them (placed-kind lists never contain them). */
+export function structureKinds(rules: GameModeId | undefined): number[] {
+  return rules === 'siege' ? [SIEGE_CORE_KIND] : [];
+}
 
 /** A fresh rules instance for the mode id (unknown or not yet implemented ids give the classic rules). */
 export function modeFor(id: GameModeId | undefined): ModeRules {

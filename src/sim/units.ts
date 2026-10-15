@@ -10,7 +10,7 @@ export const Kind = { Warrior: 0, Archer: 1, Priest: 2, Shield: 3, Brute: 4 } as
 export const LEGACY_COUNT = 5;
 
 /** Combat role: determines targeting, kiting and healing behavior. */
-export const Role = { Melee: 0, Ranged: 1, Healer: 2, Tank: 3 } as const;
+export const Role = { Melee: 0, Ranged: 1, Healer: 2, Tank: 3, Structure: 4 } as const;
 
 export interface KindStats {
   name: string;
@@ -45,6 +45,8 @@ export interface KindStats {
   /** Roster unit id (absent for classic kinds) and its skill. */
   troop?: string;
   skill: SkillId | null;
+  /** Fixed game-mode object (see TroopDef.structure): immobile, no attack, immune to displacement and crowd control. */
+  structure?: boolean;
 }
 
 const classic = (s: Omit<KindStats, 'role' | 'splash' | 'shape' | 'magical' | 'skill' | 'dmgType' | 'armorCls'> & { role: number; dmg: number; arm: number }): KindStats => ({ ...s, dmgType: s.dmg, armorCls: s.arm, splash: 0, shape: 0, magical: false, skill: null });
@@ -75,6 +77,31 @@ function troopStats(t: TroopDef): KindStats {
   const [hp, atk, def] = t.base;
   const big = t.id === 'granite-colossus' || t.id === 'cinder-golem' || t.id === 'war-barge' || t.id === 'hill-brute' ? 1.8 : hp >= 2000 ? 1.4 : 1;
   const heal = t.skill === 'cleanse';
+  if (t.structure) {
+    return {
+      name: t.name,
+      role: Role.Structure,
+      hp: Math.round((hp / HP_DIV) * (STAT_ADJ[t.id] ?? 1)),
+      speed: 0,
+      range: 0,
+      power: 0,
+      cooldown: 5,
+      swing: 0.35,
+      hitAt: 0.2,
+      armor: Math.round(Math.min(0.85, def / (def + ARMOR_K)) * 100) / 100,
+      scale: 2,
+      aoe: 0,
+      knockback: 0,
+      splash: 0,
+      shape: 0,
+      magical: false,
+      dmgType: t.dmgType,
+      armorCls: t.armorClass,
+      troop: t.id,
+      skill: null,
+      structure: true,
+    };
+  }
   return {
     name: t.name,
     role: heal ? Role.Healer : t.ranged ? Role.Ranged : Role.Melee,
@@ -105,6 +132,18 @@ TROOPS.forEach((t, i) => {
 });
 
 export const KIND_COUNT = STATS.length;
+
+/** Kind number of the Siege mode core (a structure). */
+export const SIEGE_CORE_KIND = KIND_OF_TROOP['siege-core'];
+
+/** 1 for structure kinds (fixed game-mode objects), indexed by kind (typed array for hot loops). */
+export const STRUCT_OF = new Uint8Array(KIND_COUNT);
+STATS.forEach((s, i) => (STRUCT_OF[i] = s.structure ? 1 : 0));
+
+/** Is this kind a structure: immobile, never attacks, immune to knockback / launch / stun / fear / taunt, never bought or placed. */
+export function isStructure(kind: number): boolean {
+  return STRUCT_OF[kind] !== 0;
+}
 
 /** Localized display name of a unit kind: classic units use the string table, roster units keep their English names. */
 export function unitDisplayName(kind: number): string {
@@ -175,7 +214,8 @@ export function refreshStats(): void {
 /** Applies user overrides to STATS; missing fields fall back to defaults. Called before the sim starts. */
 export function applyStats(overrides: StatOverrides | undefined): void {
   for (let k = 0; k < STATS.length; k++) {
-    const o = overrides?.[k] ?? {};
+    // Structures are not tunable: user overrides never change them.
+    const o = STATS[k].structure ? {} : (overrides?.[k] ?? {});
     for (const t of TUNABLE) {
       const v = o[t.key];
       STATS[k][t.key] = typeof v === 'number' && Number.isFinite(v) ? Math.min(t.max, Math.max(t.min, v)) : DEFAULT_STATS[k][t.key];

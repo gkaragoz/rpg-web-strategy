@@ -206,6 +206,7 @@ export class LobbyScreen {
       <div class="on-map"><canvas id="l-prev" width="160" height="82"></canvas><div class="on-map-info"><b id="l-map-name"></b><div class="on-btnrow"><button type="button" id="l-map-pick">${t('online.lobby.pick')}</button><button type="button" id="l-map-rand">${t('online.lobby.random')}</button></div></div></div>
     </div>
     <div class="on-field stack"><span>${t('mode.label')}</span><div id="l-mode"></div></div>
+    <div class="on-field" id="l-siege" hidden><span>${t('mode.siege.defender')}</span><select id="l-siege-def"></select></div>
     <div class="on-field"><span>${t('online.lobby.gold')}</span><div class="seg" id="l-gold"></div><input id="l-gold-n" type="number" min="100" max="10000000" step="100" aria-label="${esc(t('online.lobby.goldCustom'))}" /></div>
     <div class="on-field"><span>${t('online.lobby.placeTime')}</span><select id="l-time"></select></div>
     <div class="on-field"><span>${t('online.lobby.mapSize')}</span><select id="l-size"></select></div>
@@ -259,6 +260,18 @@ export class LobbyScreen {
 
   private modePicker!: ModePicker;
 
+  /** Siege: which team defends (teams are numbered in join order when the placement starts, so the choices are plain team numbers). */
+  private paintSiege(on: boolean, defender: number, players: number, host: boolean): void {
+    const box = this.q('#l-siege');
+    box.hidden = !on;
+    if (!on) return;
+    const sel = this.q<HTMLSelectElement>('#l-siege-def');
+    const n = Math.max(2, Math.min(6, players));
+    if (sel.options.length !== n) sel.innerHTML = Array.from({ length: n }, (_, i) => `<option value="${i}">${t('mode.siege.team', { n: i + 1 })}</option>`).join('');
+    sel.value = String(Math.min(defender, n - 1));
+    sel.disabled = !host;
+  }
+
   private get host(): boolean {
     return this.session.model.isHost;
   }
@@ -267,6 +280,7 @@ export class LobbyScreen {
     const q = this.q.bind(this);
     this.modePicker = new ModePicker({ value: 'classic', onPick: (id) => this.patch({ gameMode: id }) });
     q('#l-mode').appendChild(this.modePicker.el);
+    q<HTMLSelectElement>('#l-siege-def').addEventListener('change', (e) => this.patch({ siegeDefender: Number((e.target as HTMLSelectElement).value) }));
     q('#l-gold').innerHTML = GOLDS.map((g) => `<button type="button" data-g="${g}">${goldLabel(g)}</button>`).join('');
     q('#l-gold').querySelectorAll('button').forEach((b) =>
       b.addEventListener('click', () => this.patch({ gold: Number((b as HTMLElement).dataset.g) })),
@@ -360,6 +374,7 @@ export class LobbyScreen {
         b.setAttribute('aria-pressed', String(Number((b as HTMLElement).dataset.g) === s.gold));
       });
       this.modePicker.set(isSelectableMode(s.gameMode) ? s.gameMode : 'classic', !host);
+      this.paintSiege(s.gameMode === 'siege', s.siegeDefender, st.players.filter((p) => p.role === 'player').length, host);
       const gn = q<HTMLInputElement>('#l-gold-n');
       if (document.activeElement !== gn) gn.value = String(s.gold);
       gn.disabled = !host;

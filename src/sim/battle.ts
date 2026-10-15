@@ -5,14 +5,14 @@ import { MovePool, PH_GRID, PH_MOVE, PH_PICK, PH_SEP_APPLY, PH_SEP_SCAN, phaseCh
 import { Picker } from './picker';
 import { Separator } from './separator';
 import { Mover, MV_FACE, MV_INTENT, MV_ROUTE, CNT_PATHS, CNT_PATH_FAILS, CNT_STUCK } from './mover';
-import { F_RAGE, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isTank, KIND_COUNT } from './units';
+import { F_RAGE, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isStructure, isTank, KIND_COUNT, STRUCT_OF } from './units';
 import { Projectiles } from './projectiles';
 import { skillParams, type SkillParams } from './data/skills';
 import { Mulberry } from './random';
 import { GRID_CELL, MELEE_SLACK, SEP_CELL, SEP_DECAY, SEP_GAIN, SEP_MAX_STEP, SEP_STRIDE } from './tuning';
 import { copyTyped, fnv, pasteTyped, type BattleSnapshot, type Typed } from './snapshot';
 import type { SkillId } from './data/troops';
-import { TANK_REACH, BAN_TIME, NO_DAMAGE_DRAW, NO_DAMAGE_DRAW_FIRST, NO_DAMAGER_DRAW, EVENT_CAP, DBG_KEYS, EXTRA_DBG, unitCapacity, projectileCapacity, mapSizeFor, terrainFor, type SimEvent, type BattleConfig, type Zone } from './battleConfig';
+import { TANK_REACH, STRUCT_REACH, BAN_TIME, NO_DAMAGE_DRAW, NO_DAMAGE_DRAW_FIRST, NO_DAMAGER_DRAW, EVENT_CAP, DBG_KEYS, EXTRA_DBG, unitCapacity, projectileCapacity, mapSizeFor, terrainFor, type SimEvent, type BattleConfig, type Zone } from './battleConfig';
 import { sp, atkRate, burst } from './battleEffects';
 import { damage, updateZones, flyStep, applyKnockback } from './battleDamage';
 import { resolveHit, periodic, arrowLanded } from './battleSkills';
@@ -60,7 +60,16 @@ export class Battle {
   private lastDamageSeen = 0;
   private lastDamageT = 0;
   private noDamagerSince = -1;
+  /**
+   * Living units per team as the players see them: structures (the Siege core) are NOT counted. The winner check adds
+   * `structPerTeam`, so a team whose only living member is a structure is still in the game.
+   */
   readonly alivePerTeam: number[] = new Array(MAX_TEAMS).fill(0);
+  /** Living structures per team. @internal */
+  readonly structPerTeam: number[] = new Array(MAX_TEAMS).fill(0);
+  private readonly stN = new Int32Array(MAX_TEAMS);
+  private readonly stX = new Float32Array(MAX_TEAMS);
+  private readonly stY = new Float32Array(MAX_TEAMS);
   private rngObj = new Mulberry(1);
   /** @internal */
   rng: () => number = this.rngObj.next;
@@ -121,6 +130,8 @@ export class Battle {
   readonly mode: ModeRules;
   /** The mode overrides unit behaviour (ModeRules.drive). */
   private readonly modeDrives: boolean;
+  /** The mode wants to see every damage hit (ModeRules.onDamage). @internal */
+  readonly modeDamages: boolean;
   /** Optional per-team goal set by the mode: units without a target march there instead of toward the nearest enemy. @internal */
   readonly teamGoalX = new Float32Array(MAX_TEAMS);
   /** @internal */
@@ -141,6 +152,7 @@ export class Battle {
     this.comedy = config.comedy === true;
     this.mode = modeFor(config.rules);
     this.modeDrives = this.mode.drive !== undefined;
+    this.modeDamages = this.mode.onDamage !== undefined;
     this.allTeams = Array.from({ length: this.teamCount }, (_, t) => t);
     this.grids = Array.from({ length: this.teamCount }, () => new Grid(this.mapSize, GRID_CELL, total));
     this.sepGrid = new Grid(this.mapSize, SEP_CELL, total);
@@ -214,6 +226,23 @@ export class Battle {
     this.teamGoalY.fill(0);
     this.teamHasGoal.fill(0);
     this.mode.init(this);
+    // A mode may have spawned structures.
+    this.countAlive();
+  }
+
+  /**
+   * Spawns a structure (a fixed game-mode object such as the Siege core) at the end of the unit list. Call it from
+   * `ModeRules.init` only: capacity for it is reserved by `unitCapacity` for the modes that need it. Returns the unit index,
+   * or -1 when `kind` is not a structure kind or there is no room.
+   */
+  spawnStructure(kind: number, team: number, x: number, y: number): number {
+    const u = this.units;
+    if (!isStructure(kind) || u.count >= u.cap) return -1;
+    const i = u.spawn(team, kind, x, y, this.rng);
+    u.cooldown[i] = 0;
+    u.retarget[i] = 0;
+    u.slotAngle[i] = 0;
+    return i;
   }
 
   /** Display data of the running game mode (the UI draws it). */
@@ -243,7 +272,12 @@ export class Battle {
   countAlive(): void {
     const u = this.units;
     this.alivePerTeam.fill(0);
-    for (let i = 0; i < u.count; i++) if (u.alive[i]) this.alivePerTeam[u.team[i]]++;
+    this.structPerTeam.fill(0);
+    for (let i = 0; i < u.count; i++) {
+      if (!u.alive[i]) continue;
+      if (STRUCT_OF[u.kind[i]] !== 0) this.structPerTeam[u.team[i]]++;
+      else this.alivePerTeam[u.team[i]]++;
+    }
   }
 
   step(dt: number): void {
@@ -270,6 +304,7 @@ export class Battle {
     const wy = new Array(MAX_TEAMS).fill(0);
     const wn = new Array(MAX_TEAMS).fill(0);
     this.damagerCount.fill(0);
+    this.stN.fill(0);
     for (let i = 0; i < u.count; i++) {
       if (!u.alive[i]) {
         u.deathT[i] += dt;
@@ -292,6 +327,13 @@ export class Battle {
         u.retarget[i] = Math.min(u.retarget[i], this.rng() * 0.3);
       }
       const tm = u.team[i];
+      if (STRUCT_OF[u.kind[i]] !== 0) {
+        // A structure keeps its team in the game but is not part of the army (centroid, front, damagers).
+        this.stN[tm]++;
+        this.stX[tm] = u.x[i];
+        this.stY[tm] = u.y[i];
+        continue;
+      }
       this.centroidX[tm] += u.x[i];
       this.centroidY[tm] += u.y[i];
       n[tm]++;
@@ -306,6 +348,9 @@ export class Battle {
       if (n[tm] > 0) {
         this.centroidX[tm] /= n[tm];
         this.centroidY[tm] /= n[tm];
+      } else if (this.stN[tm] > 0) {
+        this.centroidX[tm] = this.stX[tm];
+        this.centroidY[tm] = this.stY[tm];
       }
       this.hasFront[tm] = wn[tm] > 0;
       this.frontX[tm] = wn[tm] > 0 ? wx[tm] / wn[tm] : this.centroidX[tm];
@@ -318,7 +363,7 @@ export class Battle {
       let best = -1;
       let bestD = Infinity;
       for (let e = 0; e < this.teamCount; e++) {
-        if (e === tm || n[e] === 0) continue;
+        if (e === tm || (n[e] === 0 && this.stN[e] === 0)) continue;
         list.push(e);
         const dx = this.centroidX[e] - this.centroidX[tm];
         const dy = this.centroidY[e] - this.centroidY[tm];
@@ -331,7 +376,7 @@ export class Battle {
       this.nearestEnemy[tm] = best;
     }
     let mask = 0;
-    for (let tm = 0; tm < this.teamCount; tm++) if (n[tm] > 0) mask |= 1 << tm;
+    for (let tm = 0; tm < this.teamCount; tm++) if (n[tm] > 0 || this.stN[tm] > 0) mask |= 1 << tm;
     this.aliveMask = mask;
 
     let tn = performance.now();
@@ -378,7 +423,7 @@ export class Battle {
       let alive = 0;
       let last = -1;
       for (let tm = 0; tm < this.teamCount; tm++) {
-        if (this.alivePerTeam[tm] > 0) {
+        if (this.alivePerTeam[tm] + this.structPerTeam[tm] > 0) {
           alive++;
           last = tm;
         }
@@ -446,10 +491,36 @@ export class Battle {
     return beyondLeash(this, i);
   }
 
+  /** A structure only ticks its own timers: it never acts, moves or reacts to displacement / crowd control. */
+  private updateStructure(i: number, dt: number): void {
+    const u = this.units;
+    if (u.slowT[i] > 0) u.slowT[i] -= dt;
+    if (u.shieldT[i] > 0) u.shieldT[i] -= dt;
+    if (u.weakT[i] > 0) u.weakT[i] -= dt;
+    if (u.invulnT[i] > 0) u.invulnT[i] -= dt;
+    if (u.burnT[i] > 0) {
+      u.burnT[i] -= dt;
+      damage(this, i, u.burnDps[i] * dt, -1, false, true);
+      if (!u.alive[i]) return;
+    }
+    u.stunT[i] = u.fearT[i] = u.tauntT[i] = 0;
+    u.kbVx[i] = u.kbVy[i] = 0;
+    u.airT[i] = u.lift[i] = 0;
+    u.swing[i] = 0;
+    u.hitPending[i] = 0;
+    u.target[i] = -1;
+    u.sepX[i] = u.sepY[i] = 0;
+    u.mvFlags[i] = 0;
+  }
+
   private updateUnit(i: number, dt: number): void {
     const u = this.units;
     const kind = u.kind[i];
     const s = STATS[kind];
+    if (STRUCT_OF[kind] !== 0) {
+      this.updateStructure(i, dt);
+      return;
+    }
     const ranged = !isMelee(kind);
     if (this.comedy) {
       if (u.airImm[i] > 0) u.airImm[i] -= dt;
@@ -541,7 +612,7 @@ export class Battle {
     const dy = u.y[t] - u.y[i];
     const dist = Math.sqrt(dx * dx + dy * dy);
     // A big (tank) target has a wider body: melee fighters can hit it from this much farther away.
-    const tr = isTank(u.kind[t]) && !isTank(kind) ? TANK_REACH : 0;
+    const tr = isTank(u.kind[t]) && !isTank(kind) ? TANK_REACH : STRUCT_OF[u.kind[t]] !== 0 ? STRUCT_REACH : 0;
 
     // Ranged attackers: height advantage extends the range, and a ridge in the way blocks direct fire (they must move).
     const inRange = isMelee(kind) ? dist <= s.range + MELEE_SLACK + tr : canShoot(this, i, t, dist);
@@ -894,7 +965,7 @@ export class Battle {
             const c = gy * cols + gx;
             for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
               const j = grid.items[k];
-              if (j === i || !u.alive[j]) continue;
+              if (j === i || !u.alive[j] || STRUCT_OF[u.kind[j]] !== 0) continue;
               const dx = u.x[j] - u.x[i];
               const dy = u.y[j] - u.y[i];
               const d2 = dx * dx + dy * dy;

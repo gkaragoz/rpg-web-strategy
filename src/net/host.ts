@@ -44,6 +44,7 @@ export const DEFAULT_SETTINGS: LobbySettings = {
   comedyVisual: false,
   banned: [],
   gameMode: 'classic',
+  siegeDefender: 0,
 };
 
 /** Most units a player may place (performance cap). */
@@ -429,6 +430,8 @@ export class HostLobby {
     if (typeof patch.comedyPhysics === 'boolean') s.comedyPhysics = patch.comedyPhysics;
     if (typeof patch.comedyVisual === 'boolean') s.comedyVisual = patch.comedyVisual;
     if (isGameModeId(patch.gameMode)) s.gameMode = patch.gameMode;
+    // Any integer team index the room could have; invalid values are ignored (start() clamps into the real team count).
+    if (typeof patch.siegeDefender === 'number' && Number.isInteger(patch.siegeDefender) && patch.siegeDefender >= 0 && patch.siegeDefender < MAX_PLAYERS) s.siegeDefender = patch.siegeDefender;
     if (Array.isArray(patch.banned)) s.banned = patch.banned.filter((r) => ['common', 'rare', 'epic', 'legendary'].includes(r));
     if (password !== undefined) {
       const next = password ? passHash(password) : null;
@@ -536,6 +539,7 @@ export class HostLobby {
       comedyVisual: this.settings.comedyVisual,
       banned: [...this.settings.banned],
       gameMode: this.settings.gameMode,
+      siegeDefender: this.settings.gameMode === 'siege' ? Math.min(teams - 1, Math.max(0, Math.floor(this.settings.siegeDefender) || 0)) : 0,
       costs: costTable(),
       teamPlayers: pl.map((p) => p.id),
     };

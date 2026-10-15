@@ -1,7 +1,7 @@
 import type { Grid } from './grid';
 import { T_BLOCKED, T_WATER, type Terrain } from './terrain';
 import { SEPARATION_RADIUS, SEP_STRIDE } from './tuning';
-import type { Units } from './units';
+import { STRUCT_OF, type Units } from './units';
 
 /**
  * Soft separation of crowded units as two parallel phases. `scan`: every unit whose turn it is (1 in SEP_STRIDE) sums the
@@ -56,7 +56,7 @@ export class Separator {
     const sx = u.sepX;
     const sy = u.sepY;
     for (let i = from; i < to; i++) {
-      if (!u.alive[i] || u.airT[i] > 0 || i % SEP_STRIDE !== this.phase) continue;
+      if (!u.alive[i] || u.airT[i] > 0 || i % SEP_STRIDE !== this.phase || STRUCT_OF[u.kind[i]] !== 0) continue;
       const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / grid.cell) | 0));
       const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / grid.cell) | 0));
       const xi = u.x[i];

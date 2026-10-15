@@ -211,6 +211,25 @@ const tests = [
     },
   },
   {
+    name: 'mode-siege-studio',
+    async run({ stack }) {
+      const page = await stack.page({ width: 1280, height: 800 });
+      await page.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await page.clickSel('#m-own');
+      await page.waitFor(`!!document.querySelector('#start')`, 'studio');
+      await page.clickSel('.mode-card[data-mode="siege"]');
+      await page.waitFor(`!document.querySelector('#siege-opts').hidden`, 'defender chooser');
+      await page.clickSel('#siege-def button[data-id="1"]');
+      await page.waitFor(`document.querySelector('#siege-def button[data-id="1"]').getAttribute('aria-pressed') === 'true'`, 'team 2 defends');
+      await page.clickSel('#start');
+      await page.waitFor(`!!window.__sim && window.__sim.modeHud.kind === 'siege' && !!document.querySelector('.hud-mode') && !document.querySelector('.hud-mode').hidden`, 'siege battle with the strip', 30000);
+      const hud = await page.eval(`window.__sim.modeHud`);
+      assert(hud.defender === 1, 'team 2 should defend, got ' + hud.defender);
+      assert(hud.coreMaxHp === 3000 && hud.coreUnit >= 0, 'the core should exist');
+      noErrors(page, 'siege');
+    },
+  },
+  {
     name: 'battle-3d',
     async run({ stack }) {
       const page = await stack.page({ width: 1280, height: 800 });
@@ -257,8 +276,8 @@ const tests = [
       await host.waitFor(`document.querySelectorAll('#l-players li').length >= 2`, 'host sees two players', 20000);
       await guest.eval(`(() => { const i = document.querySelector('#l-chat'); i.value = 'hello e2e'; i.closest('form').requestSubmit(); })()`);
       await host.waitFor(`document.querySelector('#l-log')?.textContent.includes('hello e2e')`, 'chat reaches the host');
-      await guest.clickSel('#l-ready');
-      await host.clickSel('#l-start');
+      await guest.eval(`document.querySelector('#l-ready').click()`);
+      await host.eval(`document.querySelector('#l-start').click()`);
       await host.waitFor(`!!document.querySelector('.on-dock')`, 'host placement screen', 30000);
       await guest.waitFor(`!!document.querySelector('.on-dock')`, 'guest placement screen', 30000);
       noErrors(host, 'host');
@@ -281,9 +300,9 @@ const tests = [
       await guest.waitFor(`!!document.querySelector('#l-mode')`, 'guest in lobby', 20000);
       await guest.waitFor(`document.querySelector('#l-mode .mode-card[data-mode="hill"]')?.getAttribute('aria-checked') === 'true'`, 'guest sees hill');
       assert(await guest.eval(`document.querySelector('#l-mode .mode-card[data-mode="classic"]').disabled`), 'guests must not change the mode');
-      await guest.clickSel('#l-ready');
+      await guest.eval(`document.querySelector('#l-ready').click()`);
       await host.waitFor(`document.querySelectorAll('#l-players li').length >= 2`, 'two players');
-      await host.clickSel('#l-start');
+      await host.eval(`document.querySelector('#l-start').click()`);
       for (const p of [host, guest]) await p.waitFor(`!!window.__placement && !!document.querySelector('.on-dock')`, 'placement', 30000);
       // One soldier group per player inside its own team zone (found through the debug handle), then READY on both.
       for (const p of [host, guest]) {
@@ -324,9 +343,9 @@ const tests = [
       await guest.waitFor(`!!document.querySelector('#l-mode')`, 'guest in lobby', 20000);
       await guest.waitFor(`document.querySelector('#l-mode .mode-card[data-mode="ctf"]')?.getAttribute('aria-checked') === 'true'`, 'guest sees ctf');
       assert(await guest.eval(`document.querySelector('#l-mode .mode-card[data-mode="classic"]').disabled`), 'guests must not change the mode');
-      await guest.clickSel('#l-ready');
+      await guest.eval(`document.querySelector('#l-ready').click()`);
       await host.waitFor(`document.querySelectorAll('#l-players li').length >= 2`, 'two players');
-      await host.clickSel('#l-start');
+      await host.eval(`document.querySelector('#l-start').click()`);
       for (const p of [host, guest]) await p.waitFor(`!!window.__placement && !!document.querySelector('.on-dock')`, 'placement', 30000);
       // One soldier group per player inside its own team zone (found through the debug handle), then READY on both.
       for (const p of [host, guest]) {
@@ -352,6 +371,49 @@ const tests = [
     },
   },
   {
+    name: 'mode-siege-online',
+    async run({ stack }) {
+      const host = await stack.page({ width: 1280, height: 800 });
+      const guest = await stack.page({ width: 1280, height: 800 });
+      await host.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await host.eval(`(() => { const lan = [...document.querySelectorAll('#m-tp button')].find((b) => /lan/i.test(b.textContent)); lan?.click(); })()`);
+      await host.clickSel('#m-host');
+      const code = await host.waitFor(`document.querySelector('#l-code')?.textContent?.trim()`, 'lobby code', 20000);
+      await host.clickSel('#l-mode .mode-card[data-mode="siege"]');
+      await guest.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await guest.eval(`(() => { const i = document.querySelector('#m-code'); i.value = ${JSON.stringify(code)}; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+      await guest.clickSel('#m-join');
+      await guest.waitFor(`!!document.querySelector('#l-mode')`, 'guest in lobby', 20000);
+      await guest.waitFor(`document.querySelector('#l-mode .mode-card[data-mode="siege"]')?.getAttribute('aria-checked') === 'true'`, 'guest sees siege');
+      assert(await guest.eval(`document.querySelector('#l-mode .mode-card[data-mode="classic"]').disabled`), 'guests must not change the mode');
+      await guest.eval(`document.querySelector('#l-ready').click()`);
+      await host.waitFor(`document.querySelectorAll('#l-players li').length >= 2`, 'two players');
+      await host.eval(`document.querySelector('#l-start').click()`);
+      for (const p of [host, guest]) await p.waitFor(`!!window.__placement && !!document.querySelector('.on-dock')`, 'placement', 30000);
+      // One soldier group per player inside its own team zone (found through the debug handle), then READY on both.
+      for (const p of [host, guest]) {
+        const n = await p.eval(`(() => {
+          const pl = window.__placement;
+          const z = pl.zones.find((q) => q.team === pl.myTeam);
+          const t = pl.env.world.terrain;
+          const items = [];
+          for (let y = 0; y < pl.init.size && items.length < 6; y++) for (let x = 0; x < pl.init.size && items.length < 6; x++) {
+            const px = x + 0.5, py = y + 0.5;
+            if (z.contains(px, py) && (!t || (t.walkable(px, py) && t.reachable(px, py))) && items.every((o) => Math.hypot(o.x - px, o.y - py) > 2)) items.push({ cid: 9000 + items.length, kind: 0, x: px, y: py });
+          }
+          window.__session.send({ t: 'place', items });
+          return items.length;
+        })()`);
+        assert(n >= 3, 'found no place to put soldiers');
+      }
+      await sleep(1500);
+      for (const p of [host, guest]) await p.clickSel('#pg-ready');
+      for (const p of [host, guest]) await p.waitFor(`!!window.__sim && window.__sim.modeHud.kind === 'siege' && window.__sim.modeHud.coreUnit >= 0 && !!document.querySelector('.hud-mode') && !document.querySelector('.hud-mode').hidden`, 'siege battle with the objective strip', 60000);
+      noErrors(host, 'host');
+      noErrors(guest, 'guest');
+    },
+  },
+  {
     name: 'mode-vip-online',
     async run({ stack }) {
       const host = await stack.page({ width: 1280, height: 800 });
@@ -367,9 +429,9 @@ const tests = [
       await guest.waitFor(`!!document.querySelector('#l-mode')`, 'guest in lobby', 20000);
       await guest.waitFor(`document.querySelector('#l-mode .mode-card[data-mode="vip"]')?.getAttribute('aria-checked') === 'true'`, 'guest sees vip');
       assert(await guest.eval(`document.querySelector('#l-mode .mode-card[data-mode="classic"]').disabled`), 'guests must not change the mode');
-      await guest.clickSel('#l-ready');
+      await guest.eval(`document.querySelector('#l-ready').click()`);
       await host.waitFor(`document.querySelectorAll('#l-players li').length >= 2`, 'two players');
-      await host.clickSel('#l-start');
+      await host.eval(`document.querySelector('#l-start').click()`);
       for (const p of [host, guest]) await p.waitFor(`!!window.__placement && !!document.querySelector('.on-dock')`, 'placement', 30000);
       // One soldier group per player inside its own team zone (found through the debug handle), then READY on both.
       for (const p of [host, guest]) {

@@ -3,8 +3,8 @@ import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
 import type { GameModeId } from '../sim/modes/types';
 
-/** Protocol version: a client with a different version cannot join the lobby. Bumped for wire changes and also when simulation or map generation results change (v11: valley gates, path costs, chase watchdog; v12: game modes, result scores; v13: VIP mode, vip/vipSet messages, BattleStart.vips), because lockstep needs identical results. */
-export const PROTOCOL = 13;
+/** Protocol version: a client with a different version cannot join the lobby. Bumped for wire changes and also when simulation or map generation results change (v11: valley gates, path costs, chase watchdog; v12: game modes, result scores; v13: VIP mode, vip/vipSet messages, BattleStart.vips; v14: Siege mode, siegeDefender setting / GameInit field, structure unit kind), because lockstep needs identical results. */
+export const PROTOCOL = 14;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;
@@ -48,6 +48,8 @@ export interface LobbySettings {
   banned: Rarity[];
   /** Game mode rules ('classic' by default). */
   gameMode: GameModeId;
+  /** Siege mode: team index of the defender (the lobby setting; the host clamps it into 0..teams-1 when the game starts). */
+  siegeDefender: number;
 }
 
 export interface GameInit {
@@ -62,6 +64,8 @@ export interface GameInit {
   banned: Rarity[];
   /** Game mode rules of this battle. */
   gameMode: GameModeId;
+  /** Siege mode: team index of the defender, always 0..teams-1 (0 in other modes). */
+  siegeDefender: number;
   /** Gold cost per unit kind (computed by the host; everyone uses the same table). */
   costs: number[];
   /** Player ids in team order (team = index). */
@@ -180,6 +184,7 @@ export function battleConfig(s: BattleStart): BattleConfig {
     map: s.init.spec,
     comedy: s.init.comedyPhysics,
     rules: s.init.gameMode,
+    siegeDefender: s.init.siegeDefender,
     layout: layoutOf(s),
     vips: Array.isArray(s.vips) ? s.vips.slice(0, s.init.teams) : undefined,
   };

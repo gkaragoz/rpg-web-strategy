@@ -24,6 +24,7 @@ import { CursorLayer, playerColor } from './cursors';
 import { Placement } from './placement';
 import { LobbyScreen, MenuScreen } from './screens';
 import { clearDebug, getDebug, setDebug } from '../../debug';
+import { structureKinds } from '../../sim/modes';
 
 const PROFILE_KEY = 'rpgweb.online.profile';
 const LAST_KEY = 'rpgweb.online.last';
@@ -535,6 +536,7 @@ export class OnlineApp {
     for (let i = 0; i < lay.length; i += 4) kinds.add(lay[i + 1]);
     // The bone caller summons bone soldiers in battle (dormant skeletons exist in the sim from the start): their texture must be in the atlas.
     for (const k of [...kinds]) if (STATS[k]?.troop === 'bone-caller') kinds.add(KIND_OF_TROOP['bone-soldier']);
+    for (const k of structureKinds(init.gameMode)) kinds.add(k);
     env.bake(this.colors, this.biome, kinds);
     this.placement?.destroy();
     this.placement = null;

@@ -25,7 +25,15 @@ export interface CtfStrip {
   flags: Array<{ team: number; x: number; y: number; carrier: number; carrierTeam: number }>;
   timeLeft: number;
 }
-export type StripData = HillStrip | VipStrip | CtfStrip;
+/** Siege: the defending team's core (hp as a fraction) and the time left. */
+export interface SiegeStrip {
+  kind: 'siege';
+  defender: number;
+  coreHp: number;
+  coreMaxHp: number;
+  timeLeft: number;
+}
+export type StripData = HillStrip | VipStrip | CtfStrip | SiegeStrip;
 
 /** Colours per team index as CSS strings. */
 export type StripColors = string[];
@@ -83,6 +91,19 @@ export class ModeStrip {
       this.meta.textContent = `${t('mode.hud.vip.hint')}${left}`;
       return;
     }
+    if (data.kind === 'siege') {
+      const row = this.rows[0];
+      if (row) {
+        row.fill.style.width = `${(Math.max(0, Math.min(1, data.coreHp)) * 100).toFixed(1)}%`;
+        row.fill.style.background = this.colors[data.defender] ?? '#888';
+        row.score.textContent = `${Math.ceil(Math.max(0, data.coreHp) * data.coreMaxHp)}`;
+        row.held.textContent = '';
+        row.held.title = t('mode.hud.siege.core');
+      }
+      const left = data.timeLeft > 0 ? ` · ${t('mode.hud.siege.time', { time: fmtClock(data.timeLeft) })}` : '';
+      this.meta.textContent = `${t('mode.hud.siege.defends', { n: data.defender + 1 })}${left}`;
+      return;
+    }
     if (data.kind === 'ctf') {
       const ctf = ctfStatus(data, teamCount);
       for (let i = 0; i < teamCount; i++) {
@@ -117,8 +138,9 @@ export class ModeStrip {
     const rows = this.el.querySelector('.hm-rows') as HTMLElement;
     this.meta = this.el.querySelector('.hm-meta') as HTMLElement;
     this.rows = [];
-    for (let i = 0; i < teamCount; i++) {
-      const color = this.colors[i] ?? '#888';
+    const n = kind === 'siege' ? 1 : teamCount;
+    for (let i = 0; i < n; i++) {
+      const color = this.colors[kind === 'siege' ? 0 : i] ?? '#888';
       const row = document.createElement('div');
       row.className = 'hm-row';
       row.title = t('mode.hud.hill.score', { n: i + 1, score: 0 });

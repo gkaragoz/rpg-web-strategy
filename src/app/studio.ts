@@ -120,6 +120,7 @@ export class Studio {
   <section>
     <h2>${t('studio.battle.h')}</h2>
     <div class="row stack"><span>${t('mode.label')}</span><div id="mode-host"></div></div>
+    <div class="row stack" id="siege-opts" hidden><span>${t('mode.siege.defender')}</span><div class="seg" id="siege-def" role="group" aria-label="${t('mode.siege.defender')}"></div></div>
     <label class="row"><span>${t('studio.kite')} <small>${t('studio.kite.hint')}</small></span><input type="checkbox" id="kite" role="switch" /></label>
     <div class="row"><span>${t('studio.speed')}</span><div class="seg" id="speed" role="group" aria-label="${t('studio.speed.aria')}"></div></div>
   </section>
@@ -343,6 +344,14 @@ export class Studio {
     if (!this.visible) return;
     const s = this.d.state;
     this.modePicker.set(s.rules);
+    this.$('#siege-opts').hidden = s.rules !== 'siege';
+    if (s.rules === 'siege') {
+      s.siegeDefender = Math.min(s.siegeDefender, s.teamCount - 1);
+      this.seg(this.$('#siege-def'), Array.from({ length: s.teamCount }, (_, i) => ({ id: i, label: t('mode.siege.team', { n: i + 1 }) })), s.siegeDefender, (id) => {
+        s.siegeDefender = Number(id);
+        this.changed(false);
+      });
+    }
     const colors = teamColors(s.palette, s.teamCount);
     const counts = this.d.editor.counts();
     const $in = (id: string) => this.$(id) as HTMLInputElement;

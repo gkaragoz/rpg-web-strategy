@@ -1,5 +1,5 @@
 import { T_WATER } from './terrain';
-import { F_EXPLODED, F_REVIVED, Kind, STATS, TANK, isRanged, isTank, KIND_COUNT } from './units';
+import { F_EXPLODED, F_REVIVED, Kind, STATS, STRUCT_OF, TANK, isRanged, isTank, KIND_COUNT } from './units';
 import { TYPE_MULT, highGroundDamage } from './data/combat';
 import { STALE_AFTER, STALE_RAMP, MAX_LAUNCH } from './battleConfig';
 import type { SkillId } from './data/troops';
@@ -63,6 +63,11 @@ export function areaStrike(b: Battle, i: number, radius: number, power: number, 
     const dy = u.y[j] - ay;
     const d = Math.sqrt(dx * dx + dy * dy);
     if (d > radius) continue;
+    // A structure takes the damage but is never pushed, stunned or launched.
+    if (STRUCT_OF[u.kind[j]] !== 0) {
+      if (!(cone && d > 0.01 && (dx * fx + dy * fy) / d < TANK.coneCos)) damage(b, j, power, i, true);
+      continue;
+    }
     let ux = d > 0.01 ? dx / d : 1;
     let uy = d > 0.01 ? dy / d : 0;
     if (cone && d > 0.01 && (dx * fx + dy * fy) / d < TANK.coneCos) continue;
@@ -111,7 +116,7 @@ export function applyKnockback(b: Battle, i: number, dt: number): void {
 /** Launches j through the air `dist` tiles in the direction (ux,uy) (peak height grows with distance). */
 export function launch(b: Battle, j: number, ux: number, uy: number, dist: number): void {
   const u = b.units;
-  if (!b.comedy || !u.alive[j] || u.airT[j] > 0) return;
+  if (!b.comedy || !u.alive[j] || u.airT[j] > 0 || STRUCT_OF[u.kind[j]] !== 0) return;
   const heavy = STATS[u.kind[j]].scale > 1 ? 0.5 : 1;
   const d = Math.min(MAX_LAUNCH, dist * heavy);
   if (d < 1) return;
@@ -211,7 +216,7 @@ export function comedyHit(b: Battle, j: number, src: number, amount: number, mel
 
 export function pushUnit(b: Battle, j: number, ux: number, uy: number, amount: number): void {
   const u = b.units;
-  if (!u.alive[j]) return;
+  if (!u.alive[j] || STRUCT_OF[u.kind[j]] !== 0) return;
   if (b.comedy) {
     launch(b, j, ux, uy, amount * 3.2 + 1);
     return;
@@ -272,6 +277,7 @@ export function damage(b: Battle, j: number, amount: number, src = -1, melee = f
   const dealt = Math.min(amount, Math.max(0, u.hp[j]));
   b.counters.damage += dealt;
   if (src >= 0) b.meter.dmg[u.team[src] * KIND_COUNT + u.kind[src]] += dealt;
+  if (b.modeDamages) b.mode.onDamage!(b, j, dealt, src);
   if (!quiet) {
     if (b.emitEvents) b.pushEvent({ type: 'hit', x: u.x[j], y: u.y[j], unit: j, value: amount, kind: u.kind[j] });
     u.flash[j] = 0.12;

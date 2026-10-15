@@ -19,6 +19,7 @@ import { AudioSystem } from './render/audio';
 import { comedy } from './render/comedy';
 import { POSE_STATES, UnitView, type TeamColors } from './render/unitView';
 import type { BattleConfig } from './sim/battle';
+import { structureKinds } from './sim/modes';
 import { KIND_OF_TROOP, LEGACY_COUNT, MAX_TEAMS, STATS } from './sim/units';
 import { STATS_DEFAULT_SHOWN, StatsPanel } from './ui/stats';
 import { debugEnabled, setDebug } from './debug';
@@ -170,6 +171,7 @@ function neededKinds(): Set<number> {
   const set = new Set<number>(Array.from({ length: LEGACY_COUNT }, (_, i) => i));
   for (const u of state.units) set.add(u.kind);
   set.add(state.selKind);
+  for (const k of structureKinds(state.rules)) set.add(k);
   for (const k of [...set]) if (STATS[k]?.troop === 'bone-caller') set.add(KIND_OF_TROOP['bone-soldier']);
   return set;
 }
@@ -252,7 +254,7 @@ function vipLayoutIndices(): number[] {
 }
 
 function studioConfig(): BattleConfig {
-  return { vips: state.rules === 'vip' ? vipLayoutIndices() : undefined, mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, rules: state.rules, terrainSeed: state.seed, map: state.map, comedy: comedyPhysicsOn(), stats: state.stats };
+  return { vips: state.rules === 'vip' ? vipLayoutIndices() : undefined, mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, rules: state.rules, siegeDefender: state.rules === 'siege' ? Math.min(state.siegeDefender, state.teamCount - 1) : undefined, terrainSeed: state.seed, map: state.map, comedy: comedyPhysicsOn(), stats: state.stats };
 }
 
 function layoutArray(): Float32Array {

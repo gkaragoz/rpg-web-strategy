@@ -1,7 +1,7 @@
 import { Grid } from './grid';
 import { ENGAGE_LOCK, MAX_RING, MELEE_SLACK, MELEE_SLOTS, OTHER_BANK_PENALTY, PRIEST_RING, SWITCH_BONUS } from './tuning';
 import type { Terrain } from './terrain';
-import { STATS, TANK, isHealer, isMelee, isRanged, isTank, type Units } from './units';
+import { STATS, STRUCT_OF, TANK, isHealer, isMelee, isRanged, isTank, type Units } from './units';
 
 /** Pick results in `Units.pickBest` besides a unit index. */
 export const PICK_NONE = -1;
@@ -56,7 +56,7 @@ export class Picker {
     const u = this.u;
     for (let i = from; i < to; i++) {
       u.pickMark[i] = 0;
-      if (!u.alive[i] || u.airT[i] > 0) continue;
+      if (!u.alive[i] || u.airT[i] > 0 || STRUCT_OF[u.kind[i]] !== 0) continue;
       if (u.retarget[i] - this.dt > 0) continue;
       u.pickBest[i] = this.pick(i);
       u.pickMark[i] = 1;

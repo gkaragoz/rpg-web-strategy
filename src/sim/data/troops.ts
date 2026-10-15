@@ -67,6 +67,11 @@ export interface TroopDef {
   skillText: Localized;
   /** Only arrives through summoning/reviving; not in the placement list. */
   summoned?: boolean;
+  /**
+   * Structure: a fixed object placed by a game mode (never bought, placed or moved by players; it has no attack, no skill and
+   * ignores knockback / launch / stun / fear / taunt). Always also `summoned`, which hides it from every placement list.
+   */
+  structure?: boolean;
   /** Base stats: [hp, attack, defense]. */
   base: [number, number, number];
   /** Damage type of its attacks and armor class of its body (indices, see data/combat.ts). */
@@ -105,7 +110,7 @@ const TYPING: Record<string, string> = {
   thornlings: 'P-M', 'bone-caller': 'M-L', wayfarers: 'B-L', 'night-lancer': 'P-M', 'sun-priest': 'M-L', 'soul-reaver': 'S-S', 'lancer-knight': 'P-H',
   javelineers: 'P-L', 'pit-fighters': 'B-M', 'horned-seer': 'M-L', 'hex-poppets': 'P-S', scarecrow: 'B-M', 'hex-witch': 'M-L', mender: 'M-L',
   'war-barge': 'B-H', 'ash-fiend': 'S-M', 'axe-warden': 'S-M', 'dread-totem': 'M-S', 'cinder-golem': 'B-H', 'dawn-blade': 'S-M', 'rime-archers': 'P-L',
-  'tusk-rider': 'P-H', 'sand-king': 'M-S', 'granite-colossus': 'B-H',
+  'tusk-rider': 'P-H', 'sand-king': 'M-S', 'granite-colossus': 'B-H', 'siege-core': 'B-M',
 };
 const DMG_CODE: Record<string, number> = { S: DMG.slash, P: DMG.pierce, B: DMG.blunt, M: DMG.magic };
 const ARM_CODE: Record<string, number> = { L: ARM.light, M: ARM.medium, H: ARM.heavy, S: ARM.spirit };
@@ -135,6 +140,9 @@ interface Spec {
   skill?: SkillId | null;
   text?: Localized;
   summoned?: boolean;
+  structure?: boolean;
+  /** Explicit base row [hp, attack, defense] instead of the role / rarity budget. */
+  base?: [number, number, number];
   tweak?: [number, number, number];
 }
 
@@ -153,7 +161,8 @@ const T = (s: Spec): TroopDef => ({
   skill: s.skill ?? null,
   skillText: s.text ?? NONE,
   summoned: s.summoned,
-  base: baseFor(s.rarity, s.role, ...(s.tweak ?? [1, 1, 0])),
+  structure: s.structure,
+  base: s.base ?? baseFor(s.rarity, s.role, ...(s.tweak ?? [1, 1, 0])),
   dmgType: typingOf(s.id)[0],
   armorClass: typingOf(s.id)[1],
 });
@@ -661,6 +670,21 @@ export const TROOPS: TroopDef[] = [
     skill: 'stoneWill',
     text: L('Becomes immune to damage; hits an area and slows enemies.', 'Hasara karşı bağışık olur; alana vurur ve düşmanları yavaşlatır.'),
     tweak: [1.15, 1.25, 8],
+  }),
+  // ---- Structures (game-mode objects; always at the end so the kind numbers of the units above never change) ----
+  T({
+    id: 'siege-core',
+    name: 'Siege Core',
+    rarity: 'legendary',
+    race: 'human',
+    role: 'tank',
+    move: 0,
+    atkSpd: 0.2,
+    reach: 0,
+    summoned: true,
+    structure: true,
+    text: L('The keep the defenders must hold.', 'Savunmacıların tutması gereken hisar.'),
+    base: [15000, 0, 55],
   }),
 ];
 

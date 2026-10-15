@@ -653,6 +653,36 @@ function drawTotem(r: Rig, c: number): void {
   r.legR.roundRect(2, 8, 6, 9, 2).fill(0x5a3a1c);
 }
 
+function drawKeep(r: Rig, c: number, d: number): void {
+  r.noHands = true;
+  const g = r.g;
+  const STONE = 0x8d8a82;
+  const STONE_D = 0x4a4740;
+  const STONE_L = 0xb9b5aa;
+  // Main block and a darker foot line.
+  g.roundRect(-17, -22, 34, 38, 2).fill(STONE).stroke({ width: 1.8, color: STONE_D });
+  g.rect(-17, 10, 34, 6).fill(0x6e6b64);
+  g.roundRect(-14, -20, 28, 5, 2).fill({ color: 0xffffff, alpha: 0.16 });
+  // Mortar lines.
+  for (const y of [-12, -3, 6]) g.moveTo(-16, y).lineTo(16, y).stroke({ width: 0.8, color: STONE_D, alpha: 0.55 });
+  // Crenellations.
+  for (let i = -2; i <= 2; i++) g.rect(i * 7 - 2.6, -29, 5.2, 8).fill(STONE_L).stroke({ width: 1.2, color: STONE_D });
+  // Corner turrets.
+  for (const x of [-19, 19]) {
+    g.roundRect(x - 5, -31, 10, 47, 2).fill(STONE_L).stroke({ width: 1.6, color: STONE_D });
+    g.poly([x - 6.5, -31, x, -40, x + 6.5, -31]).fill(d).stroke({ width: 1.2, color: STONE_D });
+  }
+  // Gate with a team-coloured lintel, arrow slits.
+  g.roundRect(-5.5, 1, 11, 15, 5).fill(0x2a1f16).stroke({ width: 1.3, color: 0x14100b });
+  g.rect(-7, -3, 14, 3.4).fill(c);
+  for (const x of [-10, 10]) g.rect(x - 1, -12, 2, 7).fill(0x14181f);
+  // Central banner pole and a big team-coloured flag (readable at small size).
+  g.rect(-1, -46, 2, 18).fill(0x5a3a1c);
+  g.poly([1, -46, 17, -41, 1, -34]).fill(c).stroke({ width: 1.2, color: d });
+  r.legL.roundRect(-14, 14, 8, 3, 1).fill(STONE_D);
+  r.legR.roundRect(6, 14, 8, 3, 1).fill(STONE_D);
+}
+
 // ---------------------------------------------------------------- unit recipes
 
 type Recipe = (r: Rig, c: number, d: number) => Anim;
@@ -1100,5 +1130,9 @@ export const LOOKS: Record<string, Recipe> = {
     for (const [x, y] of [[-10, 2], [8, 6], [-4, 9]]) r.g.circle(x, y, 2.6).fill({ color: 0x5aa04a, alpha: 0.85 });
     fistsOf(r, 0x8a8a82, 0x3a3a34);
     return 'slam';
+  },
+  'siege-core': (r, c, d) => {
+    drawKeep(r, c, d);
+    return 'swing';
   },
 };

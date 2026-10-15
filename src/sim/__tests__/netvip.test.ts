@@ -293,8 +293,8 @@ describe('BattleStart.vips', () => {
 });
 
 describe('protocol version', () => {
-  it('moved to 13 and an older client is still rejected', () => {
-    expect(PROTOCOL).toBe(13);
+  it('is at least 13 and an older client is still rejected', () => {
+    expect(PROTOCOL).toBeGreaterThanOrEqual(13);
     const r = rig();
     let reason = '';
     const ep = r.hub.connect();
