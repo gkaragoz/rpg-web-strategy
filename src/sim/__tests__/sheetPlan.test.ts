@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planSheet, shelfPack, type SheetItem } from '../../render/sheetPlan';
+import { MAX_MSAA_PIXELS, MAX_SHEET_PIXELS, planSheet, shelfPack, type SheetItem } from '../../render/sheetPlan';
 import { KIND_COUNT, STATS } from '../units';
 import { POSES } from '../../render/unitView';
 
@@ -47,7 +47,20 @@ describe('atlas sheet plan', () => {
   it('keeps full sharpness for small armies and drops the resolution only when it must', () => {
     expect(planSheet(cells(2, 5), 4096, 3)).toMatchObject({ width: 1024, resolution: 2 });
     expect(planSheet(cells(6), 4096, 3).resolution).toBeLessThan(2);
-    expect(planSheet(cells(6), 16384, 3).resolution).toBeGreaterThanOrEqual(1);
+    expect(planSheet(cells(6), 16384, 3).resolution).toBeGreaterThanOrEqual(0.5); // six teams with every unit kind is the worst case: it trades sharpness for a texture that is safe to allocate
+  });
+
+  it('stays inside the pixel budget of a 4096 x 4096 texture even on GPUs that allow far bigger ones', () => {
+    for (const maxTexture of [4096, 8192, 16384]) {
+      for (const teams of [2, 4, 6]) {
+        const plan = planSheet(cells(teams), maxTexture, 3);
+        expect(plan.width * plan.height * plan.resolution * plan.resolution, `${maxTexture}/${teams}`).toBeLessThanOrEqual(MAX_SHEET_PIXELS);
+      }
+    }
+    expect(MAX_MSAA_PIXELS).toBeLessThan(MAX_SHEET_PIXELS);
+    // A small army keeps the sharp, multisampled layout.
+    const small = planSheet(cells(2, 5), 8192, 3);
+    expect(small.width * small.height * small.resolution * small.resolution).toBeLessThanOrEqual(MAX_MSAA_PIXELS);
   });
 
   it('works even for a tiny texture limit', () => {

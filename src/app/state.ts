@@ -27,7 +27,7 @@ export const MAP_SIZES = [
 ] as const;
 
 /** Maximum units that can be placed in the editor (the benchmark is separate). */
-export const MAX_PLACED = 3000;
+export const MAX_PLACED = 30000;
 
 export const BRUSHES = [
   { id: 0, name: t('studio.brush.single'), radius: 0.6, count: 1 },

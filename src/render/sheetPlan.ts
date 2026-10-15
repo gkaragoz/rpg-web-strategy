@@ -22,8 +22,14 @@ export interface SheetPlan {
 
 const WIDTHS = [1024, 2048, 4096, 8192, 16384];
 const RESOLUTIONS = [2, 1, 0.5, 0.25];
-/** Largest sheet area (in pixels) worth the memory; beyond this the resolution drops even if the dimensions would fit. */
-const MAX_PIXELS = 48_000_000;
+/**
+ * Largest sheet area (in pixels) worth the memory: beyond this the resolution drops even if the dimensions would fit. The sheet is
+ * rendered once into a render target; big targets (especially multisampled ones) fail silently on many real GPUs and then come out
+ * blank, so the budget is the size of a 4096 x 4096 texture.
+ */
+export const MAX_SHEET_PIXELS = 16_777_216;
+/** Above this many pixels the sheet is rendered without multisampling (4x MSAA of a big sheet is hundreds of MB). */
+export const MAX_MSAA_PIXELS = 4_194_304;
 
 /** Shelf packing of `items` into rows of at most `width`. */
 export function shelfPack(items: SheetItem[], width: number, pad: number): { height: number; positions: Array<{ x: number; y: number }> } {
@@ -56,7 +62,7 @@ export function planSheet(items: SheetItem[], maxTexture: number, pad: number): 
       if (width < widest || width * resolution > maxTexture) continue;
       const { height, positions } = shelfPack(items, width, pad);
       last = { width, height, resolution, positions };
-      if (height * resolution <= maxTexture && width * height * resolution * resolution <= MAX_PIXELS) return last;
+      if (height * resolution <= maxTexture && width * height * resolution * resolution <= MAX_SHEET_PIXELS) return last;
     }
   }
   if (last) return last;

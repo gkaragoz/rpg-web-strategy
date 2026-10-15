@@ -202,6 +202,9 @@ const tests = [
       assert(r.kinds >= 40, `expected an atlas with (nearly) every kind, got ${r.kinds}`);
       assert(r.pw <= r.max && r.ph <= r.max, `atlas ${r.pw}x${r.ph} exceeds the GPU limit ${r.max}`);
       assert(r.outside === 0, `${r.outside} unit frames lie outside the atlas texture`);
+      // Every unit cell must really contain pixels (a render target the GPU could not allocate comes out blank without an error).
+      const blank = await page.eval(`(() => { const a = window.__atlas, r = window.__app.renderer; let blank = 0, n = 0; for (let i = 0; i < a.unitTex.length; i += 7) { const t = a.unitTex[i]; if (!t) continue; n++; const px = r.extract.pixels({ target: t }).pixels; let any = false; for (let k = 3; k < px.length; k += 4) if (px[k] > 0) { any = true; break; } if (!any) blank++; } return { blank, n }; })()`);
+      assert(blank.n > 20 && blank.blank === 0, `blank unit cells in the atlas: ${JSON.stringify(blank)}`);
       noErrors(page, 'atlas');
     },
   },

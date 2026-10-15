@@ -2,10 +2,22 @@ import { Container, Graphics, Rectangle, Texture, type Renderer } from 'pixi.js'
 import type { Biome } from '../sim/mapSpec';
 import type { DecorKind } from '../sim/terrain';
 import { LEGACY_COUNT, MAX_TEAMS, STATS } from '../sim/units';
-import { planSheet } from './sheetPlan';
+import { MAX_MSAA_PIXELS, planSheet } from './sheetPlan';
 import { POSES, POSE_STATES, UnitView, type TeamColors } from './unitView';
 
 const PAD = 3;
+
+/** True when the cell of `p` has no visible pixel at all (a failed render target). Reading errors count as not blank. */
+function isBlank(renderer: Renderer, tex: Texture, p: { item: Item; x: number; y: number }, res: number): boolean {
+  try {
+    const r = renderer.extract.pixels({ target: tex, frame: new Rectangle(Math.floor(p.x * res), Math.floor(p.y * res), Math.max(1, Math.floor(p.item.w * res)), Math.max(1, Math.floor(p.item.h * res))) });
+    const px = r.pixels;
+    for (let i = 3; i < px.length; i += 4) if (px[i] > 0) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** The GPU's largest texture side (4096 when it cannot be read: the safe size every WebGL device supports). */
 function maxTextureSize(renderer: Renderer): number {
@@ -43,6 +55,8 @@ interface Item {
   /** Anchor, in-cell pixels. */
   ax: number;
   ay: number;
+  /** A unit cell (always has visible pixels): used to detect a render target that came out blank. */
+  unit?: boolean;
   draw: (c: Container, x: number, y: number) => void;
   done: (tex: Texture) => void;
 }
@@ -265,7 +279,7 @@ function drawRubble(g: Graphics, style: number, th: HouseTheme = HOUSES.forest):
 }
 
 /** Bakes unit, arrow and decor textures into a single atlas texture (ParticleContainer needs a single texture). */
-export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: Biome = 'forest', kinds: Iterable<number> = [0, 1, 2, 3, 4]): Atlas {
+export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: Biome = 'forest', kinds: Iterable<number> = [0, 1, 2, 3, 4], limit = maxTextureSize(renderer)): Atlas {
   const kindList = [...new Set([...kinds, ...Array.from({ length: LEGACY_COUNT }, (_, i) => i)])].sort((a, b) => a - b);
   const items: Item[] = [];
   const unitTex: Texture[] = [];
@@ -291,6 +305,7 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
           h,
           ax,
           ay,
+          unit: true,
           draw: (c, x, y) => {
             const view = new UnitView(kind, teamColors[team], 0);
             view.update(POSE_STATES[pose], 0, 0);
@@ -411,12 +426,21 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
 
   // Shelf packing on a sheet that fits the GPU's texture limit (see sheetPlan.ts: an oversized sheet loses its lower rows).
   const sheet = new Container();
-  const plan = planSheet(items, maxTextureSize(renderer), PAD);
+  const plan = planSheet(items, limit, PAD);
   const placed = items.map((item, i) => ({ item, x: plan.positions[i].x, y: plan.positions[i].y }));
   for (const p of placed) p.item.draw(sheet, p.x, p.y);
   const resolution = plan.resolution;
-  const atlas = renderer.generateTexture({ target: sheet, frame: new Rectangle(0, 0, plan.width, plan.height), resolution, antialias: true });
+  const sheetPixels = plan.width * plan.height * resolution * resolution;
+  const atlas = renderer.generateTexture({ target: sheet, frame: new Rectangle(0, 0, plan.width, plan.height), resolution, antialias: sheetPixels <= MAX_MSAA_PIXELS });
   sheet.destroy({ children: true, context: true });
+  // A render target the GPU could not allocate comes out blank without any error (the units would be invisible but still fight):
+  // check one pixel block of the last unit cell and bake again at a smaller size when it is empty.
+  const lastUnit = placed.filter((p) => p.item.unit).at(-1);
+  if (lastUnit && limit > 512 && isBlank(renderer, atlas, lastUnit, resolution)) {
+    atlas.destroy(true);
+    console.warn(`[atlas] sheet ${plan.width}x${plan.height} @${resolution} came out blank, baking again at a smaller size`);
+    return bakeAtlas(renderer, teamColors, biome, kinds, Math.floor(Math.min(limit, plan.width * resolution, plan.height * resolution) / 2));
+  }
   for (const { item, x: px, y: py } of placed) {
     item.done(new Texture({ source: atlas.source, frame: new Rectangle(px, py, item.w, item.h) }));
   }
