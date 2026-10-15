@@ -16,7 +16,16 @@ export interface VipStrip {
   teams: Array<{ unit: number; hp: number; alive: boolean }>;
   timeLeft: number;
 }
-export type StripData = HillStrip | VipStrip;
+/** Capture the Flag: captures per team and where each flag is (home base or carried by a unit). */
+export interface CtfStrip {
+  kind: 'ctf';
+  captures: number[];
+  target: number;
+  radius: number;
+  flags: Array<{ team: number; x: number; y: number; carrier: number; carrierTeam: number }>;
+  timeLeft: number;
+}
+export type StripData = HillStrip | VipStrip | CtfStrip;
 
 /** Colours per team index as CSS strings. */
 export type StripColors = string[];
@@ -72,6 +81,21 @@ export class ModeStrip {
       }
       const left = data.timeLeft > 0 ? ` · ${t('mode.hud.vip.time', { time: fmtClock(data.timeLeft) })}` : '';
       this.meta.textContent = `${t('mode.hud.vip.hint')}${left}`;
+      return;
+    }
+    if (data.kind === 'ctf') {
+      const ctf = ctfStatus(data, teamCount);
+      for (let i = 0; i < teamCount; i++) {
+        const row = this.rows[i];
+        if (!row) continue;
+        const c = data.captures[i] ?? 0;
+        row.fill.style.width = `${(stripProgress(c, data.target) * 100).toFixed(1)}%`;
+        row.score.textContent = String(c);
+        row.held.textContent = `${ctf.carrying[i] ? '⚑' : ''}${ctf.stolen[i] ? '⚐' : ''}`;
+        row.held.title = [ctf.carrying[i] ? t('mode.hud.ctf.carrying') : '', ctf.stolen[i] ? t('mode.hud.ctf.stolen') : ''].filter(Boolean).join(' · ');
+      }
+      const left = data.timeLeft > 0 ? ` · ${t('mode.hud.ctf.time', { time: fmtClock(data.timeLeft) })}` : '';
+      this.meta.textContent = `${t('mode.hud.ctf.target', { target: data.target })}${left}`;
       return;
     }
     const held = pointsHeld(data, teamCount);
@@ -133,4 +157,35 @@ export function vipMarkers(
     out.push({ x: units.px[i] + (units.x[i] - units.px[i]) * alpha, y: units.py[i] + (units.y[i] - units.py[i]) * alpha, color: teamColors[ti] ?? 0xffffff, kind: 'vip' });
   });
   return out;
+}
+
+/** Per team: whether one of its units carries an enemy flag, and whether its own flag has been stolen. */
+export function ctfStatus(data: CtfStrip, teamCount: number): { carrying: boolean[]; stolen: boolean[] } {
+  const carrying = new Array<boolean>(teamCount).fill(false);
+  const stolen = new Array<boolean>(teamCount).fill(false);
+  for (const f of data.flags) {
+    if (f.carrier < 0) continue;
+    if (f.carrierTeam >= 0 && f.carrierTeam < teamCount) carrying[f.carrierTeam] = true;
+    if (f.team >= 0 && f.team < teamCount) stolen[f.team] = true;
+  }
+  return { carrying, stolen };
+}
+
+/** Flag markers: at the home base, or over the carrier (interpolated like the unit). */
+export function ctfMarkers(
+  hud: CtfStrip,
+  units: { px: ArrayLike<number>; py: ArrayLike<number>; x: ArrayLike<number>; y: ArrayLike<number>; alive: ArrayLike<number> },
+  alpha: number,
+  teamColors: number[],
+): Array<{ x: number; y: number; color: number; kind: 'flag' }> {
+  return hud.flags.map((f) => {
+    const i = f.carrier;
+    const carried = i >= 0 && !!units.alive[i];
+    return {
+      x: carried ? units.px[i] + (units.x[i] - units.px[i]) * alpha : f.x,
+      y: carried ? units.py[i] + (units.y[i] - units.py[i]) * alpha : f.y,
+      color: teamColors[f.team] ?? 0xffffff,
+      kind: 'flag' as const,
+    };
+  });
 }

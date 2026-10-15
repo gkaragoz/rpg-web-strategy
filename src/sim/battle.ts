@@ -117,8 +117,10 @@ export class Battle {
   private sepTick = 0;
   /** Custom layouts: unit index spawned for each layout entry (position order), -1 when the entry was skipped. @internal */
   readonly layoutUnits: number[] = [];
-  /** Rules of the game mode (classic: none; ctf plays as classic until implemented). */
+  /** Rules of the game mode (classic: none). */
   readonly mode: ModeRules;
+  /** The mode overrides unit behaviour (ModeRules.drive). */
+  private readonly modeDrives: boolean;
   /** Optional per-team goal set by the mode: units without a target march there instead of toward the nearest enemy. @internal */
   readonly teamGoalX = new Float32Array(MAX_TEAMS);
   /** @internal */
@@ -138,6 +140,7 @@ export class Battle {
     this.teamCount = Math.min(MAX_TEAMS, Math.max(2, config.teamCount ?? 2));
     this.comedy = config.comedy === true;
     this.mode = modeFor(config.rules);
+    this.modeDrives = this.mode.drive !== undefined;
     this.allTeams = Array.from({ length: this.teamCount }, (_, t) => t);
     this.grids = Array.from({ length: this.teamCount }, () => new Grid(this.mapSize, GRID_CELL, total));
     this.sepGrid = new Grid(this.mapSize, SEP_CELL, total);
@@ -499,6 +502,8 @@ export class Battle {
       return;
     }
     if (skill === 'mock' || skill === 'taunt' || skill === 'stoneWill') periodic(this, i, dt, skill);
+
+    if (this.modeDrives && this.mode.drive!(this, i, dt)) return;
 
     if (ranged && this.kiteOn) {
       updateThreat(this, i);

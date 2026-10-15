@@ -3,7 +3,7 @@ import { MAX_TEAMS } from '../units';
 
 /**
  * Game modes: extra win conditions and goals on top of the normal fight. All modes are autonomous (no player orders during
- * a battle). 'classic', 'hill' and 'vip' have rules today; 'ctf' is an accepted id that falls back to classic rules.
+ * a battle). 'classic', 'hill', 'vip' and 'ctf' have rules.
  */
 export type GameModeId = 'classic' | 'hill' | 'vip' | 'ctf';
 
@@ -48,7 +48,29 @@ export type ModeHud =
       teams: Array<{ unit: number; hp: number; alive: boolean }>;
       /** Seconds of sim time left before the time limit decides the battle (VIP with the highest hp fraction wins). */
       timeLeft: number;
+    }
+  | {
+      kind: 'ctf';
+      /** Captures per team (index = team, length = MAX_TEAMS). */
+      captures: number[];
+      /** Captures needed to win. */
+      target: number;
+      /** Base pickup/capture radius in tiles (same for every base). */
+      radius: number;
+      /** One entry per team that has a flag, in team order. */
+      flags: CtfFlagHud[];
+      /** Seconds of sim time left before the time limit decides the battle (most captures wins). */
+      timeLeft: number;
     };
+
+/** One flag: `team` owns it; at home x/y is the base and carrier/carrierTeam are -1, in transit x/y is the carrier's position. */
+export interface CtfFlagHud {
+  team: number;
+  x: number;
+  y: number;
+  carrier: number;
+  carrierTeam: number;
+}
 
 /** Per-team VIP unit indices out of a mode HUD (length MAX_TEAMS, -1: none). Works for every backend that has `modeHud`. */
 export function vipUnitsOf(hud: ModeHud): Int32Array {
@@ -68,6 +90,11 @@ export interface ModeRules {
   step(b: Battle, dt: number): void;
   /** Optional: called from killUnit after unit `j` died (`src` = killer unit or -1). Must not allocate. */
   onKill?(b: Battle, j: number, src: number): void;
+  /**
+   * Optional: per-unit override called from Battle.updateUnit after the stun/fear checks. Return true when the mode took
+   * over unit `i` this step (it queued its own move); the normal AI is skipped. Must not allocate.
+   */
+  drive?(b: Battle, i: number, dt: number): boolean;
   /** Team index to end the battle with, -2 for a draw, undefined to go on. */
   winner(b: Battle): number | undefined;
   /** Mode state as plain numbers (restore() accepts exactly this). */

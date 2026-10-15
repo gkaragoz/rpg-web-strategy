@@ -58,3 +58,29 @@ describe('vip markers', () => {
     expect(m).toEqual([{ x: 1, y: 2, color: 0xff0000, kind: 'vip' }]);
   });
 });
+
+describe('ctf strip helpers', () => {
+  it('reports who carries a flag and whose flag is stolen, and places flag markers at home or over the carrier', async () => {
+    const { ctfMarkers, ctfStatus } = await import('../../app/modeHud');
+    const hud = {
+      kind: 'ctf' as const,
+      captures: [0, 1],
+      target: 3,
+      radius: 3,
+      timeLeft: 0,
+      flags: [
+        { team: 0, x: 5, y: 5, carrier: 1, carrierTeam: 1 },
+        { team: 1, x: 50, y: 50, carrier: -1, carrierTeam: -1 },
+      ],
+    };
+    expect(ctfStatus(hud, 2)).toEqual({ carrying: [false, true], stolen: [true, false] });
+    const units = { px: [0, 10], py: [0, 10], x: [0, 14], y: [0, 18], alive: [1, 1] };
+    const m = ctfMarkers(hud, units, 0.5, [0xff0000, 0x0000ff]);
+    expect(m).toEqual([
+      { x: 12, y: 14, color: 0xff0000, kind: 'flag' },
+      { x: 50, y: 50, color: 0x0000ff, kind: 'flag' },
+    ]);
+    // A dead carrier (the flag is about to go home) falls back to the base position.
+    expect(ctfMarkers(hud, { ...units, alive: [1, 0] }, 0.5, [1, 2])[0]).toMatchObject({ x: 5, y: 5 });
+  });
+});

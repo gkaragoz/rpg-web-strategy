@@ -1,6 +1,6 @@
 /** Layout of the SharedArrayBuffer shared between the worker and the main thread. */
 import { KIND_COUNT, MAX_TEAMS } from './units';
-import { HILL_TARGET, type HillPointHud, type ModeHud } from './modes';
+import { CTF_TARGET, HILL_TARGET, type CtfFlagHud, type HillPointHud, type ModeHud } from './modes';
 export const SNAP_SLOTS = 4;
 
 export interface SnapSlot {
@@ -68,7 +68,10 @@ export const F_OWNER_BASE = 38; // 3 values
 export const F_POINT_BASE = 41; // 3 x (x, y, radius)
 /** VIP mode (F_MODE_ON = 2): per team 3 values: unit index, hp fraction, alive flag. F_TIME_LEFT is shared with hill. */
 export const F_VIP_BASE = 56; // MAX_TEAMS x 3 values
-export const F_LEN = 74;
+/** CTF mode (F_MODE_ON = 3): captures per team reuse F_SCORE_BASE; per team 5 values: owner team (-1: no flag), x, y, carrier unit, carrier team; then the radius. */
+export const F_CTF_BASE = 74; // MAX_TEAMS x 5 values
+export const F_CTF_RADIUS = 104;
+export const F_LEN = 105;
 
 /** Writes the mode HUD into the control block (worker side; classic: switches it off). */
 export function writeModeHud(f: Float64Array, hud: ModeHud): void {
@@ -80,6 +83,21 @@ export function writeModeHud(f: Float64Array, hud: ModeHud): void {
       f[F_VIP_BASE + t * 3] = e ? e.unit : -1;
       f[F_VIP_BASE + t * 3 + 1] = e ? e.hp : 0;
       f[F_VIP_BASE + t * 3 + 2] = e && e.alive ? 1 : 0;
+    }
+    return;
+  }
+  if (hud.kind === 'ctf') {
+    f[F_MODE_ON] = 3;
+    f[F_TIME_LEFT] = hud.timeLeft;
+    f[F_CTF_RADIUS] = hud.radius;
+    for (let t = 0; t < MAX_TEAMS; t++) f[F_SCORE_BASE + t] = hud.captures[t] ?? 0;
+    for (let t = 0; t < MAX_TEAMS; t++) {
+      const e = hud.flags.find((x) => x.team === t);
+      f[F_CTF_BASE + t * 5] = e ? e.team : -1;
+      f[F_CTF_BASE + t * 5 + 1] = e ? e.x : 0;
+      f[F_CTF_BASE + t * 5 + 2] = e ? e.y : 0;
+      f[F_CTF_BASE + t * 5 + 3] = e ? e.carrier : -1;
+      f[F_CTF_BASE + t * 5 + 4] = e ? e.carrierTeam : -1;
     }
     return;
   }
@@ -104,6 +122,15 @@ export function readModeHud(f: Float64Array): ModeHud {
     const teams: Array<{ unit: number; hp: number; alive: boolean }> = [];
     for (let t = 0; t < MAX_TEAMS; t++) teams.push({ unit: f[F_VIP_BASE + t * 3], hp: f[F_VIP_BASE + t * 3 + 1], alive: f[F_VIP_BASE + t * 3 + 2] === 1 });
     return { kind: 'vip', teams, timeLeft: f[F_TIME_LEFT] };
+  }
+  if (f[F_MODE_ON] === 3) {
+    const flags: CtfFlagHud[] = [];
+    for (let t = 0; t < MAX_TEAMS; t++) {
+      const o = F_CTF_BASE + t * 5;
+      if (f[o] < 0) continue;
+      flags.push({ team: f[o], x: f[o + 1], y: f[o + 2], carrier: f[o + 3], carrierTeam: f[o + 4] });
+    }
+    return { kind: 'ctf', captures: Array.from(f.subarray(F_SCORE_BASE, F_SCORE_BASE + MAX_TEAMS)), target: CTF_TARGET, radius: f[F_CTF_RADIUS], flags, timeLeft: f[F_TIME_LEFT] };
   }
   if (f[F_MODE_ON] !== 1) return { kind: 'classic' };
   const points: HillPointHud[] = [];

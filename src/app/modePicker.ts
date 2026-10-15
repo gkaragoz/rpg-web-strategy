@@ -8,16 +8,17 @@ const ICONS: Record<SelectableMode, string> = {
   classic: '<path d="M5 19 17 7m0 0h-5m5 0v5M19 19 7 7m0 0h5M7 7v5" />',
   hill: '<path d="M3 19 9 8l4 7 3-4 5 8Z" /><circle cx="17" cy="6" r="2" />',
   vip: '<path d="M4 18h16M5 18 4 8l5 4 3-6 3 6 5-4-1 10" />',
+  ctf: '<path d="M6 21V4m0 0 12 4-12 5" />',
 };
 
 /** Rule text of a mode (also shown under the cards); `target` fills the points goal. */
 export function modeRuleText(id: SelectableMode, vars: { target?: number } = {}): string {
   const target = vars.target ?? 100;
-  return id === 'hill' ? t('mode.hill.rule', { target }) : id === 'vip' ? t('mode.vip.rule') : t('mode.classic.rule');
+  return id === 'hill' ? t('mode.hill.rule', { target }) : id === 'vip' ? t('mode.vip.rule') : id === 'ctf' ? t('mode.ctf.rule', { target: vars.target ?? 3 }) : t('mode.classic.rule');
 }
 
 export function modeName(id: SelectableMode): string {
-  return id === 'hill' ? t('mode.hill.name') : id === 'vip' ? t('mode.vip.name') : t('mode.classic.name');
+  return id === 'hill' ? t('mode.hill.name') : id === 'vip' ? t('mode.vip.name') : id === 'ctf' ? t('mode.ctf.name') : t('mode.classic.name');
 }
 
 export interface ModePickerOptions {

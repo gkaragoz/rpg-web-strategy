@@ -68,7 +68,9 @@ export class WorkerSim implements SimBackend {
   modeHud: ModeHud = { kind: 'classic' };
   /** Points per team of the mode, or undefined for classic. */
   get scores(): number[] | undefined {
-    return this.modeHud.kind === 'hill' ? this.modeHud.scores.slice(0, this.alivePerTeam.length) : undefined;
+    const h = this.modeHud;
+    if (h.kind === 'hill') return h.scores.slice(0, this.alivePerTeam.length);
+    return h.kind === 'ctf' ? h.captures.slice(0, this.alivePerTeam.length) : undefined;
   }
   protected readonly worker: Worker;
   protected readonly sh: Shared;

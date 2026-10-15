@@ -23,7 +23,7 @@ import { hex } from './state';
 import type { WorldView } from './world';
 import { clearDebug, setDebug } from '../debug';
 import { Scope } from './scope';
-import { ModeStrip, hillZoneSpecs, vipMarkers } from './modeHud';
+import { ModeStrip, ctfMarkers, hillZoneSpecs, vipMarkers } from './modeHud';
 
 /** Outline colour of the focused team's soldiers (team colours would vanish against their own units). */
 const FOCUS_OUTLINE = 0xffffff;
@@ -509,7 +509,7 @@ export class BattleScene {
           this.d.world.setZones(hillZoneSpecs(hud.points, this.opts.colors.map((c) => c.main), this.d.world.mapSize));
         }
       }
-      this.modeStrip.update(hud.kind === 'hill' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : hud.kind === 'vip' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : null, this.opts.colors.length);
+      this.modeStrip.update(hud.kind === 'hill' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : hud.kind === 'vip' || hud.kind === 'ctf' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : null, this.opts.colors.length);
       const top = document.getElementById('hud-teams')?.getBoundingClientRect().bottom ?? 52;
       this.modeStrip.el.style.top = `${Math.round(top + 6)}px`;
     }
@@ -595,8 +595,9 @@ export class BattleScene {
         return `<tr class="${r.ti === winner ? 'win' : ''}"><td><span class="res-dot" style="background:${r.color}"></span>${this.teamName(r.ti).replace(/[&<>]/g, '')}${r.ti === winner ? ` <em>${t('battle.result.winner')}</em>` : ''}</td>${scored ? `<td>${Math.floor(r.score ?? 0)}</td>` : ''}<td>${r.alive} / ${r.start}</td><td>${r.pct}%</td><td>${fmtDamage(r.dmg)}</td><td>${Math.round(r.kills)}</td><td>${mvp}</td></tr>`;
       })
       .join('');
+    const scoreHead = this.opts.config.rules === 'ctf' ? t('mode.result.captures') : t('mode.result.score');
     const th = (k: string): string => `<th>${t(`battle.result.col.${k}`)}</th>`;
-    return `<div class="res-scroll"><table class="res-tbl"><thead><tr>${th('team')}${scored ? `<th>${t('mode.result.score')}</th>` : ''}${th('alive')}${th('health')}${th('damage')}${th('kills')}${th('mvp')}</tr></thead><tbody>${body}</tbody></table></div>`;
+    return `<div class="res-scroll"><table class="res-tbl"><thead><tr>${th('team')}${scored ? `<th>${scoreHead}</th>` : ''}${th('alive')}${th('health')}${th('damage')}${th('kills')}${th('mvp')}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
 
   /** Per-team breakdown by unit type (hidden until the Details button is pressed). */
@@ -761,7 +762,9 @@ export class BattleScene {
     if (this.simTimeBase < 0) this.simTimeBase = this.sim.time;
     if (this.modeStrip) {
       const hud = this.sim.modeHud;
-      if (hud.kind === 'vip') this.d.world.setMarkers(vipMarkers(hud, this.sim.units, info.alpha, this.opts.colors.map((c) => c.main)));
+      const cols = this.opts.colors.map((c) => c.main);
+      if (hud.kind === 'vip') this.d.world.setMarkers(vipMarkers(hud, this.sim.units, info.alpha, cols));
+      else if (hud.kind === 'ctf') this.d.world.setMarkers(ctfMarkers(hud, this.sim.units, info.alpha, cols));
     }
 
     const t1 = performance.now();
