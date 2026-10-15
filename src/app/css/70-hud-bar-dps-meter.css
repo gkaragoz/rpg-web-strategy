@@ -1,0 +1,278 @@
+/* ---- Battle HUD: one shared bar, every team's width = its share of all remaining health ---- */
+.hud-split {
+  display: flex;
+  width: min(440px, calc(100vw - 40px));
+  height: 28px;
+  gap: 2px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.hud-seg {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: flex-grow 0.35s ease, filter 0.15s;
+}
+.hud-seg:hover,
+.hud-seg.focus {
+  filter: brightness(1.18);
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+  outline-offset: -2px;
+}
+.hud-seg.out {
+  flex-grow: 0 !important;
+  padding: 0;
+  border: 0;
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.hud-seg-n {
+  padding: 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hud-tip {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  max-width: calc(100vw - 16px);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.hud-tip[hidden] {
+  display: none;
+}
+.hud-tip .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.hud-tip span {
+  color: var(--muted);
+}
+@media (max-width: 760px), (max-height: 520px) {
+  .hud-split {
+    width: min(440px, calc(100vw - 32px));
+    height: 30px;
+  }
+}
+
+/* ---- Battle damage meter (top-left) ---- */
+.dps {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 8;
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  padding: 8px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  font-size: 12px;
+}
+.dps-tabs {
+  display: flex;
+  gap: 4px;
+}
+.dps-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  opacity: 0.45;
+  cursor: pointer;
+}
+.dps-tab.on {
+  opacity: 1;
+}
+.dps-toggle {
+  flex: none;
+  width: 28px;
+  padding: 0;
+  border-radius: 8px;
+}
+.dps-head {
+  padding: 6px 4px 4px;
+  color: var(--muted);
+}
+.dps-head:empty {
+  display: none;
+}
+.dps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+.dps.collapsed .dps-head,
+.dps.collapsed .dps-list {
+  display: none;
+}
+.dps.collapsed {
+  width: auto;
+}
+.dps.collapsed .dps-tab {
+  flex: none;
+  max-width: 90px;
+}
+.dps-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  overflow: hidden;
+  border-radius: 8px;
+}
+.dps-row > * {
+  position: relative;
+}
+.dps-fill {
+  position: absolute !important;
+  inset: 0 auto 0 0;
+  border-radius: 8px;
+  opacity: 0.22;
+  transition: width 0.3s;
+}
+.dps-rk {
+  width: 16px;
+  text-align: right;
+  font-weight: 700;
+  color: var(--muted);
+}
+.dps-th {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.dps-nm {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.dps-nm b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.dps-nm small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+.dps-v {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+.dps-v b {
+  font-weight: 700;
+}
+.dps-v em {
+  padding: 0 6px;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 99px;
+}
+.dps-row.dead .dps-nm b {
+  text-decoration: line-through;
+}
+.dps-row.dead {
+  opacity: 0.5;
+}
+@media (max-width: 760px), (max-height: 520px) {
+  .dps {
+    top: calc(52px + env(safe-area-inset-top, 0px));
+    left: 8px;
+    box-sizing: border-box;
+    width: min(318px, calc(100vw - 16px));
+  }
+  .dps-list {
+    max-height: 38vh;
+  }
+}
+
+/* Mid-width windows: the side panels and the centered, wrapping dock share the bottom: stop the panels above the dock. */
+@media (min-width: 761px) and (max-width: 1260px) {
+  .panel {
+    max-height: calc(100dvh - 340px);
+  }
+}
+/* The right panel also stays above the language bar that bottomStack.ts lifts over the dock (--bar-h): 8 px gap + 8 px air + 38 px panel chrome. */
+@media (min-width: 901px) and (max-width: 1260px) {
+  .panel.right {
+    max-height: min(calc(100dvh - 340px), calc(100dvh - var(--bar-h, 0px) - var(--lp-h, 28px) - 54px));
+  }
+}
+/* 3D view: the rotate / tilt buttons (.cam3d, 74 px tall) sit above the language bar; the right panel ends above them (120 = 74 + 8 air + 38 chrome). */
+@media (min-width: 901px) {
+  :root:has(.cam3d) .panel.right {
+    max-height: calc(100dvh - var(--bar-h, 0px) - var(--cam-lift, 50px) - 120px);
+  }
+}
+@media (min-width: 901px) and (max-width: 1260px) {
+  :root:has(.cam3d) .panel.right {
+    max-height: min(calc(100dvh - 340px), calc(100dvh - var(--bar-h, 0px) - var(--cam-lift, 50px) - 120px));
+  }
+}
+
+/* Mid-width windows: the centered team bar would run into the damage meter (left) and the stats panel (right): drop them below it. */
+@media (min-width: 761px) and (max-width: 1300px) and (min-height: 521px) {
+  .dps,
+  #stats {
+    top: 64px;
+  }
+}
+
+/* Desktop: the chat lines (bottom left) stay clear of the centered key hint above the bottom bar. */
+@media (min-width: 761px) and (min-height: 521px) {
+  .on-ingame-chat {
+    width: min(360px, max(140px, calc(50vw - 340px)));
+  }
+}

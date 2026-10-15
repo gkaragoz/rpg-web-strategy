@@ -1,0 +1,207 @@
+/* ---------------- Language picker (bottom right) + connection badge stacking ---------------- */
+/* Full-screen button sits left of the language button inside the same bar. */
+.lang-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: fixed;
+  right: calc(8px + env(safe-area-inset-right, 0px));
+  bottom: calc(max(var(--bar-h, 0px), env(safe-area-inset-bottom, 0px)) + 8px);
+  z-index: 30;
+  font: 13px/1.3 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--text);
+}
+/* Version number: tiny, always visible, never intercepts clicks. */
+.app-ver {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  opacity: 0.8;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+.fs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  color: var(--text);
+  background: rgba(16, 22, 32, 0.82);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+.fs-btn[hidden] {
+  display: none;
+}
+.view-seg {
+  display: inline-flex;
+  background: rgba(16, 22, 32, 0.82);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  overflow: hidden;
+}
+.view-seg[hidden] {
+  display: none;
+}
+.view-seg button {
+  padding: 4px 9px;
+  min-width: 34px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.view-seg button[aria-pressed='true'] {
+  color: #fff;
+  background: rgba(59, 130, 246, 0.55);
+}
+.fs-btn svg {
+  box-shadow: none;
+  border-radius: 0;
+}
+.lp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  background: rgba(16, 22, 32, 0.82);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+.lang-picker svg {
+  flex: none;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.lp-caret {
+  font-size: 10px;
+  opacity: 0.7;
+}
+.lp-list {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  margin: 0;
+  padding: 4px;
+  min-width: 200px;
+  max-height: 60dvh;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  backdrop-filter: blur(6px);
+}
+.lp-list[hidden] {
+  display: none;
+}
+.lp-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.lp-list li:hover,
+.lp-list li:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+}
+.lp-list li[aria-selected='true'] {
+  background: rgba(59, 130, 246, 0.22);
+}
+.lp-opt {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.lp-opt small {
+  color: var(--muted);
+  font-size: 11px;
+}
+/* 3D view: rotate / tilt buttons (bottom right, under the online screens). */
+.cam3d {
+  position: fixed;
+  right: calc(10px + env(safe-area-inset-right, 0px));
+  bottom: calc(max(var(--bar-h, 0px), env(safe-area-inset-bottom, 0px)) + var(--cam-lift, 50px));
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(2, 34px);
+  gap: 6px;
+}
+/* --cam-lift (bottomStack.ts) keeps the buttons above the picker bar and a stacked connection badge. */
+.cam3d button {
+  height: 34px;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--text);
+  background: rgba(16, 22, 32, 0.82);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  touch-action: none;
+}
+.cam3d button:active {
+  background: rgba(59, 130, 246, 0.5);
+}
+/* Phone layout: the full-width battle hint stops before the rotate / tilt buttons (2 x 42 px + gap + gutter) instead of running under them. */
+@media (max-width: 760px), (max-height: 520px) {
+  :root:has(.cam3d) .hud-hint {
+    right: calc(116px + env(safe-area-inset-right, 0px));
+  }
+}
+@media (pointer: coarse) {
+  .cam3d {
+    grid-template-columns: repeat(2, 42px);
+  }
+  .cam3d button {
+    height: 42px;
+  }
+}
+/* The connection badge stacks next to / above the picker (see src/app/bottomStack.ts). */
+.on-badge {
+  right: calc(10px + var(--lp-side, 0px) + env(safe-area-inset-right, 0px));
+  bottom: calc(max(var(--bar-h, 0px), env(safe-area-inset-bottom, 0px)) + var(--lp-lift, 0px) + 10px);
+}
+@media (pointer: coarse) {
+  .lp-btn,
+  .fs-btn,
+  .view-seg button {
+    min-height: 40px;
+    min-width: 40px;
+  }
+  .lp-list li {
+    min-height: 44px;
+  }
+}
+@media (max-width: 760px), (max-height: 520px) {
+  .lp-name {
+    display: none; /* flag + chevron only on phones; the list still shows country and language */
+  }
+}
+/* Dialog header rows must not shrink when the body is tall (the map filter chips were clipped). */
+.map-chips,
+.ug-bar {
+  flex: none;
+}
+
+/* Touch: no double-tap zoom on buttons, dialogs scroll vertically only (the canvas has its own touch-action: none). */
+html,
+body {
+  touch-action: manipulation;
+}
+dialog {
+  touch-action: pan-y;
+}

@@ -1,0 +1,416 @@
+/* ---------------- Mobile / touch ---------------- */
+.sheet-handle {
+  display: none;
+}
+.dock-scroll {
+  display: contents;
+}
+.hud-view {
+  display: inline-flex;
+  gap: 4px;
+}
+
+@media (pointer: coarse) {
+  button,
+  select {
+    min-height: 40px;
+  }
+  .seg button {
+    min-height: 40px;
+    padding: 6px 12px;
+  }
+  .stepper button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  button.mini {
+    min-height: 34px;
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+  input[type='checkbox'][role='switch'] {
+    width: 44px;
+    height: 24px;
+    border-radius: 12px;
+  }
+  input[type='checkbox'][role='switch']::after {
+    width: 20px;
+    height: 20px;
+  }
+  input[type='checkbox'][role='switch']:checked::after {
+    transform: translateX(20px);
+  }
+  input[type='number'],
+  input[type='text'],
+  input[type='search'],
+  input[type='password'],
+  .on-panel input,
+  .on-panel select {
+    min-height: 40px;
+    font-size: 16px; /* keep iOS from zooming on focus */
+  }
+  .on-sw {
+    width: 40px;
+    height: 40px;
+  }
+  .on-sw.sm {
+    /* the coarse-pointer rule gives every button min-height 40px: 40x40 keeps the swatch round and a proper touch target */
+    width: 40px;
+    height: 40px;
+  }
+  .on-x {
+    min-width: 44px;
+  }
+  .on-ig-btn {
+    min-height: 40px;
+    min-width: 44px;
+  }
+  .on-badge {
+    min-height: 40px;
+    padding: 4px 12px;
+  }
+}
+
+@media (max-width: 760px), (max-height: 520px) {
+  /* Bottom drawer: when closed a single row of scrollable primary items; tapping the handle shows all. */
+  .dock {
+    display: block;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    max-width: none;
+    border-radius: 16px 16px 0 0;
+    border-bottom: 0;
+    padding: 38px max(0px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(0px, env(safe-area-inset-left, 0px));
+  }
+  .sheet-handle {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 40px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 16px 16px 0 0;
+    background: transparent;
+    touch-action: none;
+  }
+  .sheet-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 14px;
+    width: 46px;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.38);
+    transform: translateX(-50%);
+  }
+  .dock-scroll {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 0 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .dock-scroll::-webkit-scrollbar {
+    display: none;
+  }
+  .dock-scroll > .dock-group {
+    flex: 0 0 auto;
+  }
+  .dock:not(.open) .dock-scroll > .dock-group:not(.primary),
+  .dock:not(.open) .sec,
+  .dock:not(.open) .dock-hint {
+    display: none;
+  }
+  .dock-scroll > .dock-group.end {
+    position: sticky;
+    right: 0;
+    padding-left: 8px;
+    background: #101620;
+    box-shadow: -10px 0 8px -4px #101620;
+  }
+  .dock.open .dock-scroll {
+    flex-wrap: wrap;
+    justify-content: center;
+    max-height: 72dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .dock.open .dock-scroll > .dock-group.end {
+    position: static;
+  }
+  .dock.open .dock-scroll > .dock-group {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 100%;
+  }
+  .sheet-handle:hover:not(:disabled),
+  .sheet-handle:active {
+    background: transparent;
+  }
+  .dock-note {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: calc(var(--dock-h, 80px) + 8px);
+    flex-basis: auto;
+    z-index: 6;
+  }
+
+  /* Battle HUD */
+  .hud-top {
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    max-width: calc(100vw - 16px);
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 4px 8px;
+    gap: 4px 6px;
+  }
+  .hud-bottom {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-width: none;
+    transform: none;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-radius: 16px 16px 0 0;
+    border-bottom: 0;
+    padding: 8px max(10px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px));
+  }
+  .hud-bottom::-webkit-scrollbar {
+    display: none;
+  }
+  .hud-bottom > * {
+    flex: 0 0 auto;
+  }
+  .hud-bottom .sec {
+    display: none;
+  }
+  .hud-hint {
+    left: 8px;
+    right: 8px;
+    transform: none;
+    max-width: none;
+    text-align: center;
+    background: rgba(10, 14, 20, 0.6);
+    animation: hint-out 1s ease 6s forwards;
+  }
+  /* Camera buttons right next to speed/pause for quick access */
+  .hud-bottom #hud-speed {
+    order: 1;
+  }
+  .hud-bottom #hud-pause {
+    order: 2;
+  }
+  .hud-bottom .hud-view {
+    order: 3;
+  }
+  .hud-bottom #hud-sound {
+    order: 4;
+  }
+  .hud-bottom #hud-cv {
+    order: 5;
+  }
+  .hud-bottom #hud-restart {
+    order: 6;
+  }
+  .hud-bottom #hud-edit {
+    order: 7;
+    position: sticky;
+    right: 0;
+    box-shadow: -10px 0 8px -2px rgba(16, 22, 32, 0.95);
+  }
+  .result > div {
+    max-width: calc(100vw - 24px);
+    padding: 14px 18px;
+  }
+  .toasts {
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    max-width: calc(100vw - 24px);
+  }
+  #stats {
+    min-width: 0;
+    font-size: 11px;
+    right: 4px;
+    top: calc(4px + env(safe-area-inset-top, 0px));
+  }
+
+  /* Panels */
+  .panel {
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    max-height: calc(100dvh - 100px);
+  }
+
+  /* Dialogs: full-screen page */
+  .unit-dialog,
+  .gallery-dialog,
+  .map-dialog {
+    max-width: 100vw;
+    width: 100vw;
+    max-height: 100dvh;
+    height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+    border: 0;
+  }
+  .unit-dialog form {
+    height: 100%;
+    max-height: 100dvh;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .ug-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .ug-icon {
+    width: 72px;
+    height: 84px;
+  }
+  .ug-card {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .ug-stat {
+    grid-template-columns: 13px 38px minmax(0, 1fr) 30px;
+    gap: 4px;
+    font-size: 10.5px;
+  }
+  .ug-price {
+    top: 6px;
+    right: 6px;
+    font-size: 10.5px;
+  }
+  .ug-bar {
+    padding: 8px 10px 0;
+  }
+
+  /* Online screens */
+  .on-screen {
+    padding: 8px;
+    align-items: flex-start;
+  }
+  .on-menu-panel {
+    padding: 12px;
+  }
+  .on-cards {
+    grid-template-columns: 1fr;
+  }
+  .on-panel {
+    padding: 12px;
+  }
+  .on-nameinp {
+    width: 100px;
+  }
+  .on-prow {
+    flex-wrap: wrap;
+  }
+  .on-code {
+    font-size: 18px;
+  }
+  .on-top {
+    top: calc(6px + env(safe-area-inset-top, 0px));
+    padding: 4px 8px;
+    gap: 4px 8px;
+  }
+  .on-chip {
+    padding: 1px 6px;
+    font-size: 12px;
+  }
+  .on-gold {
+    min-width: 130px;
+  }
+  .on-toast {
+    top: calc(70px + env(safe-area-inset-top, 0px));
+    max-width: calc(100vw - 24px);
+  }
+  .on-ingame-chat {
+    left: 8px;
+    /* Chat lines stay left of the picker / badge column (bottomStack.ts); the open input may use the full width. */
+    width: min(360px, max(120px, calc(100vw - var(--lp-w, 0px) - 24px)));
+  }
+  .on-ingame-chat:has(.on-ig-in:not([hidden])) {
+    width: calc(100vw - 16px);
+  }
+}
+.on-tabs {
+  display: none;
+}
+@media (max-width: 760px), (max-height: 520px) {
+  .on-lobby {
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .on-tabs {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+  }
+  .on-tabs button {
+    flex: 1;
+    min-height: 44px;
+    font-weight: 600;
+  }
+  .on-tabs button[aria-selected='true'] {
+    background: var(--accent);
+    border-color: transparent;
+    color: #fff;
+  }
+  .on-lobby-grid[data-tab='players'] .on-settings,
+  .on-lobby-grid[data-tab='settings'] .on-players {
+    display: none;
+  }
+  .on-lobby-grid {
+    width: 100%;
+  }
+}
+.on-sw {
+  flex: none;
+}
+
+@keyframes hint-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+.ug-grid {
+  grid-auto-rows: max-content;
+  align-content: start;
+}
+
+#loading small {
+  color: #6b7c92;
+  font-size: 12px;
+}
+.legal {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.legal a {
+  color: var(--accent);
+}
+@media (pointer: coarse) {
+  .legal a {
+    display: inline-block;
+    padding: 13px 6px; /* >= 40 px tap target */
+    margin: -13px -6px;
+  }
+}

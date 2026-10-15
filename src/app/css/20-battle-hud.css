@@ -1,0 +1,114 @@
+/* Battle HUD */
+.hud-top {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+}
+.hud-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.hud-team.out {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+.hud-bottom {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  /* Natural width (not squeezed to the right half by left: 50%), wrapping only when the window is narrower. */
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+}
+.hud-hint {
+  position: absolute;
+  /* Centered above the bottom bar (and the picker / badge when they are stacked above it): see bottomStack.ts (--hint-b). */
+  left: 50%;
+  bottom: var(--hint-b, 66px);
+  transform: translateX(-50%);
+  max-width: min(calc(100vw - 24px), 640px);
+  text-align: center;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(10, 14, 20, 0.6);
+  color: var(--muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+.result {
+  position: absolute;
+  inset: 0;
+  z-index: 12; /* above the damage meter (z-index 8) so the scoreboard is never half hidden */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.result > div {
+  pointer-events: auto;
+  text-align: center;
+  padding: 18px 28px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+}
+.result h2 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+}
+.result p {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+.result .btns {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+@media (max-width: 900px) {
+  .panel {
+    width: min(300px, calc(100vw - 24px));
+    display: none;
+    z-index: 5;
+  }
+  .panel.open {
+    display: block;
+  }
+  /* The panel is a different stacking context than the fixed 2D/3D + language bar lifted over the dock, which would sit on top of its seed row: hide the bar while a panel is open (the panel has its own close button). */
+  :root:has(.panel.open) .lang-picker {
+    visibility: hidden;
+  }
+  .only-narrow {
+    display: inline-block;
+  }
+  .dock-hint {
+    display: none;
+  }
+}

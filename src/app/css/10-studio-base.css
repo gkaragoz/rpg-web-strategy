@@ -1,0 +1,350 @@
+:root {
+  --bg: #1a2332;
+  --panel: rgba(16, 22, 32, 0.9);
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --text: #e6edf6;
+  --muted: #9fb0c4;
+  --accent: #3b82f6;
+  --accent-text: #fff;
+  --danger: #e0463b;
+  --radius: 10px;
+}
+
+.studio,
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  color: var(--text);
+  font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+.studio[hidden],
+.hud[hidden] {
+  display: none;
+}
+.studio > *,
+.hud > * {
+  pointer-events: auto;
+}
+
+.panel {
+  position: absolute;
+  top: 12px;
+  width: 270px;
+  max-height: calc(100dvh - 140px);
+  overflow-y: auto;
+  color-scheme: dark;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  backdrop-filter: blur(6px);
+}
+.panel.left {
+  left: 12px;
+}
+.panel.right {
+  right: 12px;
+}
+.panel header h1 {
+  margin: 0 0 2px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.panel header p {
+  margin: 0 0 6px;
+  color: var(--muted);
+}
+.panel section {
+  border-top: 1px solid var(--panel-border);
+  padding: 10px 0 4px;
+  margin-top: 8px;
+}
+.panel section:first-of-type {
+  border-top: 0;
+  margin-top: 0;
+}
+.panel h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.panel h3 {
+  margin: 10px 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+.row small {
+  color: var(--muted);
+  margin-left: 4px;
+}
+.inline {
+  display: inline-flex;
+  gap: 6px;
+}
+.note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--panel-border);
+  border-radius: 7px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+.trow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+button.primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-text);
+  font-weight: 600;
+  padding: 7px 16px;
+}
+button.primary:hover:not(:disabled) {
+  background: #2f6fe0;
+}
+button.wide {
+  width: 100%;
+}
+input[type='number'] {
+  width: 84px;
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--panel-border);
+  border-radius: 7px;
+  padding: 4px 6px;
+}
+input[type='checkbox'][role='switch'] {
+  appearance: none;
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.2);
+  position: relative;
+  cursor: pointer;
+  flex: none;
+}
+input[type='checkbox'][role='switch']::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.12s;
+}
+input[type='checkbox'][role='switch']:checked {
+  background: var(--accent);
+}
+input[type='checkbox'][role='switch']:checked::after {
+  transform: translateX(16px);
+}
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--panel-border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.seg button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 4px 9px;
+}
+.seg button[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.stepper button {
+  width: 26px;
+  padding: 3px 0;
+}
+.stepper b {
+  min-width: 14px;
+  text-align: center;
+}
+
+.palette {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+  padding: 6px 8px;
+}
+.palette.sel {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  background: rgba(59, 130, 246, 0.14);
+}
+.swatches {
+  display: inline-flex;
+  gap: 3px;
+}
+.swatches i,
+.dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+.dot {
+  flex: none;
+}
+
+.trow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 2px 8px;
+  padding: 6px 8px;
+  margin-bottom: 5px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.trow.sel {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.12);
+}
+.trow small {
+  grid-column: 2 / 4;
+  color: var(--muted);
+}
+.trow button {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.dock {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 14px;
+  max-width: calc(100vw - 24px);
+  padding: 8px 12px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  backdrop-filter: blur(6px);
+}
+.dock-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.dock-group.end {
+  gap: 10px;
+}
+.chip,
+.kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.chip.sel,
+.kind.sel {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  background: rgba(59, 130, 246, 0.2);
+}
+.chip small {
+  color: var(--muted);
+}
+kbd {
+  font: 11px ui-monospace, Consolas, monospace;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.total {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.only-narrow {
+  display: none;
+}
+
+.dock-hint {
+  flex-basis: 100%;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.dock-note {
+  flex-basis: 100%;
+  text-align: center;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(224, 70, 59, 0.9);
+  color: #fff;
+  font-weight: 500;
+}
+.dock-note[hidden] {
+  display: none;
+}
+.toasts {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  pointer-events: none;
+}
+.toast {
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(10, 14, 20, 0.92);
+  border: 1px solid var(--panel-border);
+  transition: opacity 0.5s;
+}
+.toast.out {
+  opacity: 0;
+}
