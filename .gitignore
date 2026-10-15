@@ -5,3 +5,4 @@ test-results
 .balance
 .bench
 coverage/
+test-results/

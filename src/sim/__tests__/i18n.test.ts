@@ -165,7 +165,7 @@ describe('i18n', () => {
   it('Turkish uses the same decimal and quote conventions as the code (no half-translated hints)', () => {
     // A tr text identical to the English one is only fine for names, abbreviations and technical terms.
     const same = Object.keys(en).filter((k) => en[k] === tr[k] && /[a-z]{4}/.test(en[k]));
-    const allowed = new Set(['studio.bench.h', 'studio.pal.pastel', 'battle.stats.sim', 'online.lobby.hostNote']);
+    const allowed = new Set(['studio.bench.h', 'studio.pal.pastel', 'battle.stats.sim', 'online.lobby.hostNote', 'tour.progress', 'tour.help']);
     expect(same.filter((k) => !allowed.has(k))).toEqual([]);
   });
 

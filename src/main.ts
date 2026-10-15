@@ -572,6 +572,7 @@ function startOnline(joinCode?: string): void {
         studio.show();
         editor.enter();
         nav.go('studio');
+        studio.maybeStartTour();
       }
     },
   });
@@ -675,6 +676,7 @@ if (isBench) {
   if (act === 'studio') {
     // The studio is already shown; battles are not resumed.
     nav.boot('studio');
+    studio.maybeStartTour();
   } else {
     startOnline(joinHash ? joinHash[1].toUpperCase() : undefined);
     if (act === 'rejoin' && (online as OnlineApp | null)?.rejoinLast()) nav.boot('online');

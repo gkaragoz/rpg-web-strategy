@@ -7,7 +7,7 @@
     "type": "git",
     "url": "https://github.com/gkaragoz/rpg-web-strategy.git"
   },
-  "version": "1.28.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,6 +20,8 @@
     "lint:layers": "node scripts/check-layers.mjs",
     "test:cov": "vitest run --coverage",
     "test:golden": "vitest run golden",
+    "e2e": "node scripts/e2e.mjs",
+    "test:visual": "node scripts/visual.mjs",
     "bench:sim": "node scripts/bench-sim.mjs",
     "balance": "node scripts/balance.mjs",
     "balance:quick": "node scripts/balance.mjs --quick",

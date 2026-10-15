@@ -1,0 +1,32 @@
+name: E2E
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Browser tests
+        run: npm run e2e
+        env:
+          CHROME: /usr/bin/google-chrome
+      - name: Visual regression
+        run: npm run test:visual
+        env:
+          CHROME: /usr/bin/google-chrome
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: visual-diffs
+          path: test-results
+          if-no-files-found: ignore

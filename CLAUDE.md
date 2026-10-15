@@ -9,7 +9,9 @@ Browser isometric auto-battle game (PixiJS v8 + Vite + TypeScript, Vitest). Up t
 | `npm run check:fast` | tsc + repo rules + the fast tests (~15 s) — **run this after every change** |
 | `npm run check` | tsc + repo rules + the full test suite (~90 s; before a commit/PR) |
 | `npm run test:net` / `test:sim` | online-stack tests / simulation tests only |
-| `npm run lint:repo` | forbidden terms, Turkish-in-code, README images (`scripts/check-repo.mjs`) |
+| `npm run lint:repo` / `npm run lint:layers` | forbidden terms, Turkish-in-code, README images / layer rules + import cycles (`scripts/check-repo.mjs`, `scripts/check-layers.mjs`) |
+| `npm run e2e` / `npm run test:visual` | real headless-Chrome tests against `dist/` (build first) / screenshot diff vs `tests/visual` (`-- --update` rewrites) |
+| `npm run test:golden` / `npm run test:cov` | committed simulation hashes (`GOLDEN_UPDATE=1` only for an intended sim change) / coverage |
 | `npm run build` | tsc + production build into `dist/` |
 | `npm run screenshots` | rebuild + regenerate `docs/screenshots/*` and the README block (headless Chrome) |
 | `npm run balance:quick` / `npm run balance` | headless balance tournament (no graphics, deterministic) → `.balance/*.txt`; see `docs/UNITS.md` |
@@ -19,6 +21,7 @@ Browser isometric auto-battle game (PixiJS v8 + Vite + TypeScript, Vitest). Up t
 - `src/render/` — PixiJS drawing: `unitView.ts` (detailed unit, `POSE_STATES`), `looks.ts` (1.1k: one drawing recipe per roster unit id), `atlas.ts` (baked textures), `massRenderer.ts` (crowds), `fx.ts`, `comedy.ts`, `audio.ts`.
 - `src/app/` — DOM UI: `studio.ts` (+ `studio.css`, all CSS lives here), `battle.ts` (battle scene + HUD), `editor.ts` (placement), `mapPicker.ts`, `unitGallery.ts` + `unitPreview.ts` (animated attack previews), `dpsMeter.ts` (battle damage meter), `unitSettings.ts`, `langPicker.ts`, `sheet.ts` (mobile bottom sheet), `bottomStack.ts`, `state.ts`; `online/` — `online.ts` (OnlineApp: menu → lobby → placement → battle), `screens.ts`, `placement.ts`, `cursors.ts`, `chat.ts`, `badge.ts`.
 - `src/app/backend.ts` (WorldBackend/CameraBackend/Battle3D: the seam between the UI and the 2D/3D world drawing) + `src/render3d/` (Three.js 3D view: `world3d.ts`, `camera3d.ts`, `scene3d.ts`; same UI as 2D, switch `options.view` / `?view=3d`), see `docs/RENDER3D.md`.
+- `src/contracts/` (types shared by app/render/render3d), `src/app/scope.ts` (listener/timer cleanup), `src/app/hotkeys.ts` (language-dependent keys), `src/app/tutorial.ts` + `tourLogic.ts` (first-run tour), `src/debug.ts` (`window.__*` hooks only with `?debug`). Browser tests open pages with `?debug=1&tour=off`.
 - `src/net/` — `protocol.ts` (messages, `PROTOCOL` version), `host.ts` (authoritative lobby state machine), `client.ts`, `lockstep.ts`, `transport.ts`/`wsTransport.ts`/`peerTransport.ts`, `chunk.ts` (large-message splitting), `economy.ts` (gold costs, zones).
 - `src/i18n.ts` + `src/i18n/*.ts` — UI strings (`t('area.key')`). `src/main.ts` — wiring/bootstrap.
 - `relay/` — Cloudflare Worker + Durable Object relay. `scripts/` — installers, `server.mjs`/`lan.mjs` (local server), `screenshots.mjs`, `check-repo.mjs`, `hooks/guard.mjs`. `docs/` — architecture notes. `.claude/` — rules, skills, agents.
@@ -26,11 +29,12 @@ Browser isometric auto-battle game (PixiJS v8 + Vite + TypeScript, Vitest). Up t
 ## Rules (enforced by tests, `lint:repo` and a Claude hook)
 1. **English** for code, comments, commit messages, docs. UI text only through `src/i18n/*.ts` with both `en` and `tr` entries; never hard-code UI strings.
 2. **No references to any third-party game or its data** anywhere (the roster is original). Do not copy names/stats/text from other games.
-3. **Determinism** (`src/sim`): no `Math.random`, `Date.now`, `performance.now`; use the `Mulberry` RNG. Online play depends on identical results on every client.
-4. **Protocol**: changing a message shape in `src/net/protocol.ts` ⇒ bump `PROTOCOL`; host sends machine codes, clients translate with `t()`.
-5. Keep the "© gkaragoz and Contributors" notice and the license files; contributions need the CLA.
-6. Run `npm run check:fast` after edits and the full `npm run check` before committing. Add or update a test for every bug fix.
-7. Never `git push --force`, rewrite history, or delete releases/tags without the user's explicit request.
+3. **Layers** (`npm run lint:layers`): `sim` imports nothing from app/render/net/i18n (UI text via `sim/text.ts`); `render*` never import `app`; no runtime import cycles. See `docs/ARCHITECTURE.md`.
+4. **Determinism** (`src/sim`): no `Math.random`, `Date.now`, `performance.now`; use the `Mulberry` RNG. Online play depends on identical results on every client.
+5. **Protocol**: changing a message shape in `src/net/protocol.ts` ⇒ bump `PROTOCOL`; host sends machine codes, clients translate with `t()`.
+6. Keep the "© gkaragoz and Contributors" notice and the license files; contributions need the CLA.
+7. Run `npm run check:fast` after edits and the full `npm run check` before committing. Add or update a test for every bug fix.
+8. Never `git push --force`, rewrite history, or delete releases/tags without the user's explicit request.
 
 ## Conventions
 - Strict TypeScript, no unused locals. Prefer small pure helpers that can be unit tested (see `previewOverlay.ts`, `chunk.ts`).

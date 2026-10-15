@@ -9,6 +9,7 @@ import { online } from './i18n/online';
 import { studio } from './i18n/studio';
 import { system } from './i18n/system';
 import type { Strings } from './i18n/types';
+import { tutorial } from './i18n/tutorial';
 import { units } from './i18n/units';
 import type { Localized } from './contracts/localized';
 import { setTranslator } from './sim/text';
@@ -59,7 +60,7 @@ export function onLang(f: (l: Lang) => void): () => void {
 /** Picks the current-language variant of a localized text. */
 export const loc = (l: Localized): string => l[lang];
 
-const TABLES = [studio, battle, maps, units, online, system];
+const TABLES = [studio, battle, maps, units, online, system, tutorial];
 const EN: Strings = Object.assign({}, ...TABLES.map((x) => x.en));
 const TR: Strings = Object.assign({}, ...TABLES.map((x) => x.tr));
 

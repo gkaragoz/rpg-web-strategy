@@ -183,3 +183,68 @@ body:has(.result:not([hidden])) #stats {
 .on-ingame-chat:has(.on-ig-in:not([hidden])) {
   z-index: 40;
 }
+
+/* ---- First-run tour ---- */
+.tour {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+}
+.tour-dim {
+  background: rgba(6, 10, 16, 0.6);
+}
+.tour-spot {
+  position: fixed;
+  display: none;
+  border-radius: 12px;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 9999px rgba(6, 10, 16, 0.6);
+  pointer-events: none;
+}
+.tour-balloon {
+  position: fixed;
+  box-sizing: border-box;
+  width: min(340px, calc(100vw - 20px));
+  padding: 14px 16px 12px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  color: var(--text);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.tour-balloon h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+.tour-balloon p {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.tour-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.tour-progress {
+  color: var(--muted);
+  font-size: 12px;
+}
+.tour-btns {
+  display: flex;
+  gap: 6px;
+}
+.tour-btns button {
+  min-height: 34px;
+}
+.dock-help {
+  min-width: 34px;
+}
+@media (pointer: coarse) {
+  .tour-btns button {
+    min-height: 40px;
+    min-width: 40px;
+  }
+}

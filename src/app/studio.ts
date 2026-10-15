@@ -1,5 +1,6 @@
 import { getLang, t } from '../i18n';
 import { isPlainShortcut, langKeys } from './hotkeys';
+import { Tour, shouldStartTour } from './tutorial';
 import type { UnitPreview } from './unitPreview';
 import { initSheet } from './sheet';
 import { LEGACY_COUNT, MAX_TEAMS, unitDisplayName } from '../sim/units';
@@ -68,6 +69,18 @@ export class Studio {
     this.bind();
     initSheet(root.querySelector('.dock') as HTMLElement);
     window.addEventListener('keydown', (e) => this.onKey(e));
+  }
+
+  /** Starts the quick tour (first run, or the "?" button). The side panels are closed first so they do not cover the highlighted controls. */
+  startTour(): void {
+    this.$('#panel-left').classList.remove('open');
+    this.$('#panel-right').classList.remove('open');
+    Tour.start(window.matchMedia('(pointer: coarse)').matches);
+  }
+
+  /** First run: shows the quick tour once the studio is the visible screen (never while the home page covers it). */
+  maybeStartTour(): void {
+    if (shouldStartTour()) window.setTimeout(() => this.visible && this.startTour(), 700);
   }
 
   show(): void {
@@ -166,10 +179,11 @@ export class Studio {
     <span id="total" class="total">0 / ${MAX_PLACED}</span>
     <button id="tgl-left" type="button" class="only-narrow sec">${t('studio.settings')}</button>
     <button id="tgl-right" type="button" class="only-narrow sec">${t('studio.teamsBtn')}</button>
+    <button id="tour-help" type="button" class="sec dock-help" title="${t('tour.help.title')}" aria-label="${t('tour.help.title')}">${t('tour.help')}</button>
     <button id="online" type="button" class="sec" title="${t('studio.online.title')}">${t('studio.online')}</button>
     <button id="start" type="button" class="primary">${t('studio.start')}</button>
   </div>
-  <div class="dock-hint" id="hint">${t(this.d.view3d ? 'studio.hint3d' : 'studio.hint')}</div>
+  <div class="dock-hint" id="hint">${t(this.d.view3d ? 'studio.hint3d' : 'studio.hint')} · ${t('studio.hint.keys', { key: langKeys(getLang()).gallery.replace('Key', ''), brushKey: langKeys(getLang()).brush.replace('Key', '') })}</div>
 </div>
 <div id="toasts" class="toasts" aria-live="polite"></div>`;
   }
@@ -269,6 +283,7 @@ export class Studio {
       if (!this.canStart().ok) return;
       this.d.onStart();
     });
+    this.$('#tour-help').addEventListener('click', () => this.startTour());
     this.$('#tgl-left').addEventListener('click', () => this.$('#panel-left').classList.toggle('open'));
     this.$('#tgl-right').addEventListener('click', () => this.$('#panel-right').classList.toggle('open'));
     // On phones the open panel covers the dock (and its Settings / Teams buttons): it carries its own close button.

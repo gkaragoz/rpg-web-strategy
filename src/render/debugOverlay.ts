@@ -2,6 +2,7 @@ import { Graphics, type Container } from 'pixi.js';
 import { t } from '../i18n';
 import { isoX, isoY } from '../iso';
 import type { Battle } from '../sim/battle';
+import { PATH_MAX } from '../sim/constants';
 import { STATS } from '../sim/units';
 import { StallDetector, type Flag } from '../sim/testing/stall';
 /** The overlay only needs a layer to draw into. */
@@ -87,8 +88,8 @@ export class DebugOverlay {
     const b = this.battle;
     const u = b.units;
     this.regions.visible = this.showRegions && this.showAll;
-    const paths = (b as unknown as { paths: Map<number, { pts: number[]; k: number }> }).paths;
     let stuck = 0;
+    let pathCount = 0;
     for (let i = 0; i < u.count; i++) {
       if (!u.alive[i]) continue;
       const wx = u.px[i] + (u.x[i] - u.px[i]) * alpha;
@@ -119,16 +120,12 @@ export class DebugOverlay {
     }
 
     if (this.showAll && this.showPaths) {
-      for (const [i, p] of paths) {
-        if (!u.alive[i]) continue;
-        let px = isoX(u.x[i], u.y[i]);
-        let py = isoY(u.x[i], u.y[i]);
-        g.moveTo(px, py);
-        for (let k = p.k; k < p.pts.length / 2; k++) {
-          px = isoX(p.pts[k * 2], p.pts[k * 2 + 1]);
-          py = isoY(p.pts[k * 2], p.pts[k * 2 + 1]);
-          g.lineTo(px, py);
-        }
+      // A* waypoints of units that follow a path live in the unit arrays (pathN waypoints from pathK on, PATH_MAX pairs per unit).
+      for (let i = 0; i < u.count; i++) {
+        if (!u.alive[i] || u.pathN[i] === 0) continue;
+        const base = i * PATH_MAX * 2;
+        g.moveTo(isoX(u.x[i], u.y[i]), isoY(u.x[i], u.y[i]));
+        for (let k = u.pathK[i]; k < u.pathN[i]; k++) g.lineTo(isoX(u.pathPts[base + k * 2], u.pathPts[base + k * 2 + 1]), isoY(u.pathPts[base + k * 2], u.pathPts[base + k * 2 + 1]));
         g.stroke({ width: 1.5, color: 0x3ddc84, alpha: 0.85 });
       }
     }
@@ -136,7 +133,8 @@ export class DebugOverlay {
     const now = performance.now();
     if (now - this.lastPanel > 250) {
       this.lastPanel = now;
-      this.renderPanel(stuck, paths.size);
+      for (let i = 0; i < u.count; i++) if (u.alive[i] && u.pathN[i] > 0) pathCount++;
+      this.renderPanel(stuck, pathCount);
     }
   }
 
