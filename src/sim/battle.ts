@@ -5,7 +5,7 @@ import { MovePool, PH_GRID, PH_MOVE, PH_PICK, PH_SEP_APPLY, PH_SEP_SCAN, phaseCh
 import { Picker } from './picker';
 import { Separator } from './separator';
 import { Mover, MV_FACE, MV_INTENT, MV_ROUTE, CNT_PATHS, CNT_PATH_FAILS, CNT_STUCK } from './mover';
-import { F_RAGE, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isStructure, isTank, KIND_COUNT, STRUCT_OF } from './units';
+import { LANE_TOWER_KIND, F_RAGE, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isStructure, isTank, KIND_COUNT, STRUCT_OF } from './units';
 import { Projectiles } from './projectiles';
 import { skillParams, type SkillParams } from './data/skills';
 import { Mulberry } from './random';
@@ -18,6 +18,7 @@ import { damage, updateZones, flyStep, applyKnockback } from './battleDamage';
 import { resolveHit, periodic, arrowLanded } from './battleSkills';
 import { beyondLeash, canShoot, updateThreat, tryKite, chaseWatchdog, leashHold, pickNow, marchToEnemy, followArmy } from './battleAi';
 import { spawnLayout, spawnArmy, spawnBenchArmy, setupSkills } from './battleSetup';
+import { towerStep } from './battleTower';
 import { modeFor, vipUnitsOf } from './modes';
 import type { ModeHud, ModeRules } from './modes/types';
 
@@ -142,6 +143,18 @@ export class Battle {
   readonly teamGoalY = new Float32Array(MAX_TEAMS);
   /** @internal */
   readonly teamHasGoal = new Uint8Array(MAX_TEAMS);
+  /**
+   * Optional per-unit goal set by the mode (Lane Conquest: the next waypoint of a soldier's lane): a unit WITHOUT a target marches
+   * there instead of toward the team goal / the nearest enemy. Empty arrays (length 0) outside Lane Conquest, so classic battles
+   * pay nothing; indexing an empty array gives undefined, which reads as "no goal". @internal
+   */
+  readonly unitGoalX: Float32Array;
+  /** @internal */
+  readonly unitGoalY: Float32Array;
+  /** @internal */
+  readonly unitHasGoal: Uint8Array;
+  /** Lane Conquest: the army-wide leash and the army-pull of retreating archers are off (lanes are separate fronts). @internal */
+  readonly noLeash: boolean;
 
   constructor(seed = 1, config: BattleConfig = { mode: 'demo', perTeam: 10 }) {
     this.config = config;
@@ -156,6 +169,11 @@ export class Battle {
     this.group = teamGroups(config);
     this.hordeTeam = hordeTeamIndex(config);
     this.comedy = config.comedy === true;
+    const lanes = config.rules === 'lanes';
+    this.noLeash = lanes;
+    this.unitGoalX = new Float32Array(lanes ? total : 0);
+    this.unitGoalY = new Float32Array(lanes ? total : 0);
+    this.unitHasGoal = new Uint8Array(lanes ? total : 0);
     this.mode = modeFor(config.rules);
     this.modeDrives = this.mode.drive !== undefined;
     this.modeDamages = this.mode.onDamage !== undefined;
@@ -233,6 +251,7 @@ export class Battle {
     this.teamGoalX.fill(0);
     this.teamGoalY.fill(0);
     this.teamHasGoal.fill(0);
+    this.unitHasGoal.fill(0);
     this.mode.init(this);
     // A mode may have spawned structures.
     this.countAlive();
@@ -520,11 +539,13 @@ export class Battle {
     u.stunT[i] = u.fearT[i] = u.tauntT[i] = 0;
     u.kbVx[i] = u.kbVy[i] = 0;
     u.airT[i] = u.lift[i] = 0;
-    u.swing[i] = 0;
     u.hitPending[i] = 0;
     u.target[i] = -1;
     u.sepX[i] = u.sepY[i] = 0;
     u.mvFlags[i] = 0;
+    // The Lane Conquest tower is the one armed structure: it times its own shots and animation.
+    if (u.kind[i] === LANE_TOWER_KIND) towerStep(this, i, dt);
+    else u.swing[i] = 0;
   }
 
   private updateUnit(i: number, dt: number): void {
@@ -837,7 +858,7 @@ export class Battle {
     this.teamGoalY.fill(0);
     this.teamHasGoal.fill(0);
     if (s.extra.mode && s.extra.mode.id === this.mode.id) {
-      this.mode.restore(s.extra.mode.state);
+      this.mode.restore(s.extra.mode.state, this);
       const g = s.extra.mode.goals;
       for (let t = 0; t < MAX_TEAMS; t++) {
         this.teamGoalX[t] = g[t] ?? 0;
@@ -873,6 +894,11 @@ export class Battle {
       h = fnv(h, this.teamGoalX, MAX_TEAMS, 4);
       h = fnv(h, this.teamGoalY, MAX_TEAMS, 4);
       h = fnv(h, this.teamHasGoal, MAX_TEAMS, 1);
+      if (this.unitHasGoal.length > 0) {
+        h = fnv(h, this.unitGoalX, n, 4);
+        h = fnv(h, this.unitGoalY, n, 4);
+        h = fnv(h, this.unitHasGoal, n, 1);
+      }
     }
     h ^= this.rngObj.a;
     h = Math.imul(h, 16777619) >>> 0;

@@ -10,17 +10,18 @@ const ICONS: Record<SelectableMode, string> = {
   vip: '<path d="M4 18h16M5 18 4 8l5 4 3-6 3 6 5-4-1 10" />',
   ctf: '<path d="M6 21V4m0 0 12 4-12 5" />',
   siege: '<path d="M4 21V9h3v3h3V9h4v3h3V9h3v12ZM9 21v-5h6v5" />',
+  lanes: '<path d="M3 7h18M3 12h18M3 17h18M6 4v16M18 4v16" />',
   horde: '<path d="M4 20c0-6 3-10 8-10s8 4 8 10M8 10 6 5m12 5 2-5M9 15h.01M15 15h.01" />',
 };
 
 /** Rule text of a mode (also shown under the cards); `target` fills the points goal. */
 export function modeRuleText(id: SelectableMode, vars: { target?: number } = {}): string {
   const target = vars.target ?? 100;
-  return id === 'hill' ? t('mode.hill.rule', { target }) : id === 'vip' ? t('mode.vip.rule') : id === 'ctf' ? t('mode.ctf.rule', { target: vars.target ?? 3 }) : id === 'siege' ? t('mode.siege.rule', { minutes: 5 }) : id === 'horde' ? t('mode.horde.rule', { waves: 12 }) : t('mode.classic.rule');
+  return id === 'hill' ? t('mode.hill.rule', { target }) : id === 'vip' ? t('mode.vip.rule') : id === 'ctf' ? t('mode.ctf.rule', { target: vars.target ?? 3 }) : id === 'siege' ? t('mode.siege.rule', { minutes: 5 }) : id === 'horde' ? t('mode.horde.rule', { waves: 12 }) : id === 'lanes' ? t('mode.lanes.rule') : t('mode.classic.rule');
 }
 
 export function modeName(id: SelectableMode): string {
-  return id === 'hill' ? t('mode.hill.name') : id === 'vip' ? t('mode.vip.name') : id === 'ctf' ? t('mode.ctf.name') : id === 'siege' ? t('mode.siege.name') : id === 'horde' ? t('mode.horde.name') : t('mode.classic.name');
+  return id === 'hill' ? t('mode.hill.name') : id === 'vip' ? t('mode.vip.name') : id === 'ctf' ? t('mode.ctf.name') : id === 'siege' ? t('mode.siege.name') : id === 'horde' ? t('mode.horde.name') : id === 'lanes' ? t('mode.lanes.name') : t('mode.classic.name');
 }
 
 export interface ModePickerOptions {

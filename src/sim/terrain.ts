@@ -6,6 +6,7 @@ import { computeRegions, fixPockets, buildRelief, finishRelief } from './terrain
 import { buildRiver, buildBridges, carveIslands, collectLand, buildCrossChannels, placeCastle, carveRoads } from './terrainRiver';
 import { PathScratch, lineWalkable, findPath } from './terrainPath';
 import { placeVillages, mirror, placeForest } from './terrainDecor';
+import { buildLanes, computeLanesGeometry, type LanesGeometry } from './terrainLanes';
 
 // Constants and data types live in terrainTypes.ts; re-exported so everything is still imported from './terrain'.
 export * from './terrainTypes';
@@ -45,6 +46,12 @@ export class Terrain {
   /** 1 for tiles sealed by fixPockets (the ground there is closed in and now an obstacle). */
   /** @internal */
   sealedMark = new Uint8Array(0);
+  /** Lanes layout only: lane (0..2) of every tile of a lane corridor, -1 elsewhere (plazas, walls); null on every other layout. */
+  laneOf: Int8Array | null = null;
+  /** Lanes layout only: castle, lane waypoints, spawn and tower spots computed from the generated corridors. */
+  laneGeo: LanesGeometry | null = null;
+  /** @internal Lanes layout only: shape parameters of the corridors. */
+  laneShape: unknown = null;
   readonly cx: number;
   readonly cy: number;
   private readonly sMin: number;
@@ -63,8 +70,8 @@ export class Terrain {
     this.opts = opts;
     this.spec = opts.spec ?? DEFAULT_MAP;
     this.layout = this.spec.layout;
-    this.riverKind = this.layout === 'citadel' || this.layout === 'crossroads' ? 'none' : this.layout === 'archipelago' ? 'islands' : this.spec.river;
-    this.reliefKind = this.layout === 'valley' ? 'valley' : this.layout === 'citadel' ? 'plateau' : this.layout === 'archipelago' || this.layout === 'crossroads' ? 'hills' : this.spec.relief;
+    this.riverKind = this.layout === 'citadel' || this.layout === 'crossroads' || this.layout === 'lanes' ? 'none' : this.layout === 'archipelago' ? 'islands' : this.spec.river;
+    this.reliefKind = this.layout === 'lanes' ? 'flat' : this.layout === 'valley' ? 'valley' : this.layout === 'citadel' ? 'plateau' : this.layout === 'archipelago' || this.layout === 'crossroads' ? 'hills' : this.spec.relief;
     this.cx = this.cy = size / 2;
     this.flags = new Uint8Array(size * size);
     this.occ = new Uint8Array(size * size);
@@ -100,6 +107,14 @@ export class Terrain {
       else this.widTab[i] = 5.2 + 0.6 * Math.cos(s * k3);
     }
 
+    if (this.layout === 'lanes') {
+      // Dedicated Lane Conquest map: no river, relief, villages or random forest.
+      buildLanes(this);
+      computeRegions(this);
+      fixPockets(this);
+      this.laneGeo = computeLanesGeometry(this);
+      return;
+    }
     buildRiver(this);
     if (rv !== 'none') buildBridges(this);
     if (rv === 'islands') carveIslands(this);
@@ -211,6 +226,15 @@ export class Terrain {
    */
   findPath(sx: number, sy: number, gx: number, gy: number, maxNodes = 0): number[] | null {
     return findPath(this, sx, sy, gx, gy, maxNodes);
+  }
+
+  /** Lane (0..2) of the corridor tile at (x,y); -1 in a plaza, on a wall, off the map or on any other layout. */
+  laneAt(x: number, y: number): number {
+    const m = this.laneOf;
+    if (m === null) return -1;
+    const n = this.size;
+    if (x < 0 || y < 0 || x >= n || y >= n) return -1;
+    return m[((y | 0) * n + (x | 0)) | 0];
   }
 
   /** Connected-component id of (x,y) (-1: not walkable / off the map). */

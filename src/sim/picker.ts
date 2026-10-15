@@ -85,6 +85,9 @@ export class Picker {
     const reach = STATS[kind].range * 0.95;
     const myRegion = terrain ? terrain.regionAt(u.x[i], u.y[i]) : -1;
     const banned = u.banT[i] > 0 ? u.banTarget[i] : -1;
+    // Lane Conquest: a unit inside a lane never picks a target inside another lane (the walls between lanes are far thicker than any range).
+    const lanes = terrain !== null && terrain.laneOf !== null;
+    const myLane = lanes ? (u.lane[i] >= 0 ? u.lane[i] : terrain!.laneAt(u.x[i], u.y[i])) : -1;
 
     // A current target in range (or within hitting distance) is locked: to avoid jitter/loops.
     if (cur >= 0 && u.alive[cur] && !isPriest) {
@@ -130,6 +133,10 @@ export class Picker {
               }
               // Closed pocket/island: unreachable if out of range, do not target.
               if (terrain && myRegion !== -1 && dist > reach && terrain.regionAt(u.x[j], u.y[j]) !== myRegion) continue;
+              if (myLane >= 0) {
+                const lj = u.lane[j] >= 0 ? u.lane[j] : terrain!.laneAt(u.x[j], u.y[j]);
+                if (lj >= 0 && lj !== myLane) continue;
+              }
               // A target across the river only if needed: an archer in range shoots over the river.
               if (terrain && (melee || isPriest || dist > reach) && terrain.sideAt(u.x[j], u.y[j]) !== sideI) {
                 score += OTHER_BANK_PENALTY;

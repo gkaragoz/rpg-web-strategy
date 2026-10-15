@@ -1,4 +1,6 @@
-import { randomSpec, sanitizeSpec, DEFAULT_MAP } from '../sim/mapSpec';
+import { randomSpec, sanitizeSpec, lanesSpec, DEFAULT_MAP } from '../sim/mapSpec';
+import { LANES_MIN_SIZE } from '../sim/terrainLanes';
+import { LANES_TEAMS } from '../sim/modes/lanesWaves';
 import { mulberry32 } from '../sim/random';
 import { Terrain } from '../sim/terrain';
 import { isGameModeId } from '../sim/modes/types';
@@ -505,7 +507,7 @@ export class HostLobby {
   /** Start: everyone (except the host) is ready and there are at least 2 players. */
   canStart(): boolean {
     const pl = this.players.filter((p) => p.role === 'player');
-    return this.phase === 'lobby' && pl.length >= 2 && !this.tooManyForHorde(pl.length) && pl.every((p) => p.id === this.hostId || (p.ready && p.connected));
+    return this.phase === 'lobby' && pl.length >= 2 && !this.tooManyForHorde(pl.length) && !this.wrongForLanes(pl.length) && pl.every((p) => p.id === this.hostId || (p.ready && p.connected));
   }
 
   /** Horde mode keeps the sixth team index for the horde: at most HORDE_MAX_HUMANS human teams. */
@@ -513,18 +515,33 @@ export class HostLobby {
     return this.settings.gameMode === 'horde' && players > HORDE_MAX_HUMANS;
   }
 
+  /** Lane Conquest is a two-team mode: any other player count is refused. */
+  private wrongForLanes(players: number): boolean {
+    return this.settings.gameMode === 'lanes' && players !== LANES_TEAMS;
+  }
+
   private start(): void {
-    if (this.phase === 'lobby' && this.tooManyForHorde(this.players.filter((p) => p.role === 'player').length)) {
+    const playing = this.players.filter((p) => p.role === 'player').length;
+    if (this.phase === 'lobby' && this.tooManyForHorde(playing)) {
       this.sendTo(this.hostId, { t: 'startFail', reason: 'hordeTooManyTeams' });
+      return;
+    }
+    if (this.phase === 'lobby' && this.wrongForLanes(playing)) {
+      this.sendTo(this.hostId, { t: 'startFail', reason: 'lanesNeedTwoTeams' });
       return;
     }
     if (!this.canStart()) return;
     const pl = this.players.filter((p) => p.role === 'player');
     const teams = pl.length;
-    const size = this.settings.mapSize || mapSizeForPlayers(teams);
+    const lanes = this.settings.gameMode === 'lanes';
+    // Lane Conquest plays on its own layout (the configured recipe only lends its biome) and needs at least LANES_MIN_SIZE tiles.
+    const size = lanes ? Math.max(LANES_MIN_SIZE, this.settings.mapSize || mapSizeForPlayers(teams)) : this.settings.mapSize || mapSizeForPlayers(teams);
     let seed = this.settings.mapSeed;
     let spec = this.settings.map;
-    if (this.settings.mapMode === 'random') {
+    if (lanes && this.settings.mapMode === 'random') {
+      seed = 1 + Math.floor(this.rnd() * 999999);
+      spec = randomSpec(mulberry32(seed));
+    } else if (this.settings.mapMode === 'random') {
       seed = 1 + Math.floor(this.rnd() * 999999);
       for (let tries = 0; tries < 30; tries++) {
         spec = randomSpec(mulberry32(seed));
@@ -533,6 +550,7 @@ export class HostLobby {
         seed = 1 + ((seed + 7919) % 999999);
       }
     }
+    if (lanes) spec = lanesSpec(spec);
     this.terrain = new Terrain(size, { seed, spec, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
     this.zones = teamZones(size, teams, this.terrain);
     this.units.clear();

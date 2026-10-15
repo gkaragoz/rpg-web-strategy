@@ -67,6 +67,7 @@ export const online: StringTable = {
     'online.reason.closed': 'Lobby closed',
     'online.reason.kicked': 'Kicked by the host',
     'online.reason.hordeTooManyTeams': 'Horde supports at most 5 players',
+    'online.reason.lanesNeedTwoTeams': 'Lane Conquest needs exactly 2 players',
     'online.reason.lost': 'Connection lost',
     'online.reason.serverLost': 'Server connection lost',
 
@@ -257,6 +258,7 @@ export const online: StringTable = {
     'online.reason.closed': 'Lobi kapandı',
     'online.reason.kicked': 'Host tarafından atıldın',
     'online.reason.hordeTooManyTeams': 'Sürü en fazla 5 oyuncuyu destekler',
+    'online.reason.lanesNeedTwoTeams': 'Koridor Fethi tam 2 oyuncu ister',
     'online.reason.lost': 'Bağlantı koptu',
     'online.reason.serverLost': 'Sunucu bağlantısı koptu',
 

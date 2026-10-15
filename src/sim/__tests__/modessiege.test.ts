@@ -57,10 +57,10 @@ describe('siege mode: wiring', () => {
     expect(modeFor('siege').onDamage).toBeTypeOf('function');
     expect(structureKinds('siege')).toEqual([SIEGE_CORE_KIND]);
     for (const id of ['classic', 'hill', 'vip', 'ctf', undefined] as const) expect(structureKinds(id)).toEqual([]);
-    expect(SIEGE_CORE_KIND).toBe(KIND_COUNT - 1);
-    expect(TROOPS[TROOPS.length - 1].id).toBe('siege-core');
+    expect(SIEGE_CORE_KIND).toBe(KIND_OF_TROOP['siege-core']);
+    expect(TROOPS.filter((t) => t.structure)[0].id).toBe('siege-core'); // the first structure; later ones are appended after it
     expect(isStructure(SIEGE_CORE_KIND)).toBe(true);
-    expect(STATS.filter((s) => s.structure).length).toBe(1);
+    expect(STATS.filter((s) => s.structure).length).toBe(3); // siege core + lane castle + lane tower
     const s = STATS[SIEGE_CORE_KIND];
     expect(s.name).toBe('Siege Core');
     expect([s.hp, s.speed, s.power, s.range, s.skill]).toEqual([SIEGE_CORE_HP, 0, 0, 0, null]);

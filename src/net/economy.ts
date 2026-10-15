@@ -79,6 +79,38 @@ export function placeBlock(terrain: Terrain, zone: Zone, x: number, y: number): 
   return terrain.reachable(x, y) ? null : 'unreachable';
 }
 
+/** Edge margin (tiles) of the Lane Conquest zones: units are not placed right at the map border. */
+const LANE_ZONE_EDGE = 2;
+
+/**
+ * Lane Conquest zones: each team gets its own half of the map along the lanes (team 0 the left half with its castle plaza, team 1 the
+ * right), with a neutral band of `gap` tiles on each side of the middle line.
+ */
+export function laneZones(size: number, terrain: Terrain, gap = 3): Zone[] {
+  const mid = size / 2;
+  const zones: Zone[] = [];
+  for (let t = 0; t < 2; t++) {
+    const contains = (x: number, y: number): boolean => y >= LANE_ZONE_EDGE && y <= size - LANE_ZONE_EDGE && (t === 0 ? x >= LANE_ZONE_EDGE && x <= mid - gap : x >= mid + gap && x <= size - LANE_ZONE_EDGE);
+    let area = 0;
+    let sx = 0;
+    let sy = 0;
+    for (let ty = 0; ty < size; ty++) {
+      for (let tx = 0; tx < size; tx++) {
+        const x = tx + 0.5;
+        const y = ty + 0.5;
+        if (!contains(x, y)) continue;
+        const f = terrain.flags[ty * size + tx];
+        if ((f !== T_GRASS && f !== T_PATH) || !terrain.reachable(x, y)) continue;
+        area++;
+        sx += x;
+        sy += y;
+      }
+    }
+    zones.push({ team: t, contains, area, cx: area ? sx / area : size * (t === 0 ? 0.25 : 0.75), cy: area ? sy / area : mid });
+  }
+  return zones;
+}
+
 /** Recommended map size for the number of players. */
 export function mapSizeForPlayers(players: number): number {
   return players <= 2 ? 56 : players <= 4 ? 80 : 100;
@@ -100,6 +132,7 @@ export interface Zone {
  * with a neutral band left between neighboring slices and in the center. With 2 teams, the two sides (bounded by the river axis).
  */
 export function teamZones(size: number, teams: number, terrain: Terrain | null, gap = 3): Zone[] {
+  if (terrain?.layout === 'lanes' && teams === 2) return laneZones(size, terrain, gap);
   const c = size / 2;
   const sector = (Math.PI * 2) / teams;
   const rMin = Math.max(3, size * 0.08);

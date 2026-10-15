@@ -6,8 +6,11 @@ export type RiverType = 'winding' | 'straight' | 'islands' | 'lake' | 'none';
 export type ForestType = 'dense' | 'sparse' | 'grove' | 'ring' | 'none';
 export type VillageType = 'village' | 'scattered' | 'ruins' | 'camp' | 'none';
 export type CrossingType = 'wood' | 'stone' | 'ford';
-/** Layout: classic (river + relief recipe), valley, central citadel, archipelago, crossroads. */
-export type LayoutType = 'classic' | 'valley' | 'citadel' | 'archipelago' | 'crossroads';
+/**
+ * Layout: classic (river + relief recipe), valley, central citadel, archipelago, crossroads, and 'lanes' (Lane Conquest only: two castle plazas joined by
+ * three walled lane corridors). 'lanes' is never offered by the map picker (it is not in LAYOUTS): the lanes mode forces it, see `lanesSpec`.
+ */
+export type LayoutType = 'classic' | 'valley' | 'citadel' | 'archipelago' | 'crossroads' | 'lanes';
 /** Terrain relief: flat, hills, ridge, plateau (with ramps), peak (mountain). */
 export type ReliefType = 'flat' | 'hills' | 'ridge' | 'plateau' | 'peak';
 
@@ -37,7 +40,7 @@ export const RIVER_NAMES: Record<RiverType, Localized> = { winding: { en: 'Windi
 export const FOREST_NAMES: Record<ForestType, Localized> = { dense: { en: 'Dense', tr: 'Yoğun' }, sparse: { en: 'Sparse', tr: 'Seyrek' }, grove: { en: 'Grove', tr: 'Koru' }, ring: { en: 'Ring forest', tr: 'Çevre ormanı' }, none: { en: 'No forest', tr: 'Ormansız' } };
 export const VILLAGE_NAMES: Record<VillageType, Localized> = { village: { en: 'Village', tr: 'Köy' }, scattered: { en: 'Scattered houses', tr: 'Dağınık evler' }, ruins: { en: 'Ruined fort', tr: 'Harabe kale' }, camp: { en: 'Camp', tr: 'Kamp' }, none: { en: 'No village', tr: 'Köysüz' } };
 export const CROSSING_NAMES: Record<CrossingType, Localized> = { wood: { en: 'Wooden bridge', tr: 'Ahşap köprü' }, stone: { en: 'Stone bridge', tr: 'Taş köprü' }, ford: { en: 'Shallow ford', tr: 'Sığ geçit' } };
-export const LAYOUT_NAMES: Record<LayoutType, Localized> = { classic: { en: 'Classic', tr: 'Klasik' }, valley: { en: 'Valley and pass', tr: 'Vadi ve geçit' }, citadel: { en: 'Central citadel', tr: 'Merkez kale' }, archipelago: { en: 'Islands and bridges', tr: 'Adalar ve köprüler' }, crossroads: { en: 'Crossroads', tr: 'Çapraz yol' } };
+export const LAYOUT_NAMES: Record<LayoutType, Localized> = { lanes: { en: 'Three lanes', tr: 'Üç şerit' }, classic: { en: 'Classic', tr: 'Klasik' }, valley: { en: 'Valley and pass', tr: 'Vadi ve geçit' }, citadel: { en: 'Central citadel', tr: 'Merkez kale' }, archipelago: { en: 'Islands and bridges', tr: 'Adalar ve köprüler' }, crossroads: { en: 'Crossroads', tr: 'Çapraz yol' } };
 export const RELIEF_NAMES: Record<ReliefType, Localized> = { flat: { en: 'Flat', tr: 'Düz' }, hills: { en: 'Hills', tr: 'Tepecikler' }, ridge: { en: 'Mountain ridge', tr: 'Sıradağ' }, plateau: { en: 'Plateau', tr: 'Plato' }, peak: { en: 'Mountain', tr: 'Dağ' } };
 
 export interface MapPreset {
@@ -90,6 +93,14 @@ export const PRESETS: MapPreset[] = [
 
 export function sameSpec(a: MapSpec, b: MapSpec): boolean {
   return a.biome === b.biome && a.river === b.river && a.forest === b.forest && a.village === b.village && a.crossing === b.crossing && a.relief === b.relief && a.layout === b.layout;
+}
+
+/**
+ * The recipe Lane Conquest really plays on: the configured biome (look only) with the dedicated 'lanes' layout; river, forest, village,
+ * crossing and relief of the configured recipe are ignored. Pure and deterministic; the sim, the host and the app all use it.
+ */
+export function lanesSpec(spec?: MapSpec): MapSpec {
+  return { biome: (spec ?? DEFAULT_MAP).biome, river: 'none', forest: 'dense', village: 'none', crossing: 'wood', relief: 'flat', layout: 'lanes' };
 }
 
 /** Turns broken/old saved data into a safe recipe. */

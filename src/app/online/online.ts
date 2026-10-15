@@ -482,7 +482,7 @@ export class OnlineApp {
   }
 
   private mapConfig(init: GameInit) {
-    return { mode: 'custom' as const, perTeam: 0, teamCount: init.teams, mapSize: init.size, env: true, kite: true, terrainSeed: init.seed, map: init.spec, comedy: init.comedyPhysics };
+    return { mode: 'custom' as const, perTeam: 0, teamCount: init.teams, mapSize: init.size, env: true, kite: true, terrainSeed: init.seed, map: init.spec, comedy: init.comedyPhysics, rules: init.gameMode };
   }
 
   private async startPlacing(init: GameInit): Promise<void> {

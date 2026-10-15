@@ -210,6 +210,7 @@ export class Studio {
         if (id !== 'vip' && s.tool === 'vip') s.tool = 'place';
         saveState(s);
         this.d.onPaletteChange(); // the atlas needs the horde colour (and the structure kinds) of the new mode
+        this.d.onMapChange(); // Lane Conquest plays on its own map: the studio world is rebuilt (and soldiers that no longer fit are moved)
         this.render();
       },
     });
@@ -338,6 +339,7 @@ export class Studio {
     const withUnits = new Set(s.units.map((u) => u.team)).size;
     if (s.units.length === 0) return { ok: false, reason: t('studio.reason.empty') };
     if (s.rules === 'horde' && s.teamCount > 5) return { ok: false, reason: t('mode.horde.maxTeams') };
+    if (s.rules === 'lanes' && s.teamCount !== 2) return { ok: false, reason: t('mode.lanes.twoTeams') };
     if (s.rules !== 'horde' && withUnits < 2) return { ok: false, reason: t('studio.reason.twoTeams') };
     return { ok: true, reason: '' };
   }

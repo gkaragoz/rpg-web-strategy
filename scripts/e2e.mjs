@@ -250,6 +250,27 @@ const tests = [
     },
   },
   {
+    name: 'mode-lanes-studio',
+    async run({ stack }) {
+      const page = await stack.page({ width: 1280, height: 800 });
+      await page.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await page.clickSel('#m-own');
+      await page.waitFor(`!!document.querySelector('#start')`, 'studio');
+      await page.clickSel('.mode-card[data-mode="lanes"]');
+      await page.waitFor(`document.querySelector('.mode-card[data-mode="lanes"]').getAttribute('aria-checked') === 'true'`, 'lanes selected');
+      await page.waitFor(`window.__studioWorld.mapSize >= 80`, 'the studio world to switch to the lanes map (size 80+)', 15000);
+      await sleep(800);
+      await page.clickSel('#start');
+      await page.waitFor(`!!window.__sim && window.__sim.modeHud.kind === 'lanes' && !!document.querySelector('.hud-mode') && !document.querySelector('.hud-mode').hidden`, 'lanes battle with the strip', 40000);
+      const hud = await page.eval(`window.__sim.modeHud`);
+      assert(hud.castles.length === 2 && hud.castles.every((c) => c.hp === 1 && c.unit >= 0), 'both castles should stand: ' + JSON.stringify(hud.castles));
+      assert(hud.towers[0] === 6 && hud.towers[1] === 6, 'six towers per team: ' + hud.towers);
+      await page.eval(`document.querySelector('#hud-speed button:last-child').click()`);
+      await page.waitFor(`window.__sim.modeHud.wave >= 1`, 'the first wave', 60000);
+      noErrors(page, 'lanes');
+    },
+  },
+  {
     name: 'battle-3d',
     async run({ stack }) {
       const page = await stack.page({ width: 1280, height: 800 });
@@ -386,6 +407,178 @@ const tests = [
       await sleep(1500);
       for (const p of [host, guest]) await p.clickSel('#pg-ready');
       for (const p of [host, guest]) await p.waitFor(`!!window.__sim && window.__sim.modeHud.kind === 'ctf' && window.__sim.modeHud.flags.length === 2 && !!document.querySelector('.hud-mode') && !document.querySelector('.hud-mode').hidden`, 'CTF battle with the objective strip', 60000);
+      noErrors(host, 'host');
+      noErrors(guest, 'guest');
+    },
+  },
+  {
+    name: 'mode-siege-online',
+    async run({ stack }) {
+      const host = await stack.page({ width: 1280, height: 800 });
+      const guest = await stack.page({ width: 1280, height: 800 });
+      await host.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await host.eval(`(() => { const lan = [...document.querySelectorAll('#m-tp button')].find((b) => /lan/i.test(b.textContent)); lan?.click(); })()`);
+      await host.clickSel('#m-host');
+      const code = await host.waitFor(`document.querySelector('#l-code')?.textContent?.trim()`, 'lobby code', 20000);
+      await host.clickSel('#l-mode .mode-card[data-mode="siege"]');
+      await guest.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await guest.eval(`(() => { const i = document.querySelector('#m-code'); i.value = ${JSON.stringify(code)}; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+      await guest.clickSel('#m-join');
+      await guest.waitFor(`!!document.querySelector('#l-mode')`, 'guest in lobby', 20000);
+      await guest.waitFor(`document.querySelector('#l-mode .mode-card[data-mode="siege"]')?.getAttribute('aria-checked') === 'true'`, 'guest sees siege');
+      assert(await guest.eval(`document.querySelector('#l-mode .mode-card[data-mode="classic"]').disabled`), 'guests must not change the mode');
+      await guest.eval(`document.querySelector('#l-ready').click()`);
+      await host.waitFor(`document.querySelectorAll('#l-players li').length >= 2`, 'two players');
+      await host.eval(`document.querySelector('#l-start').click()`);
+      for (const p of [host, guest]) await p.waitFor(`!!window.__placement && !!document.querySelector('.on-dock')`, 'placement', 30000);
+      // One soldier group per player inside its own team zone (found through the debug handle), then READY on both.
+      for (const p of [host, guest]) {
+        const n = await p.eval(`(() => {
+          const pl = window.__placement;
+          const z = pl.zones.find((q) => q.team === pl.myTeam);
+          const t = pl.env.world.terrain;
+          const items = [];
+          for (let y = 0; y < pl.init.size && items.length < 6; y++) for (let x = 0; x < pl.init.size && items.length < 6; x++) {
+            const px = x + 0.5, py = y + 0.5;
+            if (z.contains(px, py) && (!t || (t.walkable(px, py) && t.reachable(px, py))) && items.every((o) => Math.hypot(o.x - px, o.y - py) > 2)) items.push({ cid: 9000 + items.length, kind: 0, x: px, y: py });
+          }
+          window.__session.send({ t: 'place', items });
+          return items.length;
+        })()`);
+        assert(n >= 3, 'found no place to put soldiers');
+      }
+      await sleep(1500);
+      for (const p of [host, guest]) await p.clickSel('#pg-ready');
+      for (const p of [host, guest]) await p.waitFor(`!!window.__sim && window.__sim.modeHud.kind === 'siege' && window.__sim.modeHud.coreUnit >= 0 && !!document.querySelector('.hud-mode') && !document.querySelector('.hud-mode').hidden`, 'siege battle with the objective strip', 60000);
+      noErrors(host, 'host');
+      noErrors(guest, 'guest');
+    },
+  },
+  {
+    name: 'mode-horde-online',
+    async run({ stack }) {
+      const host = await stack.page({ width: 1280, height: 800 });
+      const guest = await stack.page({ width: 1280, height: 800 });
+      await host.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await host.eval(`(() => { const lan = [...document.querySelectorAll('#m-tp button')].find((b) => /lan/i.test(b.textContent)); lan?.click(); })()`);
+      await host.clickSel('#m-host');
+      const code = await host.waitFor(`document.querySelector('#l-code')?.textContent?.trim()`, 'lobby code', 20000);
+      await host.clickSel('#l-mode .mode-card[data-mode="horde"]');
+      await guest.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await guest.eval(`(() => { const i = document.querySelector('#m-code'); i.value = ${JSON.stringify(code)}; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+      await guest.clickSel('#m-join');
+      await guest.waitFor(`!!document.querySelector('#l-mode')`, 'guest in lobby', 20000);
+      await guest.waitFor(`document.querySelector('#l-mode .mode-card[data-mode="horde"]')?.getAttribute('aria-checked') === 'true'`, 'guest sees horde');
+      assert(await guest.eval(`document.querySelector('#l-mode .mode-card[data-mode="classic"]').disabled`), 'guests must not change the mode');
+      await guest.eval(`document.querySelector('#l-ready').click()`);
+      await host.waitFor(`document.querySelectorAll('#l-players li').length >= 2`, 'two players');
+      await host.eval(`document.querySelector('#l-start').click()`);
+      for (const p of [host, guest]) await p.waitFor(`!!window.__placement && !!document.querySelector('.on-dock')`, 'placement', 30000);
+      // One soldier group per player inside its own team zone (found through the debug handle), then READY on both.
+      for (const p of [host, guest]) {
+        const n = await p.eval(`(() => {
+          const pl = window.__placement;
+          const z = pl.zones.find((q) => q.team === pl.myTeam);
+          const t = pl.env.world.terrain;
+          const items = [];
+          for (let y = 0; y < pl.init.size && items.length < 6; y++) for (let x = 0; x < pl.init.size && items.length < 6; x++) {
+            const px = x + 0.5, py = y + 0.5;
+            if (z.contains(px, py) && (!t || (t.walkable(px, py) && t.reachable(px, py))) && items.every((o) => Math.hypot(o.x - px, o.y - py) > 2)) items.push({ cid: 9000 + items.length, kind: 0, x: px, y: py });
+          }
+          window.__session.send({ t: 'place', items });
+          return items.length;
+        })()`);
+        assert(n >= 3, 'found no place to put soldiers');
+      }
+      await sleep(1500);
+      for (const p of [host, guest]) await p.clickSel('#pg-ready');
+      for (const p of [host, guest]) await p.waitFor(`!!window.__sim && window.__sim.modeHud.kind === 'horde' && !!document.querySelector('.hud-mode') && !document.querySelector('.hud-mode').hidden`, 'horde battle with the objective strip', 60000);
+      noErrors(host, 'host');
+      noErrors(guest, 'guest');
+    },
+  },
+  {
+    name: 'mode-siege-online',
+    async run({ stack }) {
+      const host = await stack.page({ width: 1280, height: 800 });
+      const guest = await stack.page({ width: 1280, height: 800 });
+      await host.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await host.eval(`(() => { const lan = [...document.querySelectorAll('#m-tp button')].find((b) => /lan/i.test(b.textContent)); lan?.click(); })()`);
+      await host.clickSel('#m-host');
+      const code = await host.waitFor(`document.querySelector('#l-code')?.textContent?.trim()`, 'lobby code', 20000);
+      await host.clickSel('#l-mode .mode-card[data-mode="siege"]');
+      await guest.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await guest.eval(`(() => { const i = document.querySelector('#m-code'); i.value = ${JSON.stringify(code)}; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+      await guest.clickSel('#m-join');
+      await guest.waitFor(`!!document.querySelector('#l-mode')`, 'guest in lobby', 20000);
+      await guest.waitFor(`document.querySelector('#l-mode .mode-card[data-mode="siege"]')?.getAttribute('aria-checked') === 'true'`, 'guest sees siege');
+      assert(await guest.eval(`document.querySelector('#l-mode .mode-card[data-mode="classic"]').disabled`), 'guests must not change the mode');
+      await guest.eval(`document.querySelector('#l-ready').click()`);
+      await host.waitFor(`document.querySelectorAll('#l-players li').length >= 2`, 'two players');
+      await host.eval(`document.querySelector('#l-start').click()`);
+      for (const p of [host, guest]) await p.waitFor(`!!window.__placement && !!document.querySelector('.on-dock')`, 'placement', 30000);
+      // One soldier group per player inside its own team zone (found through the debug handle), then READY on both.
+      for (const p of [host, guest]) {
+        const n = await p.eval(`(() => {
+          const pl = window.__placement;
+          const z = pl.zones.find((q) => q.team === pl.myTeam);
+          const t = pl.env.world.terrain;
+          const items = [];
+          for (let y = 0; y < pl.init.size && items.length < 6; y++) for (let x = 0; x < pl.init.size && items.length < 6; x++) {
+            const px = x + 0.5, py = y + 0.5;
+            if (z.contains(px, py) && (!t || (t.walkable(px, py) && t.reachable(px, py))) && items.every((o) => Math.hypot(o.x - px, o.y - py) > 2)) items.push({ cid: 9000 + items.length, kind: 0, x: px, y: py });
+          }
+          window.__session.send({ t: 'place', items });
+          return items.length;
+        })()`);
+        assert(n >= 3, 'found no place to put soldiers');
+      }
+      await sleep(1500);
+      for (const p of [host, guest]) await p.clickSel('#pg-ready');
+      for (const p of [host, guest]) await p.waitFor(`!!window.__sim && window.__sim.modeHud.kind === 'siege' && window.__sim.modeHud.coreUnit >= 0 && !!document.querySelector('.hud-mode') && !document.querySelector('.hud-mode').hidden`, 'siege battle with the objective strip', 60000);
+      noErrors(host, 'host');
+      noErrors(guest, 'guest');
+    },
+  },
+  {
+    name: 'mode-lanes-online',
+    async run({ stack }) {
+      const host = await stack.page({ width: 1280, height: 800 });
+      const guest = await stack.page({ width: 1280, height: 800 });
+      await host.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await host.eval(`(() => { const lan = [...document.querySelectorAll('#m-tp button')].find((b) => /lan/i.test(b.textContent)); lan?.click(); })()`);
+      await host.clickSel('#m-host');
+      const code = await host.waitFor(`document.querySelector('#l-code')?.textContent?.trim()`, 'lobby code', 20000);
+      await host.clickSel('#l-mode .mode-card[data-mode="lanes"]');
+      await guest.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await guest.eval(`(() => { const i = document.querySelector('#m-code'); i.value = ${JSON.stringify(code)}; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+      await guest.clickSel('#m-join');
+      await guest.waitFor(`!!document.querySelector('#l-mode')`, 'guest in lobby', 20000);
+      await guest.waitFor(`document.querySelector('#l-mode .mode-card[data-mode="lanes"]')?.getAttribute('aria-checked') === 'true'`, 'guest sees lanes');
+      assert(await guest.eval(`document.querySelector('#l-mode .mode-card[data-mode="classic"]').disabled`), 'guests must not change the mode');
+      await guest.eval(`document.querySelector('#l-ready').click()`);
+      await host.waitFor(`document.querySelectorAll('#l-players li').length >= 2`, 'two players');
+      await host.eval(`document.querySelector('#l-start').click()`);
+      for (const p of [host, guest]) await p.waitFor(`!!window.__placement && !!document.querySelector('.on-dock')`, 'placement', 30000);
+      // One soldier group per player inside its own team zone (found through the debug handle), then READY on both.
+      for (const p of [host, guest]) {
+        const n = await p.eval(`(() => {
+          const pl = window.__placement;
+          const z = pl.zones.find((q) => q.team === pl.myTeam);
+          const t = pl.env.world.terrain;
+          const items = [];
+          for (let y = 0; y < pl.init.size && items.length < 6; y++) for (let x = 0; x < pl.init.size && items.length < 6; x++) {
+            const px = x + 0.5, py = y + 0.5;
+            if (z.contains(px, py) && (!t || (t.walkable(px, py) && t.reachable(px, py))) && items.every((o) => Math.hypot(o.x - px, o.y - py) > 2)) items.push({ cid: 9000 + items.length, kind: 0, x: px, y: py });
+          }
+          window.__session.send({ t: 'place', items });
+          return items.length;
+        })()`);
+        assert(n >= 3, 'found no place to put soldiers');
+      }
+      await sleep(1500);
+      for (const p of [host, guest]) await p.clickSel('#pg-ready');
+      for (const p of [host, guest]) await p.waitFor(`!!window.__sim && window.__sim.modeHud.kind === 'lanes' && window.__sim.modeHud.castles.length === 2 && !!document.querySelector('.hud-mode') && !document.querySelector('.hud-mode').hidden`, 'lanes battle with the objective strip', 60000);
       noErrors(host, 'host');
       noErrors(guest, 'guest');
     },

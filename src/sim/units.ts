@@ -78,18 +78,20 @@ function troopStats(t: TroopDef): KindStats {
   const big = t.id === 'granite-colossus' || t.id === 'cinder-golem' || t.id === 'war-barge' || t.id === 'hill-brute' ? 1.8 : hp >= 2000 ? 1.4 : 1;
   const heal = t.skill === 'cleanse';
   if (t.structure) {
+    // An armed structure (the Lane Conquest tower, `ranged`) keeps its attack numbers; every other structure has none.
+    const armed = t.ranged;
     return {
       name: t.name,
       role: Role.Structure,
       hp: Math.round((hp / HP_DIV) * (STAT_ADJ[t.id] ?? 1)),
       speed: 0,
-      range: 0,
-      power: 0,
-      cooldown: 5,
-      swing: 0.35,
-      hitAt: 0.2,
+      range: armed ? t.reach : 0,
+      power: armed ? Math.max(1, Math.round(atk / ATK_DIV)) : 0,
+      cooldown: armed ? Math.round(Math.min(5, Math.max(0.4, 1 / Math.max(0.2, t.atkSpd))) * 100) / 100 : 5,
+      swing: armed ? 0.4 : 0.35,
+      hitAt: armed ? 0.25 : 0.2,
       armor: Math.round(Math.min(0.85, def / (def + ARMOR_K)) * 100) / 100,
-      scale: 2,
+      scale: t.id === 'lane-castle' ? 2.4 : t.id === 'lane-tower' ? 1.7 : 2,
       aoe: 0,
       knockback: 0,
       splash: 0,
@@ -135,6 +137,9 @@ export const KIND_COUNT = STATS.length;
 
 /** Kind number of the Siege mode core (a structure). */
 export const SIEGE_CORE_KIND = KIND_OF_TROOP['siege-core'];
+/** Kind numbers of the Lane Conquest castle (immobile, never attacks) and tower (immobile, shoots). Both are structures. */
+export const LANE_CASTLE_KIND = KIND_OF_TROOP['lane-castle'];
+export const LANE_TOWER_KIND = KIND_OF_TROOP['lane-tower'];
 
 /** 1 for structure kinds (fixed game-mode objects), indexed by kind (typed array for hot loops). */
 export const STRUCT_OF = new Uint8Array(KIND_COUNT);
@@ -358,6 +363,8 @@ export class Units {
   flags: Uint8Array;
   /** Owner of a summoned unit (-1: none). */
   owner: Int32Array;
+  /** Lane Conquest: the lane (0..2) a lane soldier was released into, -1 for every other unit. Target picking keeps a soldier in its lane even on a plaza. */
+  lane: Int8Array;
   /** Visual status mask (ST_*): read by the renderer for tinting. */
   status: Uint8Array;
   /** Separation push (smoothed velocity, tiles/step). */
@@ -480,6 +487,7 @@ export class Units {
     this.stackT = new Float32Array(cap);
     this.flags = new Uint8Array(cap);
     this.owner = new Int32Array(cap).fill(-1);
+    this.lane = new Int8Array(cap).fill(-1);
     this.status = new Uint8Array(cap);
     this.sepX = new Float32Array(cap);
     this.sepY = new Float32Array(cap);
@@ -552,6 +560,7 @@ export class Units {
     this.skillN[i] = this.stacks[i] = this.flags[i] = 0;
     this.skillT[i] = this.stackT[i] = 0;
     this.owner[i] = -1;
+    this.lane[i] = -1;
     this.status[i] = 0;
     this.sepX[i] = this.sepY[i] = 0;
     this.rangeT[i] = 0;

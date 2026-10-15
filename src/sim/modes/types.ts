@@ -3,12 +3,12 @@ import { MAX_TEAMS } from '../units';
 
 /**
  * Game modes: extra win conditions and goals on top of the normal fight. All modes are autonomous (no player orders during
- * a battle). 'classic', 'hill', 'vip', 'ctf', 'siege' and 'horde' have rules.
+ * a battle). 'classic', 'hill', 'vip', 'ctf', 'siege', 'horde' and 'lanes' have rules.
  */
-export type GameModeId = 'classic' | 'hill' | 'vip' | 'ctf' | 'siege' | 'horde';
+export type GameModeId = 'classic' | 'hill' | 'vip' | 'ctf' | 'siege' | 'horde' | 'lanes';
 
 /** Every mode id the lobby accepts (host-side validation uses this list). */
-export const GAME_MODE_IDS: readonly GameModeId[] = ['classic', 'hill', 'vip', 'ctf', 'siege', 'horde'];
+export const GAME_MODE_IDS: readonly GameModeId[] = ['classic', 'hill', 'vip', 'ctf', 'siege', 'horde', 'lanes'];
 
 export function isGameModeId(v: unknown): v is GameModeId {
   return typeof v === 'string' && (GAME_MODE_IDS as readonly string[]).includes(v);
@@ -92,6 +92,19 @@ export type ModeHud =
       hordeTeam: number;
       /** Seconds of sim time left before the time limit makes the humans lose. */
       timeLeft: number;
+    }
+  | {
+      kind: 'lanes';
+      /** One entry per team (index = team, exactly 2): castle health fraction 0..1 (0 once destroyed), its maximum, unit index (stable for the battle) and position (tiles). */
+      castles: Array<{ team: number; hp: number; maxHp: number; unit: number; x: number; y: number }>;
+      /** Living towers per team (length 2, at most 6 each). */
+      towers: number[];
+      /** Waves released so far (0 before the first). */
+      wave: number;
+      /** Seconds of sim time until the next wave (0 when every wave has been released). */
+      nextIn: number;
+      /** Seconds of sim time left before the castle health fractions decide the battle. */
+      timeLeft: number;
     };
 
 /** One flag: `team` owns it; at home x/y is the base and carrier/carrierTeam are -1, in transit x/y is the carrier's position. */
@@ -137,7 +150,8 @@ export interface ModeRules {
   winner(b: Battle): number | undefined;
   /** Mode state as plain numbers (restore() accepts exactly this). */
   serialize(): number[];
-  restore(state: number[]): void;
+  /** `b` is the battle being restored (modes that derive per-unit data, such as the lane goals, rebuild it from the state). */
+  restore(state: number[], b?: Battle): void;
   hud(b: Battle): ModeHud;
   /** Points per team for the result screen (undefined: the mode has no score). */
   scores(): number[] | undefined;

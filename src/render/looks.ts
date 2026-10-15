@@ -683,6 +683,65 @@ function drawKeep(r: Rig, c: number, d: number): void {
   r.legR.roundRect(6, 14, 8, 3, 1).fill(STONE_D);
 }
 
+/** Lane Conquest castle: a curtain wall with two corner turrets, a tall central keep, a gate and a team-coloured banner. */
+function drawLaneCastle(r: Rig, c: number, d: number): void {
+  r.noHands = true;
+  const g = r.g;
+  const STONE = 0x8d8a82;
+  const STONE_D = 0x4a4740;
+  const STONE_L = 0xb9b5aa;
+  // Curtain wall with a darker foot and mortar lines.
+  g.roundRect(-27, -6, 54, 22, 2).fill(STONE).stroke({ width: 1.8, color: STONE_D });
+  g.rect(-27, 10, 54, 6).fill(0x6e6b64);
+  for (const y of [0, 6]) g.moveTo(-26, y).lineTo(26, y).stroke({ width: 0.8, color: STONE_D, alpha: 0.55 });
+  for (let i = -6; i <= 6; i++) g.rect(i * 4 - 1.6, -11, 3.2, 5.5).fill(STONE_L).stroke({ width: 0.9, color: STONE_D });
+  // Central keep, taller than the wall, with its own crenellations.
+  g.roundRect(-12, -40, 24, 54, 2).fill(STONE_L).stroke({ width: 1.8, color: STONE_D });
+  g.roundRect(-9, -38, 18, 4, 2).fill({ color: 0xffffff, alpha: 0.2 });
+  for (const y of [-28, -18, -8]) g.moveTo(-11, y).lineTo(11, y).stroke({ width: 0.8, color: STONE_D, alpha: 0.5 });
+  for (let i = -2; i <= 2; i++) g.rect(i * 5 - 1.8, -46, 3.6, 7).fill(STONE_L).stroke({ width: 1.1, color: STONE_D });
+  // Corner turrets with team-coloured roofs.
+  for (const x of [-27, 27]) {
+    g.roundRect(x - 6, -28, 12, 44, 2).fill(STONE_L).stroke({ width: 1.6, color: STONE_D });
+    g.poly([x - 8, -28, x, -42, x + 8, -28]).fill(d).stroke({ width: 1.2, color: STONE_D });
+    g.rect(x - 1, -34, 2, 7).fill(0x14181f);
+  }
+  // Gate with a team-coloured lintel, arrow slits.
+  g.roundRect(-6, 0, 12, 16, 6).fill(0x2a1f16).stroke({ width: 1.3, color: 0x14100b });
+  g.rect(-8, -4, 16, 3.6).fill(c);
+  for (const x of [-7, 7]) g.rect(x - 1, -30, 2, 8).fill(0x14181f);
+  // Big banner on the keep (readable at small size).
+  g.rect(-1, -66, 2, 21).fill(0x5a3a1c);
+  g.poly([1, -66, 20, -60, 1, -52]).fill(c).stroke({ width: 1.2, color: d });
+  r.legL.roundRect(-20, 14, 10, 3, 1).fill(STONE_D);
+  r.legR.roundRect(10, 14, 10, 3, 1).fill(STONE_D);
+}
+
+/** Lane Conquest tower: a slim stone tower with a crenellated gallery, arrow slits and a team-coloured band and pennant. */
+function drawLaneTower(r: Rig, c: number, d: number): void {
+  r.noHands = true;
+  const g = r.g;
+  const STONE = 0x8d8a82;
+  const STONE_D = 0x4a4740;
+  const STONE_L = 0xb9b5aa;
+  g.poly([-11, 16, 11, 16, 8, -30, -8, -30]).fill(STONE).stroke({ width: 1.8, color: STONE_D });
+  g.rect(-11, 10, 22, 6).fill(0x6e6b64);
+  for (const y of [-20, -10, 0]) g.moveTo(-9, y).lineTo(9, y).stroke({ width: 0.8, color: STONE_D, alpha: 0.55 });
+  // Team-coloured band.
+  g.poly([-9.2, -6, 9.2, -6, 9.6, -1, -9.6, -1]).fill(c);
+  // Gallery with merlons.
+  g.roundRect(-12, -36, 24, 7, 1.5).fill(STONE_L).stroke({ width: 1.5, color: STONE_D });
+  for (let i = -2; i <= 2; i++) g.rect(i * 5 - 1.6, -42, 3.2, 6.5).fill(STONE_L).stroke({ width: 1, color: STONE_D });
+  // Arrow slits and a small door.
+  g.rect(-1, -26, 2, 8).fill(0x14181f);
+  g.roundRect(-3.5, 6, 7, 10, 3.5).fill(0x2a1f16).stroke({ width: 1, color: 0x14100b });
+  // Pennant.
+  g.rect(-0.8, -58, 1.6, 17).fill(0x5a3a1c);
+  g.poly([0.8, -58, 13, -54, 0.8, -49]).fill(c).stroke({ width: 1, color: d });
+  r.legL.roundRect(-9, 14, 7, 3, 1).fill(STONE_D);
+  r.legR.roundRect(2, 14, 7, 3, 1).fill(STONE_D);
+}
+
 // ---------------------------------------------------------------- unit recipes
 
 type Recipe = (r: Rig, c: number, d: number) => Anim;
@@ -1133,6 +1192,14 @@ export const LOOKS: Record<string, Recipe> = {
   },
   'siege-core': (r, c, d) => {
     drawKeep(r, c, d);
+    return 'swing';
+  },
+  'lane-castle': (r, c, d) => {
+    drawLaneCastle(r, c, d);
+    return 'swing';
+  },
+  'lane-tower': (r, c, d) => {
+    drawLaneTower(r, c, d);
     return 'swing';
   },
 };

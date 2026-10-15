@@ -115,8 +115,10 @@ export function tryKite(b: Battle, i: number, dt: number): boolean {
   if (pl > 1e-3) {
     px /= pl;
     py /= pl;
-    dx = dx * (1 - KITE.armyPull) + px * KITE.armyPull;
-    dy = dy * (1 - KITE.armyPull) + py * KITE.armyPull;
+    // Lane Conquest: the army is spread over three walled lanes, so there is no common centre to retreat towards.
+    const pull = b.noLeash ? 0 : KITE.armyPull;
+    dx = dx * (1 - pull) + px * pull;
+    dy = dy * (1 - pull) + py * pull;
   }
   const sp = STATS[u.kind[i]].speed * (archer ? KITE.archerSprint : KITE.priestSprint);
   const step = sp * dt;
@@ -203,7 +205,7 @@ export function leashHold(b: Battle, i: number, dt: number): boolean {
 export function beyondLeash(b: Battle, i: number): boolean {
   const u = b.units;
   const tm = u.team[i];
-  if (!b.kiteOn || !b.hasFront[tm] || u.leashOffT[i] > 0) return false;
+  if (!b.kiteOn || b.noLeash || !b.hasFront[tm] || u.leashOffT[i] > 0) return false;
   const en = b.nearestEnemy[tm];
   if (en < 0) return false;
   let ex = b.centroidX[en] - b.frontX[tm];
@@ -262,6 +264,11 @@ export function applyPick(b: Battle, i: number, best: number): void {
 
 export function marchToEnemy(b: Battle, i: number, dt: number): void {
   const u = b.units;
+  // A unit goal (a lane soldier's next waypoint) wins over everything else, including the leash.
+  if (b.unitHasGoal[i] === 1) {
+    b.queueMove(i, b.unitGoalX[i], b.unitGoalY[i], STATS[u.kind[i]].speed);
+    return;
+  }
   const tm = u.team[i];
   const en = b.nearestEnemy[tm];
   if (en < 0) return;

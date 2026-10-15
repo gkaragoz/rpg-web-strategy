@@ -9,7 +9,7 @@ const files = readdirSync(dir).filter((f) => f.endsWith('.js')).map((f) => ({ f,
 const budgets = [
   { name: 'main entry', match: /^main-.*\.js$/, max: 560_000 },
   { name: '3D chunk (lazy)', match: /^world3d-.*\.js$/, max: 600_000 },
-  { name: 'sim worker', match: /^worker-.*.js$/, max: 150_000 },
+  { name: 'sim worker', match: /^worker-.*.js$/, max: 170_000 },
 ];
 let failed = false;
 for (const b of budgets) {
@@ -23,7 +23,7 @@ for (const b of budgets) {
   } else console.log(`ok ${b.name}: ${hit.size} / ${b.max}`);
 }
 const total = files.reduce((n, x) => n + x.size, 0);
-const TOTAL_MAX = 2_000_000;
+const TOTAL_MAX = 2_300_000;
 if (total > TOTAL_MAX) {
   console.error(`budget exceeded: all JS ${total} > ${TOTAL_MAX}`);
   failed = true;

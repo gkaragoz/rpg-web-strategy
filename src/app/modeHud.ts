@@ -43,7 +43,16 @@ export interface HordeStrip {
   hordeTeam: number;
   timeLeft: number;
 }
-export type StripData = HillStrip | VipStrip | CtfStrip | SiegeStrip | HordeStrip;
+/** Lane Conquest: both castles (hp as a fraction), living towers per team and the wave clock. */
+export interface LanesStrip {
+  kind: 'lanes';
+  castles: Array<{ team: number; hp: number; maxHp: number; unit: number; x: number; y: number }>;
+  towers: number[];
+  wave: number;
+  nextIn: number;
+  timeLeft: number;
+}
+export type StripData = HillStrip | VipStrip | CtfStrip | SiegeStrip | HordeStrip | LanesStrip;
 
 /** Colours per team index as CSS strings. */
 export type StripColors = string[];
@@ -99,6 +108,21 @@ export class ModeStrip {
       }
       const left = data.timeLeft > 0 ? ` · ${t('mode.hud.vip.time', { time: fmtClock(data.timeLeft) })}` : '';
       this.meta.textContent = `${t('mode.hud.vip.hint')}${left}`;
+      return;
+    }
+    if (data.kind === 'lanes') {
+      for (let i = 0; i < 2; i++) {
+        const row = this.rows[i];
+        const castle = data.castles.find((c) => c.team === i);
+        if (!row || !castle) continue;
+        row.fill.style.width = `${(Math.max(0, Math.min(1, castle.hp)) * 100).toFixed(1)}%`;
+        row.score.textContent = `${Math.round(Math.max(0, castle.hp) * 100)}%`;
+        row.held.textContent = '▲'.repeat(Math.max(0, Math.min(6, data.towers[i] ?? 0)));
+        row.held.title = t('mode.hud.lanes.towers', { n: data.towers[i] ?? 0 });
+        row.score.title = t('mode.hud.lanes.castle');
+      }
+      const left = data.timeLeft > 0 ? ` · ${t('mode.hud.lanes.time', { time: fmtClock(data.timeLeft) })}` : '';
+      this.meta.textContent = `${t('mode.hud.lanes.wave', { n: data.wave })} · ${t('mode.hud.lanes.next', { s: Math.ceil(data.nextIn) })}${left}`;
       return;
     }
     if (data.kind === 'horde') {
@@ -161,7 +185,7 @@ export class ModeStrip {
     this.meta = this.el.querySelector('.hm-meta') as HTMLElement;
     this.rows = [];
     const single = kind === 'siege' || kind === 'horde';
-    const n = single ? 1 : teamCount;
+    const n = single ? 1 : kind === 'lanes' ? 2 : teamCount;
     for (let i = 0; i < n; i++) {
       const color = this.colors[single ? 0 : i] ?? '#888';
       const row = document.createElement('div');

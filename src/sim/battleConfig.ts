@@ -1,8 +1,10 @@
 import { Terrain } from './terrain';
-import type { MapSpec } from './mapSpec';
+import { lanesSpec, type MapSpec } from './mapSpec';
 import type { GameModeId } from './modes/types';
 import { KIND_OF_TROOP, MAX_TEAMS, type StatOverrides } from './units';
 import { HORDE_MAX_HUMANS, hordePoolSize } from './modes/hordeWaves';
+import { LANES_STRUCTURES, LANES_TEAMS, lanesPoolSize } from './modes/lanesWaves';
+import { LANES_MIN_SIZE } from './terrainLanes';
 
 // Battle configuration, shared constants and the pure setup helpers (capacities, map size, spawn area, terrain).
 // Battle (battle.ts) re-exports the public parts.
@@ -120,8 +122,9 @@ function benchMapSize(perTeam: number): number {
   return Math.ceil(Math.max(depth, width) / 1.38) + 8;
 }
 
-/** Number of human (player) teams of a battle. Horde: 1..5 (the horde needs the sixth team index); otherwise 2..6. */
+/** Number of human (player) teams of a battle. Horde: 1..5 (the horde needs the sixth team index); Lane Conquest: exactly 2; otherwise 2..6. */
 export function humanTeamCount(config: BattleConfig): number {
+  if (config.rules === 'lanes') return LANES_TEAMS;
   if (config.rules === 'horde') return Math.min(HORDE_MAX_HUMANS, Math.max(1, Math.floor(config.teamCount ?? 2)));
   return Math.min(MAX_TEAMS, Math.max(2, config.teamCount ?? 2));
 }
@@ -148,8 +151,9 @@ export function teamGroups(config: BattleConfig): number[] {
 }
 
 export function unitCapacity(config: BattleConfig): number {
-  // Modes that spawn structures reserve a slot for each (Siege: the core); Horde reserves its whole dormant wave pool.
-  const extra = (config.rules === 'siege' ? 1 : 0) + (config.rules === 'horde' ? hordePoolSize(humanTeamCount(config)) : 0);
+  // Modes that spawn structures reserve a slot for each (Siege: the core); Horde reserves its whole dormant wave pool; Lane
+  // Conquest reserves its castles and towers plus the dormant soldiers of every wave.
+  const extra = (config.rules === 'siege' ? 1 : 0) + (config.rules === 'horde' ? hordePoolSize(humanTeamCount(config)) : 0) + (config.rules === 'lanes' ? LANES_STRUCTURES + lanesPoolSize() : 0);
   if (config.mode === 'custom') {
     const L = config.layout;
     let necro = 0;
@@ -166,10 +170,24 @@ export function projectileCapacity(config: BattleConfig): number {
 }
 
 export function mapSizeFor(config: BattleConfig): number {
+  const size = baseMapSize(config);
+  // Lane Conquest needs room for two plazas and three lanes: smaller maps are clamped up to LANES_MIN_SIZE.
+  return config.rules === 'lanes' ? Math.max(LANES_MIN_SIZE, size) : size;
+}
+
+function baseMapSize(config: BattleConfig): number {
   if (config.mode === 'custom') return config.mapSize ?? MAP_SIZE;
   if (config.mode !== 'bench') return MAP_SIZE;
   // If the environment is on, room is left around the army block for forest/village.
   return Math.ceil(benchMapSize(config.perTeam) * (config.env === false ? 1 : 1.3));
+}
+
+/**
+ * The map recipe a battle really uses: the configured one, except in Lane Conquest, which always plays on the dedicated 'lanes'
+ * layout (only the biome of the configured recipe is kept, for the look). The app uses this for previews and drawing.
+ */
+export function effectiveMapSpec(config: BattleConfig): MapSpec | undefined {
+  return config.rules === 'lanes' ? lanesSpec(config.map) : config.map;
 }
 
 /** Area covered by the spawns: obstacles/decor are not placed in this area. */
@@ -190,5 +208,5 @@ function spawnZone(config: BattleConfig): { spawnD0: number; spawnD1: number; sp
 /** The sim (worker) and the renderer (main thread) both generate the same map with this. */
 export function terrainFor(config: BattleConfig): Terrain | null {
   if (config.env === false) return null;
-  return new Terrain(mapSizeFor(config), { seed: config.terrainSeed ?? 1, spec: config.map, ...spawnZone(config) });
+  return new Terrain(mapSizeFor(config), { seed: config.terrainSeed ?? 1, spec: effectiveMapSpec(config), ...spawnZone(config) });
 }

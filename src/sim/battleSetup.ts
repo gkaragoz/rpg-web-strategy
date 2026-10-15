@@ -12,6 +12,8 @@ export function spawnLayout(b: Battle): void {
   b.layoutUnits.length = 0;
   for (let k = 0; k + 3 < L.length; k += 4) {
     b.layoutUnits.push(-1);
+    // Lane Conquest has exactly two teams: a unit of any other team has no side to fight for.
+    if (b.config.rules === 'lanes' && (L[k] | 0) >= 2) continue;
     let x = L[k + 2];
     let y = L[k + 3];
     // When the seed changes, a unit left under water/an obstacle is moved to the nearest walkable point.

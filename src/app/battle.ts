@@ -510,7 +510,7 @@ export class BattleScene {
           this.d.world.setZones(hillZoneSpecs(hud.points, this.opts.colors.map((c) => c.main), this.d.world.mapSize));
         }
       }
-      this.modeStrip.update(hud.kind === 'hill' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : hud.kind === 'vip' || hud.kind === 'ctf' || hud.kind === 'siege' || hud.kind === 'horde' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : null, this.opts.colors.length);
+      this.modeStrip.update(hud.kind === 'hill' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : hud.kind === 'vip' || hud.kind === 'ctf' || hud.kind === 'siege' || hud.kind === 'horde' || hud.kind === 'lanes' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : null, this.opts.colors.length);
       const top = document.getElementById('hud-teams')?.getBoundingClientRect().bottom ?? 52;
       this.modeStrip.el.style.top = `${Math.round(top + 6)}px`;
     }

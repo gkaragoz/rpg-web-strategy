@@ -60,7 +60,7 @@ export const F_LAST_MS = 9;
 export const F_PROF = 10; // prep, grid, units, pick, separate, arrows, steps (7 values)
 export const F_DBG = 17; // in DBG_KEYS order (7 values)
 export const F_ALIVE_BASE = 24; // alive count per team (6 values)
-/** Game mode display data (on flag: 1 hill, 2 vip, 3 ctf, 4 siege, 5 horde), scores per team, owner per control point, x/y/radius per point, seconds left. */
+/** Game mode display data (on flag: 1 hill, 2 vip, 3 ctf, 4 siege, 5 horde, 6 lanes), scores per team, owner per control point, x/y/radius per point, seconds left. */
 export const F_MODE_ON = 30;
 export const F_TIME_LEFT = 31;
 export const F_SCORE_BASE = 32; // MAX_TEAMS values
@@ -75,7 +75,9 @@ export const F_CTF_RADIUS = 104;
 export const F_SIEGE_BASE = 105;
 /** Horde mode (F_MODE_ON = 5): wave, waves, seconds to the next wave, living horde units, horde team index (5 values). F_TIME_LEFT is shared. */
 export const F_HORDE_BASE = 111;
-export const F_LEN = 116;
+/** Lane Conquest (F_MODE_ON = 6): per team (2) 5 values: castle hp fraction, max hp, unit, x, y; then living towers per team (2), wave, seconds to the next wave (14 values). F_TIME_LEFT is shared. */
+export const F_LANES_BASE = 116;
+export const F_LEN = 130;
 
 /** Writes the mode HUD into the control block (worker side; classic: switches it off). */
 export function writeModeHud(f: Float64Array, hud: ModeHud): void {
@@ -88,6 +90,22 @@ export function writeModeHud(f: Float64Array, hud: ModeHud): void {
       f[F_VIP_BASE + t * 3 + 1] = e ? e.hp : 0;
       f[F_VIP_BASE + t * 3 + 2] = e && e.alive ? 1 : 0;
     }
+    return;
+  }
+  if (hud.kind === 'lanes') {
+    f[F_MODE_ON] = 6;
+    f[F_TIME_LEFT] = hud.timeLeft;
+    for (let t = 0; t < 2; t++) {
+      const c = hud.castles[t];
+      f[F_LANES_BASE + t * 5] = c ? c.hp : 0;
+      f[F_LANES_BASE + t * 5 + 1] = c ? c.maxHp : 0;
+      f[F_LANES_BASE + t * 5 + 2] = c ? c.unit : -1;
+      f[F_LANES_BASE + t * 5 + 3] = c ? c.x : 0;
+      f[F_LANES_BASE + t * 5 + 4] = c ? c.y : 0;
+      f[F_LANES_BASE + 10 + t] = hud.towers[t] ?? 0;
+    }
+    f[F_LANES_BASE + 12] = hud.wave;
+    f[F_LANES_BASE + 13] = hud.nextIn;
     return;
   }
   if (hud.kind === 'horde') {
@@ -147,6 +165,10 @@ export function readModeHud(f: Float64Array): ModeHud {
     const teams: Array<{ unit: number; hp: number; alive: boolean }> = [];
     for (let t = 0; t < MAX_TEAMS; t++) teams.push({ unit: f[F_VIP_BASE + t * 3], hp: f[F_VIP_BASE + t * 3 + 1], alive: f[F_VIP_BASE + t * 3 + 2] === 1 });
     return { kind: 'vip', teams, timeLeft: f[F_TIME_LEFT] };
+  }
+  if (f[F_MODE_ON] === 6) {
+    const castles = [0, 1].map((t) => ({ team: t, hp: f[F_LANES_BASE + t * 5], maxHp: f[F_LANES_BASE + t * 5 + 1], unit: f[F_LANES_BASE + t * 5 + 2], x: f[F_LANES_BASE + t * 5 + 3], y: f[F_LANES_BASE + t * 5 + 4] }));
+    return { kind: 'lanes', castles, towers: [f[F_LANES_BASE + 10], f[F_LANES_BASE + 11]], wave: f[F_LANES_BASE + 12], nextIn: f[F_LANES_BASE + 13], timeLeft: f[F_TIME_LEFT] };
   }
   if (f[F_MODE_ON] === 5) {
     return { kind: 'horde', wave: f[F_HORDE_BASE], waves: f[F_HORDE_BASE + 1], nextIn: f[F_HORDE_BASE + 2], hordeAlive: f[F_HORDE_BASE + 3], hordeTeam: f[F_HORDE_BASE + 4], timeLeft: f[F_TIME_LEFT] };

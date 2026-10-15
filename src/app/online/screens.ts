@@ -206,6 +206,7 @@ export class LobbyScreen {
       <div class="on-map"><canvas id="l-prev" width="160" height="82"></canvas><div class="on-map-info"><b id="l-map-name"></b><div class="on-btnrow"><button type="button" id="l-map-pick">${t('online.lobby.pick')}</button><button type="button" id="l-map-rand">${t('online.lobby.random')}</button></div></div></div>
     </div>
     <div class="on-field stack"><span>${t('mode.label')}</span><div id="l-mode"></div></div>
+    <p class="note" id="l-lanes-note" hidden>${t('mode.lanes.ownMap')}</p>
     <div class="on-field" id="l-siege" hidden><span>${t('mode.siege.defender')}</span><select id="l-siege-def"></select></div>
     <div class="on-field"><span>${t('online.lobby.gold')}</span><div class="seg" id="l-gold"></div><input id="l-gold-n" type="number" min="100" max="10000000" step="100" aria-label="${esc(t('online.lobby.goldCustom'))}" /></div>
     <div class="on-field"><span>${t('online.lobby.placeTime')}</span><select id="l-time"></select></div>
@@ -374,6 +375,7 @@ export class LobbyScreen {
         b.setAttribute('aria-pressed', String(Number((b as HTMLElement).dataset.g) === s.gold));
       });
       this.modePicker.set(isSelectableMode(s.gameMode) ? s.gameMode : 'classic', !host);
+      this.q('#l-lanes-note').hidden = s.gameMode !== 'lanes';
       this.paintSiege(s.gameMode === 'siege', s.siegeDefender, st.players.filter((p) => p.role === 'player').length, host);
       const gn = q<HTMLInputElement>('#l-gold-n');
       if (document.activeElement !== gn) gn.value = String(s.gold);
@@ -402,9 +404,10 @@ export class LobbyScreen {
     startBtn.hidden = !host;
     const pl = st.players.filter((p) => p.role === 'player');
     const tooMany = s.gameMode === 'horde' && pl.length > 5;
-    const can = pl.length >= 2 && !tooMany && pl.every((p) => p.id === st.hostId || (p.ready && p.connected));
+    const notTwo = s.gameMode === 'lanes' && pl.length !== 2;
+    const can = pl.length >= 2 && !tooMany && !notTwo && pl.every((p) => p.id === st.hostId || (p.ready && p.connected));
     startBtn.disabled = !can;
-    q('#l-start-note').textContent = !host ? '' : pl.length < 2 ? t('online.lobby.need2') : tooMany ? t('mode.horde.maxTeams') : can ? t('online.lobby.counts', { n: pl.length }) : t('online.lobby.needReady');
+    q('#l-start-note').textContent = !host ? '' : pl.length < 2 ? t('online.lobby.need2') : tooMany ? t('mode.horde.maxTeams') : notTwo ? t('mode.lanes.twoTeams') : can ? t('online.lobby.counts', { n: pl.length }) : t('online.lobby.needReady');
     const ready = q<HTMLButtonElement>('#l-ready');
     const me = m.me;
     ready.hidden = host || !me || me.role !== 'player';

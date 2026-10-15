@@ -70,6 +70,7 @@ export interface TroopDef {
   /**
    * Structure: a fixed object placed by a game mode (never bought, placed or moved by players; it has no attack, no skill and
    * ignores knockback / launch / stun / fear / taunt). Always also `summoned`, which hides it from every placement list.
+   * A structure with `ranged: true` is ARMED (Lane Conquest tower): it still never moves, but fires at the nearest enemy unit in range.
    */
   structure?: boolean;
   /** Base stats: [hp, attack, defense]. */
@@ -110,7 +111,7 @@ const TYPING: Record<string, string> = {
   thornlings: 'P-M', 'bone-caller': 'M-L', wayfarers: 'B-L', 'night-lancer': 'P-M', 'sun-priest': 'M-L', 'soul-reaver': 'S-S', 'lancer-knight': 'P-H',
   javelineers: 'P-L', 'pit-fighters': 'B-M', 'horned-seer': 'M-L', 'hex-poppets': 'P-S', scarecrow: 'B-M', 'hex-witch': 'M-L', mender: 'M-L',
   'war-barge': 'B-H', 'ash-fiend': 'S-M', 'axe-warden': 'S-M', 'dread-totem': 'M-S', 'cinder-golem': 'B-H', 'dawn-blade': 'S-M', 'rime-archers': 'P-L',
-  'tusk-rider': 'P-H', 'sand-king': 'M-S', 'granite-colossus': 'B-H', 'siege-core': 'B-M',
+  'tusk-rider': 'P-H', 'sand-king': 'M-S', 'granite-colossus': 'B-H', 'siege-core': 'B-M', 'lane-castle': 'B-H', 'lane-tower': 'P-H',
 };
 const DMG_CODE: Record<string, number> = { S: DMG.slash, P: DMG.pierce, B: DMG.blunt, M: DMG.magic };
 const ARM_CODE: Record<string, number> = { L: ARM.light, M: ARM.medium, H: ARM.heavy, S: ARM.spirit };
@@ -685,6 +686,36 @@ export const TROOPS: TroopDef[] = [
     structure: true,
     text: L('The keep the defenders must hold.', 'Savunmacıların tutması gereken hisar.'),
     base: [15000, 0, 55],
+  }),
+  // Lane Conquest: the castle each team defends and the towers along the lanes (see sim/modes/lanes.ts).
+  T({
+    id: 'lane-castle',
+    name: 'Lane Castle',
+    rarity: 'legendary',
+    race: 'human',
+    role: 'tank',
+    move: 0,
+    atkSpd: 0.2,
+    reach: 0,
+    summoned: true,
+    structure: true,
+    text: L('The castle of a team: destroy the enemy one to win.', 'Bir takımın kalesi: kazanmak için düşman kaleyi yık.'),
+    base: [25000, 0, 55],
+  }),
+  T({
+    id: 'lane-tower',
+    name: 'Lane Tower',
+    rarity: 'legendary',
+    race: 'human',
+    role: 'archer',
+    move: 0,
+    atkSpd: 1 / 1.2,
+    reach: 9,
+    ranged: true,
+    summoned: true,
+    structure: true,
+    text: L('A stone tower: never moves and shoots the nearest enemy soldier in range.', 'Taş kule: yerinden oynamaz ve menzildeki en yakın düşman askere ok atar.'),
+    base: [4500, 182, 55],
   }),
 ];
 

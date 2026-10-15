@@ -3,8 +3,8 @@ import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
 import type { GameModeId } from '../sim/modes/types';
 
-/** Protocol version: a client with a different version cannot join the lobby. Bumped for wire changes and also when simulation or map generation results change (v11: valley gates, path costs, chase watchdog; v12: game modes, result scores; v13: VIP mode, vip/vipSet messages, BattleStart.vips; v14: Siege mode, siegeDefender setting / GameInit field, structure unit kind; v15: Horde mode with allied teams, startFail message), because lockstep needs identical results. */
-export const PROTOCOL = 15;
+/** Protocol version: a client with a different version cannot join the lobby. Bumped for wire changes and also when simulation or map generation results change (v11: valley gates, path costs, chase watchdog; v12: game modes, result scores; v13: VIP mode, vip/vipSet messages, BattleStart.vips; v14: Siege mode, siegeDefender setting / GameInit field, structure unit kind; v15: Horde mode with allied teams, startFail message; v16: Lane Conquest mode, lanes map layout, StartFailReason lanesNeedTwoTeams), because lockstep needs identical results. */
+export const PROTOCOL = 16;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;
@@ -146,8 +146,9 @@ export type PlaceFailReason = 'busy' | 'invalid' | 'unbuyable' | 'banned' | 'zon
 /**
  * Why the host's 'start' was refused (stable codes, translated by the UI as `online.reason.<code>`).
  * hordeTooManyTeams: Horde mode needs a team index for the horde, so at most HORDE_MAX_HUMANS (5) players can start it.
+ * lanesNeedTwoTeams: Lane Conquest is a two-team mode, so it only starts with exactly 2 players.
  */
-export type StartFailReason = 'hordeTooManyTeams';
+export type StartFailReason = 'hordeTooManyTeams' | 'lanesNeedTwoTeams';
 
 /** Why a session ended (stable codes, translated by the UI as `online.reason.<code>`). */
 export type CloseReason = 'closed' | 'kicked' | 'lost' | 'serverLost';
