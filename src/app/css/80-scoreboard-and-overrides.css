@@ -123,6 +123,12 @@
 body:has(.result:not([hidden])) #stats {
   display: none;
 }
+/* Phones: an expanded damage meter showed through the translucent result card; the card has the same numbers. */
+@media (max-width: 760px), (max-height: 520px) {
+  body:has(.result:not([hidden])) .dps:not(.collapsed) {
+    display: none;
+  }
+}
 
 /* Touch targets: every battle HUD / damage meter / segmented-control button is at least 40 px wide as well as tall (last in the file: it must win over the base rules above). */
 @media (pointer: coarse) {
@@ -243,7 +249,8 @@ body:has(.result:not([hidden])) #stats {
   min-width: 34px;
 }
 @media (pointer: coarse) {
-  .tour-btns button {
+  .tour-btns button,
+  .dock-help {
     min-height: 40px;
     min-width: 40px;
   }
@@ -344,4 +351,12 @@ body:has(.result:not([hidden])) #stats {
 .hm-meta {
   color: var(--muted);
   text-align: center;
+}
+/* Wherever the centered team bar / objective strip could reach the damage meter (left) or the stats panel (right), both start below them.
+   battle.ts publishes --hud-stack (bottom of the team bar or of the strip, whichever is lower). */
+@media (max-width: 1300px), (max-height: 520px) {
+  .dps,
+  #stats {
+    top: calc(var(--hud-stack, 58px) + 6px);
+  }
 }

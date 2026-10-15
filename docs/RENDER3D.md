@@ -47,6 +47,12 @@ The 2D art is drawn for an isometric view, so a plain camera-facing quad looked 
 - The packed tint (0xRRGGBB) is decoded in the vertex shader: interpolating a number near 2^24 across a tilted quad rounds per row and drew
   coloured scanlines.
 
+## Game modes in 3D
+- `setZones` draws placement zones and Hill control points (`strong`, the clearest tint) as ground tiles; `overlayCornerHeight` puts them on the bridge decks instead of under them.
+- `setMarkers` draws VIP rings with a gold cone and CTF flags as a pole with a pennant; they grow with the camera distance (`markerScale`) so they stay readable zoomed out, and the pennant turns toward the camera.
+- Structures (siege core, lane castles and towers) and horde monsters are ordinary units: their kinds must be in the baked atlas (`structureKinds`, see `main.ts` / `online.ts`), otherwise `atlasToGpu` has no frame and they fight invisibly.
+- `Camera3D.fit` uses `fitDist`: the four map corners (where armies, flags and cores start) are inside the view, like the 2D fit.
+
 ## Differences from 2D
 The comedy look (ragdolls) and the debug overlay are 2D-only (their buttons are hidden in 3D); health bars follow the Health bars option
 (damaged / always → shown, never → hidden). Effects are drawn on top of everything and capped per frame in huge battles.

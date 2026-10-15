@@ -19,6 +19,19 @@ const ICE_SERVERS: RTCIceServer[] = [
 
 export const peerId = (code: string): string => PREFIX + code.toUpperCase();
 
+/**
+ * PeerJS never closes a data channel whose network path died (a closed tab or a pulled cable): the channel stays "open" and no
+ * 'close' event fires, so the room would keep a vanished player as connected forever. The peer connection itself reports
+ * 'failed' after about 20 s; that is treated as a close.
+ */
+function onPathLost(conn: DataConnection, lost: () => void): void {
+  const pc = conn.peerConnection as RTCPeerConnection | undefined;
+  if (!pc) return;
+  pc.addEventListener('connectionstatechange', () => {
+    if (pc.connectionState === 'failed') lost();
+  });
+}
+
 const peerOpts = ():{ config: RTCConfiguration } => ({ config: { iceServers: ICE_SERVERS, iceCandidatePoolSize: 2 } });
 
 function openPeer(id?: string): Promise<Peer> {
@@ -59,6 +72,10 @@ export class PeerHostTransport implements Transport {
         this.conns.get(id)?.close();
         this.conns.set(id, conn);
         this.onPeerJoin(id);
+        onPathLost(conn, () => {
+          gone();
+          conn.close();
+        });
       });
       conn.on('data', (d) => {
         if (this.conns.get(id) === conn) this.onMessage(id, d as Msg);
@@ -116,9 +133,19 @@ export class PeerGuestTransport implements Transport {
     private readonly conn: DataConnection,
     readonly id: string,
   ) {
+    let lost = false;
+    const drop = (): void => {
+      if (lost) return;
+      lost = true;
+      this.onClose('lost');
+    };
     conn.on('data', (d) => this.onMessage('host', d as Msg));
-    conn.on('close', () => this.onClose('lost'));
-    conn.on('error', () => this.onClose('lost'));
+    conn.on('close', drop);
+    conn.on('error', drop);
+    onPathLost(conn, () => {
+      drop();
+      conn.close();
+    });
   }
 
   static async create(code: string): Promise<PeerGuestTransport> {

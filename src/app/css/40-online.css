@@ -146,6 +146,9 @@
   flex-direction: column;
   gap: 4px;
 }
+.on-field[hidden] {
+  display: none; /* the author rule above would otherwise show hidden fields (the siege defender select in every mode) */
+}
 .on-field > span {
   color: var(--muted);
 }

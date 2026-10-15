@@ -61,6 +61,16 @@ export function surfaceHeight(t: Terrain, x: number, y: number): number {
 }
 
 /**
+ * Height of a corner of tile (tx, ty) for flat overlays lying on the ground (placement zones, control points): never below the water
+ * level, and on a bridge tile on the deck, which floats `DECK_LIFT` above the ground (an overlay at ground height hid under the deck).
+ */
+export function overlayCornerHeight(t: Terrain, tx: number, ty: number, dx: number, dy: number): number {
+  const n = t.size;
+  const f = t.flags[Math.min(n - 1, Math.max(0, ty)) * n + Math.min(n - 1, Math.max(0, tx))];
+  return Math.max(0, cornerHeight(t, tx + dx, ty + dy)) + (f === T_BRIDGE ? DECK_LIFT : 0);
+}
+
+/**
  * Polygonal terrain from the height field: every tile is its own quad (own colour, flat-shaded faces) on the corner heights of
  * the simulation, water tiles sink below the shore, bridge decks float above the water, and shore walls close the gaps.
  */

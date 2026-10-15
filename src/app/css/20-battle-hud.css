@@ -94,7 +94,7 @@
 
 @media (max-width: 900px) {
   .panel {
-    width: min(300px, calc(100vw - 24px));
+    width: min(300px, calc(100vw - 54px)); /* content-box: + 30px padding and border keeps a 12px gutter on a 320px phone */
     display: none;
     z-index: 5;
   }

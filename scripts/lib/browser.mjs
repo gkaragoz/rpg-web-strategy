@@ -94,6 +94,41 @@ export class Page {
     return p;
   }
 
+  /**
+   * Opens the page in its own browser window. Tabs of one window are hidden while another tab is in front and get no animation
+   * frames, which stalls a battle driven by the frame loop; every window is visible, so several windows run side by side.
+   */
+  static async openWindow(debugPort, width = 1000, height = 640) {
+    const ver = await (await fetch(`http://127.0.0.1:${debugPort}/json/version`)).json();
+    const bws = new WebSocket(ver.webSocketDebuggerUrl);
+    await new Promise((res, rej) => {
+      bws.onopen = res;
+      bws.onerror = () => rej(new Error('browser ws error'));
+    });
+    const r = await new Promise((res) => {
+      bws.onmessage = (e) => res(JSON.parse(e.data));
+      bws.send(JSON.stringify({ id: 1, method: 'Target.createTarget', params: { url: 'about:blank', newWindow: true, width, height } }));
+    });
+    bws.close();
+    const targetId = r.result.targetId;
+    let t;
+    for (let i = 0; i < 50 && !t; i++) {
+      t = (await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json()).find((x) => x.id === targetId);
+      if (!t) await sleep(100);
+    }
+    if (!t) throw new Error('new window did not appear');
+    const ws = new WebSocket(t.webSocketDebuggerUrl);
+    await new Promise((res, rej) => {
+      ws.onopen = res;
+      ws.onerror = () => rej(new Error('ws error'));
+    });
+    const p = new Page(ws, debugPort);
+    p.targetId = targetId;
+    await p.send('Page.enable');
+    await p.send('Runtime.enable');
+    return p;
+  }
+
   send(method, params = {}) {
     const id = ++this.id;
     this.ws.send(JSON.stringify({ id, method, params }));
@@ -164,10 +199,10 @@ export class Page {
   }
 }
 
-/** Starts `vite preview` on `dist/` and a headless Chrome; returns helpers and a `stop()` that kills only what it started. */
-export async function startStack({ port = 4310, debugPort = 9360, width = 1280, height = 800 } = {}) {
-  if (!fs.existsSync(path.join(ROOT, 'dist', 'index.html'))) throw new Error('dist/ missing: run `npm run build` first');
-  const preview = spawn(process.execPath, [path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js'), 'preview', '--port', String(port), '--strictPort', '--host', '127.0.0.1'], { cwd: ROOT, stdio: 'ignore' });
+/** Starts `vite preview` on `dist/` (or `dist` / E2E_DIST) and a headless Chrome; returns helpers and a `stop()` that kills only what it started. */
+export async function startStack({ port = 4310, debugPort = 9360, width = 1280, height = 800, dist = process.env.E2E_DIST || path.join(ROOT, 'dist') } = {}) {
+  if (!fs.existsSync(path.join(dist, 'index.html'))) throw new Error(`${dist} missing: run \`npm run build\` first`);
+  const preview = spawn(process.execPath, [path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js'), 'preview', '--port', String(port), '--strictPort', '--host', '127.0.0.1', '--outDir', dist], { cwd: ROOT, stdio: 'ignore' });
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rpgweb-e2e-'));
   const chrome = spawn(
     findChrome(),
@@ -203,7 +238,7 @@ export async function startStack({ port = 4310, debugPort = 9360, width = 1280, 
     base: `http://127.0.0.1:${port}/`,
     stop,
     async page(opts = {}) {
-      const p = await Page.open(debugPort);
+      const p = opts.window ? await Page.openWindow(debugPort, opts.width, opts.height) : await Page.open(debugPort);
       pages.push(p);
       if (opts.width) await p.viewport(opts.width, opts.height, !!opts.mobile);
       return p;

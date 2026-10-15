@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hillZoneSpecs, pointsHeld, stripProgress, type HillStrip } from '../../app/modeHud';
+import { hillZoneSpecs, hudStackBottom, pointsHeld, stripProgress, type HillStrip } from '../../app/modeHud';
 import { SELECTABLE_MODES } from '../../app/modeIds';
 import { allStrings } from '../../i18n';
 
@@ -17,6 +17,15 @@ describe('objective strip helpers', () => {
     expect(pointsHeld(data([0, 0, 1]), 2)).toEqual([2, 1]);
     expect(pointsHeld(data([-1, -2, 1]), 3)).toEqual([0, 1, 0]);
     expect(pointsHeld(data([5]), 2)).toEqual([0, 0]);
+  });
+});
+
+describe('HUD top band', () => {
+  it('panels start below the lower of the team bar and the objective strip', () => {
+    expect(hudStackBottom(48, null)).toBe(48); // classic: no strip
+    expect(hudStackBottom(48, 120.4)).toBe(120); // strip under the bar
+    expect(hudStackBottom(96, 90)).toBe(96); // a wrapped team bar can reach lower than a stale strip
+    expect(hudStackBottom(47.6, null)).toBe(48);
   });
 });
 

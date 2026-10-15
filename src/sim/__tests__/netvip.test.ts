@@ -290,6 +290,22 @@ describe('BattleStart.vips', () => {
     expect(r.hs.model.state!.phase).toBe('lobby');
     expect(a.model.vip).toBe(-1);
   });
+
+  it('after a rematch (and for a rejoining player) the model already holds the own units and the VIP among them, before any screen exists', () => {
+    // The placement screen is built after the messages arrived (always for the host): it adopts model.placed and model.vip.
+    const { r, a, ids } = started(true);
+    r.hs.send({ t: 'rematch' });
+    const own = (m: GuestSession | HostSession, team: number): number[] => [...m.model.placed.values()].filter((u) => u.team === team).map((u) => u.id);
+    expect(own(r.hs, 0)).toContain(r.hs.model.vip);
+    expect(r.hs.model.vip).toBe(ids.h[1]);
+    expect(own(a, a.model.me!.team)).toContain(a.model.vip);
+    expect(a.model.vip).toBe(ids.a[3]);
+    const token = a.model.token;
+    a.leave(true);
+    const back = join(r, 'A', token);
+    expect(back.model.vip).toBe(ids.a[3]);
+    expect(own(back, back.model.me!.team)).toContain(back.model.vip);
+  });
 });
 
 describe('protocol version', () => {

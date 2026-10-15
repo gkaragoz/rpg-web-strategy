@@ -1,5 +1,5 @@
 import type { CameraBackend } from '../contracts/backend';
-import { orbitRig, panAxes, pinchRig, TILT_MAX, TILT_MIN } from './cameraRig';
+import { clampRig, fitDist, orbitRig, panAxes, pinchRig, TILT_MAX, TILT_MIN } from './cameraRig';
 import { groundHeight } from './terrainMesh';
 import type { View3D } from './scene3d';
 
@@ -73,9 +73,10 @@ export class Camera3D implements CameraBackend {
   /** Fits the whole map on screen (the default framing; portrait screens stand further back). */
   fit(screenW: number, screenH: number): void {
     const aspect = Math.max(0.2, screenW / Math.max(1, screenH));
-    const wide = Math.max(1, 0.95 / aspect);
     const c = this.size / 2;
-    this.view.rig = { fx: c, fz: c, yaw: Math.PI / 4, tilt: (48 * Math.PI) / 180, dist: this.size * 1.05 * wide };
+    const yaw = Math.PI / 4;
+    const tilt = (48 * Math.PI) / 180;
+    this.view.rig = clampRig({ fx: c, fz: c, yaw, tilt, dist: fitDist(this.size, aspect, this.view.camera.fov, tilt, yaw) }, this.size);
   }
 
   zoomBy(factor: number): void {

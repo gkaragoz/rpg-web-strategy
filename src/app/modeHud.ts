@@ -65,6 +65,11 @@ export function stripProgress(score: number, target: number): number {
   return target > 0 ? Math.max(0, Math.min(1, score / target)) : 0;
 }
 
+/** Bottom edge of the battle HUD's top band: the lower of the team bar and (when shown) the objective strip. Panels that share the band start below it. */
+export function hudStackBottom(teamsBottom: number, stripBottom: number | null): number {
+  return Math.round(Math.max(teamsBottom, stripBottom ?? 0));
+}
+
 /** Owned control points per team (index = team). */
 export function pointsHeld(data: HillStrip, teamCount: number): number[] {
   const held = new Array<number>(teamCount).fill(0);

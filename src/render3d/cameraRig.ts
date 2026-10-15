@@ -25,6 +25,15 @@ export function clampRig(r: Rig, size: number): Rig {
   };
 }
 
+/** Height of a flag pole and of the VIP cone above the ground (world units, at marker scale 1). */
+export const FLAG_POLE_H = 3.2;
+export const MARKER_PIN_Y = 2.6;
+
+/** Size factor of the mode markers (rings, crowns, flags): 1 up close, growing with the camera distance so they stay readable zoomed out (max 3.4). */
+export function markerScale(dist: number): number {
+  return Math.min(3.4, Math.max(1, dist / 50));
+}
+
 /** Camera position for a rig whose focus sits at height `fy`. */
 export function eyeOf(r: Rig, fy: number): { x: number; y: number; z: number } {
   const horiz = Math.cos(r.tilt) * r.dist;
@@ -33,6 +42,32 @@ export function eyeOf(r: Rig, fy: number): { x: number; y: number; z: number } {
     y: fy + Math.sin(r.tilt) * r.dist,
     z: r.fz - Math.cos(r.yaw) * horiz,
   };
+}
+
+/**
+ * Distance at which the four corners of a square map (`size` tiles, looked at from its centre) stay inside the view (`margin` of the half
+ * screen), for a camera with vertical field of view `fovDeg`. The corners are where the armies and objectives of most modes start, so
+ * cropping them hid a team's soldiers, flag or core behind the screen edge or the placement dock.
+ */
+export function fitDist(size: number, aspect: number, fovDeg: number, tilt: number, yaw: number, margin = 0.95): number {
+  const th = Math.tan((fovDeg * Math.PI) / 360);
+  const tw = th * Math.max(0.2, aspect);
+  const ct = Math.cos(tilt);
+  const fwd = { x: Math.sin(yaw) * ct, y: -Math.sin(tilt), z: Math.cos(yaw) * ct };
+  const right = { x: -Math.cos(yaw), y: 0, z: Math.sin(yaw) };
+  // up = right x forward
+  const up = { x: right.y * fwd.z - right.z * fwd.y, y: right.z * fwd.x - right.x * fwd.z, z: right.x * fwd.y - right.y * fwd.x };
+  const h = size / 2;
+  let need = DIST_MIN;
+  for (const [sx, sz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+    const dx = sx * h;
+    const dz = sz * h;
+    const along = dx * fwd.x + dz * fwd.z;
+    const px = Math.abs(dx * right.x + dz * right.z);
+    const py = Math.abs(dx * up.x + dz * up.z);
+    need = Math.max(need, px / (margin * tw) - along, py / (margin * th) - along);
+  }
+  return need;
 }
 
 /** Ground-plane vectors of the screen axes for the current yaw (used to pan with the mouse): right and "up the screen". */

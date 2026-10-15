@@ -185,7 +185,7 @@ export class World3D implements WorldBackend, Battle3D {
   }
 
   setZones(zones: ZoneSpec[] | null): void {
-    this.view.setZones(zones ? zones.map((z, i) => ({ team: i, color: z.color, tiles: z.tiles, mine: z.mine || !!z.strong })) : null);
+    this.view.setZones(zones ? zones.map((z, i) => ({ team: i, color: z.color, tiles: z.tiles, mine: z.mine, strong: z.strong })) : null);
   }
 
   setMarkers(markers: MarkerSpec[] | null): void {

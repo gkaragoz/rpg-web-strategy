@@ -7,7 +7,7 @@ import type { SimEvent } from '../sim/battle';
 import { STATS } from '../sim/units';
 import { type AtlasGpu, decorFrame } from './atlasBridge';
 import { PX_WORLD, UnitInstances, type UnitsLike } from './billboards';
-import { clampRig, eyeOf, type Rig } from './cameraRig';
+import { clampRig, eyeOf, fitDist, FLAG_POLE_H, MARKER_PIN_Y, markerScale, type Rig } from './cameraRig';
 import { footprintOf, leanUpVector } from './depth';
 import { drawFxAtlas, Fx3D } from './fx3d';
 import { pickGround, type GroundHit } from './pick';
@@ -25,7 +25,7 @@ import {
   WATER_FRAG,
   WATER_VERT,
 } from './shaders';
-import { groundHeight, surfaceHeight, terrainGeometry } from './terrainMesh';
+import { groundHeight, overlayCornerHeight, surfaceHeight, terrainGeometry } from './terrainMesh';
 
 export interface ZoneOverlay {
   team: number;
@@ -34,6 +34,8 @@ export interface ZoneOverlay {
   tiles: Array<[number, number]>;
   /** The player's own zone: a stronger tint. */
   mine?: boolean;
+  /** An objective area (control point): the strongest tint. */
+  strong?: boolean;
 }
 
 const QUAD = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
@@ -77,7 +79,7 @@ export class View3D {
   private water: THREE.Mesh | null = null;
   private zoneMesh: THREE.Mesh | null = null;
   private hover: THREE.Mesh;
-  private markers: Array<{ ring: THREE.Mesh; pin: THREE.Mesh }> = [];
+  private markers: Array<{ group: THREE.Group; ring: THREE.Mesh; pin: THREE.Mesh; pole: THREE.Mesh; cloth: THREE.Mesh }> = [];
   private markerRing = (() => {
     const g = new THREE.RingGeometry(0.82, 1, 40);
     g.rotateX(-Math.PI / 2);
@@ -86,8 +88,21 @@ export class View3D {
   private markerPin = (() => {
     const g = new THREE.ConeGeometry(0.42, 0.9, 12);
     g.rotateX(Math.PI);
+    g.translate(0, MARKER_PIN_Y, 0);
     return g;
   })();
+  private markerPole = (() => {
+    const g = new THREE.CylinderGeometry(0.05, 0.05, FLAG_POLE_H, 6);
+    g.translate(0, FLAG_POLE_H / 2, 0);
+    return g;
+  })();
+  /** Pennant on the top of the pole, in the local XY plane (the marker group turns it toward the camera). */
+  private markerCloth = (() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0.05, FLAG_POLE_H, 0, 1.35, FLAG_POLE_H - 0.38, 0, 0.05, FLAG_POLE_H - 0.76, 0]), 3));
+    return g;
+  })();
+  private readonly poleMat = new THREE.MeshBasicMaterial({ color: 0x2a2f39, depthTest: false });
   private gpu: AtlasGpu | null = null;
   private inst: UnitInstances;
   private unitGeo = quadGeometry();
@@ -361,9 +376,8 @@ export class View3D {
     (this.scene.fog as THREE.FogExp2).density = 0.0035;
     this.uniforms.uFogColor.value.copy(this.fogColor);
     this.uniforms.uFogDensity.value = 0.0035;
-    // Portrait screens need to stand further back to see the width of the map.
-    const wide = Math.max(1, 0.95 / Math.max(0.2, this.camera.aspect));
-    this.rig = clampRig({ ...this.rig, fx: c, fz: c, dist: t.size * 1.05 * wide }, t.size);
+    // Stand far enough back to see the whole map (portrait screens need more distance for its width).
+    this.rig = clampRig({ ...this.rig, fx: c, fz: c, dist: fitDist(t.size, this.camera.aspect, this.camera.fov, this.rig.tilt, this.rig.yaw) }, t.size);
     this.buildDecor();
   }
 
@@ -464,12 +478,14 @@ export class View3D {
     let q = 0;
     for (const z of zones) {
       const c = new THREE.Color(z.color);
-      const alpha = z.mine ? 0.42 : 0.18;
+      const alpha = z.strong ? 0.55 : z.mine ? 0.42 : 0.18;
       for (const [x, y] of z.tiles) {
-        const corners = [[x, y], [x, y + 1], [x + 1, y + 1], [x + 1, y]];
-        corners.forEach(([cx, cy], k) => {
+        const corners = [[0, 0], [0, 1], [1, 1], [1, 0]];
+        corners.forEach(([dx, dy], k) => {
+          const cx = x + dx;
+          const cy = y + dy;
           pos[(q * 4 + k) * 3] = cx;
-          pos[(q * 4 + k) * 3 + 1] = Math.max(0, groundHeight(t, cx, cy)) + 0.05;
+          pos[(q * 4 + k) * 3 + 1] = overlayCornerHeight(t, x, y, dx, dy) + 0.05;
           pos[(q * 4 + k) * 3 + 2] = cy;
           col[(q * 4 + k) * 4] = c.r;
           col[(q * 4 + k) * 4 + 1] = c.g;
@@ -561,26 +577,44 @@ export class View3D {
     (this.hover.material as THREE.MeshBasicMaterial).color.setHex(color);
   }
 
-  /** VIP crowns / flags: a team-coloured ring on the ground plus a pin (gold cone for a VIP, pole with a flag for a flag) above it. */
+  /** VIP crowns / flags: a team-coloured ring on the ground plus a gold cone above it (VIP) or a pole with a pennant (flag). */
   setMarkers(list: Array<{ x: number; y: number; z: number; color: number; kind: 'vip' | 'flag' }> | null): void {
     const items = list ?? [];
     while (this.markers.length < items.length) {
+      const group = new THREE.Group();
       const ring = new THREE.Mesh(this.markerRing, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthTest: false }));
       const pin = new THREE.Mesh(this.markerPin, new THREE.MeshBasicMaterial({ color: 0xffd34d, depthTest: false }));
-      ring.renderOrder = pin.renderOrder = 11;
-      this.scene.add(ring, pin);
-      this.markers.push({ ring, pin });
+      const pole = new THREE.Mesh(this.markerPole, this.poleMat);
+      const cloth = new THREE.Mesh(this.markerCloth, new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, side: THREE.DoubleSide }));
+      ring.position.y = 0.09;
+      ring.scale.setScalar(0.9);
+      ring.renderOrder = pin.renderOrder = pole.renderOrder = cloth.renderOrder = 11;
+      group.add(ring, pin, pole, cloth);
+      this.scene.add(group);
+      this.markers.push({ group, ring, pin, pole, cloth });
     }
     this.markers.forEach((m, i) => {
       const it = items[i];
-      m.ring.visible = m.pin.visible = !!it;
+      m.group.visible = !!it;
       if (!it) return;
-      m.ring.position.set(it.x, it.y + 0.09, it.z);
-      m.ring.scale.setScalar(0.9);
+      m.group.position.set(it.x, it.y, it.z);
+      m.pin.visible = it.kind === 'vip';
+      m.pole.visible = m.cloth.visible = it.kind === 'flag';
       (m.ring.material as THREE.MeshBasicMaterial).color.setHex(it.color);
-      m.pin.position.set(it.x, it.y + 2.6, it.z);
-      (m.pin.material as THREE.MeshBasicMaterial).color.setHex(it.kind === 'vip' ? 0xffd34d : it.color);
+      (m.cloth.material as THREE.MeshBasicMaterial).color.setHex(it.color);
     });
+    this.orientMarkers();
+  }
+
+  /** Markers keep their size on screen when the camera is far away and the pennant faces the camera. */
+  private orientMarkers(): void {
+    const k = markerScale(this.rig.dist);
+    const cam = this.camera.position;
+    for (const m of this.markers) {
+      if (!m.group.visible) continue;
+      m.group.scale.setScalar(k);
+      m.group.rotation.y = Math.atan2(cam.x - m.group.position.x, cam.z - m.group.position.z);
+    }
   }
 
   setOutlineColor(c: number): void {
@@ -635,6 +669,7 @@ export class View3D {
     if (this.renderer.getPixelRatio() !== Math.min(window.devicePixelRatio || 1, 2)) this.resize(); // zoom / screen change without a size change
     this.applyCamera();
     if (this.waterMat) this.waterMat.uniforms.uTime.value = this.time;
+    this.orientMarkers();
     this.renderer.render(this.scene, this.camera);
     this.info.draws = this.renderer.info.render.calls;
     this.info.tris = this.renderer.info.render.triangles;

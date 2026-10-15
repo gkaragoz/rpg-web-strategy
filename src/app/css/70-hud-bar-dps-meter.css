@@ -42,7 +42,7 @@
   pointer-events: none;
 }
 .hud-seg-n {
-  padding: 0 6px;
+  padding: 0 3px; /* a tiny share (a few survivors) still shows its count instead of an ellipsis */
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -151,6 +151,7 @@
 }
 .dps-row {
   position: relative;
+  flex: none; /* overflow:hidden lets a flex item shrink to nothing: rows must keep their height and the list scrolls instead */
   display: flex;
   align-items: center;
   gap: 8px;
@@ -233,30 +234,38 @@
     box-sizing: border-box;
     width: min(318px, calc(100vw - 16px));
   }
+  /* The open meter ends above the bottom bar even on a landscape phone (the list scrolls inside it). */
+  .dps {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - var(--hud-stack, 58px) - 6px - var(--bar-h, 60px) - 8px);
+  }
   .dps-list {
+    flex: 1 1 auto;
+    min-height: 0;
     max-height: 38vh;
   }
 }
 
 /* Mid-width windows: the side panels and the centered, wrapping dock share the bottom: stop the panels above the dock. */
-@media (min-width: 761px) and (max-width: 1260px) {
+@media (min-width: 761px) and (max-width: 1260px) and (min-height: 521px) {
   .panel {
     max-height: calc(100dvh - 340px);
   }
 }
 /* The right panel also stays above the language bar that bottomStack.ts lifts over the dock (--bar-h): 8 px gap + 8 px air + 38 px panel chrome. */
-@media (min-width: 901px) and (max-width: 1260px) {
+@media (min-width: 901px) and (max-width: 1260px) and (min-height: 521px) {
   .panel.right {
     max-height: min(calc(100dvh - 340px), calc(100dvh - var(--bar-h, 0px) - var(--lp-h, 28px) - 54px));
   }
 }
 /* 3D view: the rotate / tilt buttons (.cam3d, 74 px tall) sit above the language bar; the right panel ends above them (120 = 74 + 8 air + 38 chrome). */
-@media (min-width: 901px) {
+@media (min-width: 901px) and (min-height: 521px) {
   :root:has(.cam3d) .panel.right {
     max-height: calc(100dvh - var(--bar-h, 0px) - var(--cam-lift, 50px) - 120px);
   }
 }
-@media (min-width: 901px) and (max-width: 1260px) {
+@media (min-width: 901px) and (max-width: 1260px) and (min-height: 521px) {
   :root:has(.cam3d) .panel.right {
     max-height: min(calc(100dvh - 340px), calc(100dvh - var(--bar-h, 0px) - var(--cam-lift, 50px) - 120px));
   }

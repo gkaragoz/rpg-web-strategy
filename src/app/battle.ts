@@ -23,7 +23,7 @@ import { hex } from './state';
 import type { WorldView } from './world';
 import { clearDebug, setDebug } from '../debug';
 import { Scope } from './scope';
-import { ModeStrip, ctfMarkers, hillZoneSpecs, vipMarkers } from './modeHud';
+import { ModeStrip, ctfMarkers, hillZoneSpecs, hudStackBottom, vipMarkers } from './modeHud';
 
 /** Outline colour of the focused team's soldiers (team colours would vanish against their own units). */
 const FOCUS_OUTLINE = 0xffffff;
@@ -300,6 +300,7 @@ export class BattleScene {
     }
     this.modeStrip = null;
     this.zoneSig = '';
+    document.documentElement.style.removeProperty('--hud-stack');
     this.d.hudRoot.innerHTML = '';
     this.d.hudRoot.hidden = true;
     this.d.banner.style.display = 'none';
@@ -514,6 +515,12 @@ export class BattleScene {
       const top = document.getElementById('hud-teams')?.getBoundingClientRect().bottom ?? 52;
       this.modeStrip.el.style.top = `${Math.round(top + 6)}px`;
     }
+    // The damage meter and the stats panel start below everything in the top band (team bar, objective strip): see `--hud-stack` in the CSS.
+    const teamsBottom = document.getElementById('hud-teams')?.getBoundingClientRect().bottom;
+    if (teamsBottom !== undefined) {
+      const strip = this.modeStrip && !this.modeStrip.el.hidden ? this.modeStrip.el.getBoundingClientRect().bottom : null;
+      document.documentElement.style.setProperty('--hud-stack', `${hudStackBottom(teamsBottom, strip)}px`);
+    }
     if (this.segs.length > 0) {
       const u = this.sim.units;
       const hp = new Array(6).fill(0);
@@ -579,7 +586,7 @@ export class BattleScene {
           best = k;
         }
       }
-      return { ti, score: this.sim.scores?.[ti], color: hex(c.main), alive: this.sim.alivePerTeam[ti], start: this.initialAlive[ti], pct: Math.round(Math.min(1, hp[ti] / Math.max(1, this.initialHp[ti])) * 100), dmg, kills: this.sim.meter.kills[ti], best, bestDmg };
+      return { ti, horde: hordeTeamIndex(this.opts.config) === ti, score: this.sim.scores?.[ti], color: hex(c.main), alive: this.sim.alivePerTeam[ti], start: this.initialAlive[ti], pct: Math.round(Math.min(1, hp[ti] / Math.max(1, this.initialHp[ti])) * 100), dmg, kills: this.sim.meter.kills[ti], best, bestDmg };
     });
     const scored = this.sim.scores !== undefined;
     rows.sort((x, y) => Number(y.ti === winner) - Number(x.ti === winner) || (scored ? (y.score ?? 0) - (x.score ?? 0) : 0) || y.alive - x.alive || y.dmg - x.dmg);
@@ -594,7 +601,7 @@ export class BattleScene {
           }
         }
         const mvp = r.best >= 0 ? `<span class="res-mvp">${thumb}<span>${unitDisplayName(r.best)}<small>${fmtDamage(r.bestDmg)}</small></span></span>` : '–';
-        return `<tr class="${r.ti === winner ? 'win' : ''}"><td><span class="res-dot" style="background:${r.color}"></span>${this.teamName(r.ti).replace(/[&<>]/g, '')}${r.ti === winner ? ` <em>${t('battle.result.winner')}</em>` : ''}</td>${scored ? `<td>${Math.floor(r.score ?? 0)}</td>` : ''}<td>${r.alive} / ${r.start}</td><td>${r.pct}%</td><td>${fmtDamage(r.dmg)}</td><td>${Math.round(r.kills)}</td><td>${mvp}</td></tr>`;
+        return `<tr class="${r.ti === winner ? 'win' : ''}"><td><span class="res-dot" style="background:${r.color}"></span>${this.teamName(r.ti).replace(/[&<>]/g, '')}${r.ti === winner ? ` <em>${t('battle.result.winner')}</em>` : ''}</td>${scored ? `<td>${Math.floor(r.score ?? 0)}</td>` : ''}<td>${r.alive} / ${Math.max(r.start, r.alive)}</td><td>${r.horde ? '–' : `${r.pct}%`}</td><td>${fmtDamage(r.dmg)}</td><td>${Math.round(r.kills)}</td><td>${mvp}</td></tr>`;
       })
       .join('');
     const scoreHead = this.opts.config.rules === 'ctf' ? t('mode.result.captures') : this.opts.config.rules === 'horde' ? t('mode.result.waves') : t('mode.result.score');

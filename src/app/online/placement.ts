@@ -90,9 +90,9 @@ export class Placement {
       units: [],
       fresh: false,
     };
-    // Rejoin during placement: our own units and READY state are already known to the host.
+    // Rejoin / rematch: our own units, VIP pick and READY state are already known to the host (the host's own events arrive before this screen exists).
     this.locked = !!model.me?.ready;
-    if (this.myTeam >= 0) for (const it of model.placed.values()) if (it.team === this.myTeam) this.state.units.push({ team: it.team, kind: it.kind, x: it.x, y: it.y, id: it.id });
+    if (this.myTeam >= 0) for (const it of model.placed.values()) if (it.team === this.myTeam) this.state.units.push({ team: it.team, kind: it.kind, x: it.x, y: it.y, id: it.id, vip: model.vip === it.id ? true : undefined });
     this.remoteLayer = env.world.createPlacedLayer();
     this.drawZones();
 

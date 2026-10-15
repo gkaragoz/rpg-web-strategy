@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { newFrameTable, unitFrame, UnitInstances, type UnitsLike, DEATH_FADE } from '../../render3d/billboards';
 import { billboardLean, footprintOf, leanUpVector, MAX_LEAN, MAX_LEAN_SCALE } from '../../render3d/depth';
-import { clampRig, eyeOf, panAxes, TILT_MAX, TILT_MIN } from '../../render3d/cameraRig';
+import * as THREE from 'three';
+import { clampRig, eyeOf, fitDist, markerScale, panAxes, TILT_MAX, TILT_MIN } from '../../render3d/cameraRig';
 import { pickGround } from '../../render3d/pick';
-import { cornerHeight, groundHeight, HEIGHT_PER_STEP, surfaceHeight, terrainGeometry, WATER_DEPTH } from '../../render3d/terrainMesh';
+import { cornerHeight, DECK_LIFT, groundHeight, HEIGHT_PER_STEP, overlayCornerHeight, surfaceHeight, terrainGeometry, WATER_DEPTH } from '../../render3d/terrainMesh';
 import { DEFAULT_MAP } from '../mapSpec';
-import { Terrain, T_GRASS, T_PATH, T_WATER } from '../terrain';
+import { Terrain, T_BRIDGE, T_GRASS, T_PATH, T_WATER } from '../terrain';
 
 const opts = { spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 };
 
@@ -61,6 +62,60 @@ describe('drawn surface height', () => {
     }
     expect(checked).toBeGreaterThan(500);
     expect(twisted).toBeGreaterThan(0); // the two surfaces really differ somewhere, so the distinction matters
+  });
+});
+
+describe('ground overlays (zones, control points)', () => {
+  it('lie on the bridge deck, not under it, and never below the water level', () => {
+    const t = new Terrain(56, { seed: 3, spec: { ...DEFAULT_MAP, relief: 'hills' }, ...opts });
+    const n = t.size;
+    let bridges = 0;
+    for (let ty = 0; ty < n; ty++) {
+      for (let tx = 0; tx < n; tx++) {
+        const f = t.flags[ty * n + tx];
+        for (const [dx, dy] of [[0, 0], [1, 1]]) {
+          const h = overlayCornerHeight(t, tx, ty, dx, dy);
+          expect(h).toBeGreaterThanOrEqual(0);
+          if (f === T_BRIDGE) {
+            bridges++;
+            expect(h).toBeCloseTo(Math.max(0, cornerHeight(t, tx + dx, ty + dy)) + DECK_LIFT, 6);
+          } else expect(h).toBeCloseTo(Math.max(0, cornerHeight(t, tx + dx, ty + dy)), 6);
+        }
+      }
+    }
+    expect(bridges).toBeGreaterThan(0);
+  });
+});
+
+describe('camera fit', () => {
+  it('keeps all four map corners inside the view, for wide and portrait screens, and is tight on the limiting axis', () => {
+    for (const [size, aspect] of [[56, 1.6], [80, 1.6], [56, 0.46], [120, 2.2]]) {
+      const tilt = (48 * Math.PI) / 180;
+      const yaw = Math.PI / 4;
+      const dist = fitDist(size, aspect, 42, tilt, yaw);
+      const cam = new THREE.PerspectiveCamera(42, aspect, 0.3, 5000);
+      const e = eyeOf({ fx: size / 2, fz: size / 2, yaw, tilt, dist }, 0);
+      cam.position.set(e.x, e.y, e.z);
+      cam.lookAt(size / 2, 0, size / 2);
+      cam.updateMatrixWorld();
+      let worst = 0;
+      for (const [x, z] of [[0, 0], [0, size], [size, 0], [size, size]]) {
+        const v = new THREE.Vector3(x, 0, z).project(cam);
+        worst = Math.max(worst, Math.abs(v.x), Math.abs(v.y));
+      }
+      expect(worst, `size ${size} aspect ${aspect}`).toBeLessThanOrEqual(0.95 + 1e-6);
+      expect(worst).toBeGreaterThan(0.9);
+    }
+  });
+});
+
+describe('mode markers', () => {
+  it('keep their size up close and grow with the camera distance up to a cap', () => {
+    expect(markerScale(10)).toBe(1);
+    expect(markerScale(50)).toBe(1);
+    expect(markerScale(100)).toBeCloseTo(2, 6);
+    expect(markerScale(10000)).toBeLessThanOrEqual(3.4);
+    expect(markerScale(200)).toBeGreaterThan(markerScale(100));
   });
 });
 
