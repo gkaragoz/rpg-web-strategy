@@ -68,7 +68,7 @@ try {
     try {
       await s.run(page, stack.base);
       // The game canvas animates (idle poses, water): compare the DOM interface only, with animations and canvases frozen.
-      await page.eval(`(() => { document.querySelectorAll('canvas').forEach((c) => (c.style.visibility = 'hidden')); const st = document.createElement('style'); st.textContent = '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}.app-ver{visibility:hidden!important}'; document.head.appendChild(st); })()`);
+      await page.eval(`(() => { document.querySelectorAll('canvas').forEach((c) => (c.style.visibility = 'hidden')); const st = document.createElement('style'); st.textContent = '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}.app-ver,#teamrows,#total{visibility:hidden!important}'; document.head.appendChild(st); })()`);
       await sleep(300);
       const shot = readPng(await page.shotBuffer());
       const file = path.join(DIR, `${s.name}.png`);
