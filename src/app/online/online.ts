@@ -1,4 +1,7 @@
-import { t } from '../../i18n';
+import { loc, t } from '../../i18n';
+import { PRESETS } from '../../sim/mapSpec';
+import { isSelectableMode } from '../modeIds';
+import { modeName } from '../modePicker';
 import { HostLobby } from '../../net/host';
 import { GuestSession, HostSession, type Session } from '../../net/client';
 import { LockstepSim } from '../../net/lockstepSim';
@@ -381,6 +384,10 @@ export class OnlineApp {
       this.lastSaved = Date.now();
       const l = loadLast();
       if (l) saveLast({ ...l, at: Date.now() });
+    }
+    if (msg.t === 'mapFitted') {
+      const to = PRESETS.find((p) => p.id === msg.presetId);
+      this.toast(t('maps.fitted', { mode: isSelectableMode(msg.mode) ? modeName(msg.mode) : '', to: to ? loc(to.name) : t('maps.label.custom') }));
     }
     if (msg.t === 'startFail') this.toast(t(`online.reason.${msg.reason}`));
     if (msg.t === 'state' || msg.t === 'welcome' || msg.t === 'start') this.sync();

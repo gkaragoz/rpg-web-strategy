@@ -7,6 +7,7 @@ import { buildRiver, buildBridges, carveIslands, collectLand, buildCrossChannels
 import { PathScratch, lineWalkable, findPath } from './terrainPath';
 import { placeVillages, mirror, placeForest } from './terrainDecor';
 import { buildLanes, computeLanesGeometry, type LanesGeometry } from './terrainLanes';
+import { buildModeMap, isModeLayout } from './terrainModes';
 
 // Constants and data types live in terrainTypes.ts; re-exported so everything is still imported from './terrain'.
 export * from './terrainTypes';
@@ -70,8 +71,8 @@ export class Terrain {
     this.opts = opts;
     this.spec = opts.spec ?? DEFAULT_MAP;
     this.layout = this.spec.layout;
-    this.riverKind = this.layout === 'citadel' || this.layout === 'crossroads' || this.layout === 'lanes' ? 'none' : this.layout === 'archipelago' ? 'islands' : this.spec.river;
-    this.reliefKind = this.layout === 'lanes' ? 'flat' : this.layout === 'valley' ? 'valley' : this.layout === 'citadel' ? 'plateau' : this.layout === 'archipelago' || this.layout === 'crossroads' ? 'hills' : this.spec.relief;
+    this.riverKind = this.layout === 'citadel' || this.layout === 'crossroads' || this.layout === 'lanes' || isModeLayout(this.layout) ? 'none' : this.layout === 'archipelago' ? 'islands' : this.spec.river;
+    this.reliefKind = this.layout === 'lanes' || this.layout === 'arena' || this.layout === 'forts' ? 'flat' : this.layout === 'plateau' ? 'plateau' : this.layout === 'valley' ? 'valley' : this.layout === 'citadel' ? 'plateau' : this.layout === 'archipelago' || this.layout === 'crossroads' ? 'hills' : this.spec.relief;
     this.cx = this.cy = size / 2;
     this.flags = new Uint8Array(size * size);
     this.occ = new Uint8Array(size * size);
@@ -113,6 +114,13 @@ export class Terrain {
       computeRegions(this);
       fixPockets(this);
       this.laneGeo = computeLanesGeometry(this);
+      return;
+    }
+    if (isModeLayout(this.layout)) {
+      // Mode maps (arena, forts, plateau): their own skeleton, villages and forest of the recipe around it, no river.
+      buildModeMap(this);
+      computeRegions(this);
+      fixPockets(this);
       return;
     }
     buildRiver(this);

@@ -1,4 +1,5 @@
-import { randomSpec, sanitizeSpec, lanesSpec, DEFAULT_MAP } from '../sim/mapSpec';
+import { sanitizeSpec, DEFAULT_MAP } from '../sim/mapSpec';
+import { fitMapToMode, randomSpecFor } from '../sim/mapModes';
 import { LANES_MIN_SIZE } from '../sim/terrainLanes';
 import { LANES_TEAMS } from '../sim/modes/lanesWaves';
 import { mulberry32 } from '../sim/random';
@@ -433,6 +434,16 @@ export class HostLobby {
     if (typeof patch.comedyPhysics === 'boolean') s.comedyPhysics = patch.comedyPhysics;
     if (typeof patch.comedyVisual === 'boolean') s.comedyVisual = patch.comedyVisual;
     if (isGameModeId(patch.gameMode)) s.gameMode = patch.gameMode;
+    // A room only plays on a map its mode can use: an incompatible map (picked, or left over from the previous mode) becomes the first map of the
+    // mode. Lane Conquest keeps the stored map (it is forced at start, and the pick comes back when the host leaves the mode).
+    let fitted: string | null | undefined;
+    if (s.gameMode !== 'lanes') {
+      const fit = fitMapToMode(s.map, s.gameMode);
+      if (fit.changed) {
+        s.map = { ...fit.spec };
+        fitted = s.mapMode === 'fixed' ? fit.presetId : undefined;
+      }
+    }
     // Any integer team index the room could have; invalid values are ignored (start() clamps into the real team count).
     if (typeof patch.siegeDefender === 'number' && Number.isInteger(patch.siegeDefender) && patch.siegeDefender >= 0 && patch.siegeDefender < MAX_PLAYERS) s.siegeDefender = patch.siegeDefender;
     if (Array.isArray(patch.banned)) s.banned = patch.banned.filter((r) => ['common', 'rare', 'epic', 'legendary'].includes(r));
@@ -448,6 +459,8 @@ export class HostLobby {
     // When a setting really changes, clear everyone's ready flag (except the host): players must see the new rules.
     if (JSON.stringify(s) + String(this.passHashed) !== before) for (const p of this.players) if (p.id !== this.hostId) p.ready = false;
     this.pushState();
+    // The host learns that its map was replaced (stable code; the UI names the preset and the mode).
+    if (fitted !== undefined) this.sendTo(this.hostId, { t: 'mapFitted', presetId: fitted, mode: s.gameMode });
   }
 
   /** Digest the client sends to verify the lobby password. */
@@ -533,24 +546,25 @@ export class HostLobby {
     if (!this.canStart()) return;
     const pl = this.players.filter((p) => p.role === 'player');
     const teams = pl.length;
-    const lanes = this.settings.gameMode === 'lanes';
+    const mode = this.settings.gameMode;
+    const lanes = mode === 'lanes';
     // Lane Conquest plays on its own layout (the configured recipe only lends its biome) and needs at least LANES_MIN_SIZE tiles.
     const size = lanes ? Math.max(LANES_MIN_SIZE, this.settings.mapSize || mapSizeForPlayers(teams)) : this.settings.mapSize || mapSizeForPlayers(teams);
     let seed = this.settings.mapSeed;
     let spec = this.settings.map;
     if (lanes && this.settings.mapMode === 'random') {
       seed = 1 + Math.floor(this.rnd() * 999999);
-      spec = randomSpec(mulberry32(seed));
+      spec = randomSpecFor(mode, mulberry32(seed));
     } else if (this.settings.mapMode === 'random') {
       seed = 1 + Math.floor(this.rnd() * 999999);
       for (let tries = 0; tries < 30; tries++) {
-        spec = randomSpec(mulberry32(seed));
+        spec = randomSpecFor(mode, mulberry32(seed));
         const t = new Terrain(size, { seed, spec, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
         if (teamZones(size, teams, t).every((z) => z.area > 90)) break;
         seed = 1 + ((seed + 7919) % 999999);
       }
     }
-    if (lanes) spec = lanesSpec(spec);
+    spec = fitMapToMode(spec, mode).spec;
     this.terrain = new Terrain(size, { seed, spec, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
     this.zones = teamZones(size, teams, this.terrain);
     this.units.clear();

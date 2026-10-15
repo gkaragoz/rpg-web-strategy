@@ -9,8 +9,11 @@ export type CrossingType = 'wood' | 'stone' | 'ford';
 /**
  * Layout: classic (river + relief recipe), valley, central citadel, archipelago, crossroads, and 'lanes' (Lane Conquest only: two castle plazas joined by
  * three walled lane corridors). 'lanes' is never offered by the map picker (it is not in LAYOUTS): the lanes mode forces it, see `lanesSpec`.
+ * Mode maps (`terrainModes.ts`): 'arena' (open round arena with pillar clusters and ponds), 'forts' (two walled strongholds with a field between)
+ * and 'plateau' (a raised central plateau with four ramps). They are ordinary selectable maps (`SELECTABLE_LAYOUTS`, presets) but are not in
+ * `LAYOUTS`, so `randomSpec` is unchanged; which modes can play them is decided in `mapModes.ts`.
  */
-export type LayoutType = 'classic' | 'valley' | 'citadel' | 'archipelago' | 'crossroads' | 'lanes';
+export type LayoutType = 'classic' | 'valley' | 'citadel' | 'archipelago' | 'crossroads' | 'lanes' | 'arena' | 'forts' | 'plateau';
 /** Terrain relief: flat, hills, ridge, plateau (with ramps), peak (mountain). */
 export type ReliefType = 'flat' | 'hills' | 'ridge' | 'plateau' | 'peak';
 
@@ -33,14 +36,19 @@ export const FORESTS: ForestType[] = ['dense', 'sparse', 'grove', 'ring', 'none'
 export const VILLAGES: VillageType[] = ['village', 'scattered', 'ruins', 'camp', 'none'];
 export const CROSSINGS: CrossingType[] = ['wood', 'stone', 'ford'];
 export const RELIEFS: ReliefType[] = ['flat', 'hills', 'ridge', 'plateau', 'peak'];
+/** The classic random/custom layout pool (`randomSpec` draws from it: keep it unchanged so existing seeds give the same maps). */
 export const LAYOUTS: LayoutType[] = ['classic', 'valley', 'citadel', 'archipelago', 'crossroads'];
+/** Layouts built for the game modes (see `terrainModes.ts`). Selectable, but outside the random pool. */
+export const MODE_LAYOUTS: LayoutType[] = ['arena', 'forts', 'plateau'];
+/** Every layout a user can choose (and `sanitizeSpec` accepts): the classic pool plus the mode layouts. 'lanes' is forced by its mode only. */
+export const SELECTABLE_LAYOUTS: LayoutType[] = [...LAYOUTS, ...MODE_LAYOUTS];
 
 export const BIOME_NAMES: Record<Biome, Localized> = { forest: { en: 'Forest', tr: 'Orman' }, desert: { en: 'Desert', tr: 'Çöl' }, snow: { en: 'Snow', tr: 'Kar' }, swamp: { en: 'Swamp', tr: 'Bataklık' } };
 export const RIVER_NAMES: Record<RiverType, Localized> = { winding: { en: 'Winding', tr: 'Kıvrımlı' }, straight: { en: 'Straight', tr: 'Düz' }, islands: { en: 'Islands', tr: 'Adalı' }, lake: { en: 'Lake', tr: 'Göllü' }, none: { en: 'No river', tr: 'Nehirsiz' } };
 export const FOREST_NAMES: Record<ForestType, Localized> = { dense: { en: 'Dense', tr: 'Yoğun' }, sparse: { en: 'Sparse', tr: 'Seyrek' }, grove: { en: 'Grove', tr: 'Koru' }, ring: { en: 'Ring forest', tr: 'Çevre ormanı' }, none: { en: 'No forest', tr: 'Ormansız' } };
 export const VILLAGE_NAMES: Record<VillageType, Localized> = { village: { en: 'Village', tr: 'Köy' }, scattered: { en: 'Scattered houses', tr: 'Dağınık evler' }, ruins: { en: 'Ruined fort', tr: 'Harabe kale' }, camp: { en: 'Camp', tr: 'Kamp' }, none: { en: 'No village', tr: 'Köysüz' } };
 export const CROSSING_NAMES: Record<CrossingType, Localized> = { wood: { en: 'Wooden bridge', tr: 'Ahşap köprü' }, stone: { en: 'Stone bridge', tr: 'Taş köprü' }, ford: { en: 'Shallow ford', tr: 'Sığ geçit' } };
-export const LAYOUT_NAMES: Record<LayoutType, Localized> = { lanes: { en: 'Three lanes', tr: 'Üç şerit' }, classic: { en: 'Classic', tr: 'Klasik' }, valley: { en: 'Valley and pass', tr: 'Vadi ve geçit' }, citadel: { en: 'Central citadel', tr: 'Merkez kale' }, archipelago: { en: 'Islands and bridges', tr: 'Adalar ve köprüler' }, crossroads: { en: 'Crossroads', tr: 'Çapraz yol' } };
+export const LAYOUT_NAMES: Record<LayoutType, Localized> = { lanes: { en: 'Three lanes', tr: 'Üç şerit' }, classic: { en: 'Classic', tr: 'Klasik' }, valley: { en: 'Valley and pass', tr: 'Vadi ve geçit' }, citadel: { en: 'Central citadel', tr: 'Merkez kale' }, archipelago: { en: 'Islands and bridges', tr: 'Adalar ve köprüler' }, crossroads: { en: 'Crossroads', tr: 'Çapraz yol' }, arena: { en: 'Open arena', tr: 'Açık arena' }, forts: { en: 'Twin forts', tr: 'İkiz kaleler' }, plateau: { en: 'Raised plateau', tr: 'Yüksek plato' } };
 export const RELIEF_NAMES: Record<ReliefType, Localized> = { flat: { en: 'Flat', tr: 'Düz' }, hills: { en: 'Hills', tr: 'Tepecikler' }, ridge: { en: 'Mountain ridge', tr: 'Sıradağ' }, plateau: { en: 'Plateau', tr: 'Plato' }, peak: { en: 'Mountain', tr: 'Dağ' } };
 
 export interface MapPreset {
@@ -89,6 +97,17 @@ export const PRESETS: MapPreset[] = [
   P('crossroads-green', { en: 'Green Crossroads', tr: 'Yeşil Kavşak' }, 'forest', 'none', 'sparse', 'village', 'wood', 'flat', 'crossroads'),
   P('crossroads-sand', { en: 'Caravan Road', tr: 'Kervan Yolu' }, 'desert', 'none', 'none', 'scattered', 'wood', 'flat', 'crossroads'),
   P('crossroads-snow', { en: 'Winter Crossroads', tr: 'Kış Kavşağı' }, 'snow', 'none', 'dense', 'camp', 'wood', 'flat', 'crossroads'),
+  // Mode maps (appended: the order of the presets above never changes).
+  P('pillar-arena', { en: 'Pillar Arena', tr: 'Sütunlu Arena' }, 'forest', 'none', 'sparse', 'ruins', 'stone', 'flat', 'arena'),
+  P('dust-arena', { en: 'Dust Ring', tr: 'Toz Halkası' }, 'desert', 'none', 'none', 'scattered', 'wood', 'flat', 'arena'),
+  P('frost-arena', { en: 'Frost Circle', tr: 'Don Çemberi' }, 'snow', 'none', 'grove', 'camp', 'stone', 'flat', 'arena'),
+  P('mire-arena', { en: 'Mire Pit', tr: 'Bataklık Çukuru' }, 'swamp', 'none', 'sparse', 'ruins', 'wood', 'flat', 'arena'),
+  P('twin-strongholds', { en: 'Twin Strongholds', tr: 'İkiz Hisarlar' }, 'forest', 'none', 'grove', 'ruins', 'wood', 'flat', 'forts'),
+  P('desert-bastions', { en: 'Desert Bastions', tr: 'Çöl Burçları' }, 'desert', 'none', 'sparse', 'scattered', 'stone', 'flat', 'forts'),
+  P('frost-garrisons', { en: 'Frost Garrisons', tr: 'Don Garnizonları' }, 'snow', 'none', 'dense', 'camp', 'stone', 'flat', 'forts'),
+  P('highland-rise', { en: 'Highland Rise', tr: 'Yayla Yükselişi' }, 'forest', 'none', 'grove', 'ruins', 'wood', 'flat', 'plateau'),
+  P('mesa-stand', { en: 'Mesa Stand', tr: 'Mesa Direnişi' }, 'desert', 'none', 'sparse', 'scattered', 'stone', 'flat', 'plateau'),
+  P('frozen-summit', { en: 'Frozen Summit', tr: 'Donmuş Zirve' }, 'snow', 'none', 'grove', 'camp', 'stone', 'flat', 'plateau'),
 ];
 
 export function sameSpec(a: MapSpec, b: MapSpec): boolean {
@@ -114,7 +133,7 @@ export function sanitizeSpec(x: unknown): MapSpec {
     village: pick(VILLAGES, o.village, DEFAULT_MAP.village),
     crossing: pick(CROSSINGS, o.crossing, DEFAULT_MAP.crossing),
     relief: pick(RELIEFS, o.relief, DEFAULT_MAP.relief),
-    layout: pick(LAYOUTS, o.layout, DEFAULT_MAP.layout),
+    layout: pick(SELECTABLE_LAYOUTS, o.layout, DEFAULT_MAP.layout),
   };
 }
 

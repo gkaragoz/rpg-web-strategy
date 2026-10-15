@@ -20,6 +20,7 @@ import { comedy } from './render/comedy';
 import { POSE_STATES, UnitView, type TeamColors } from './render/unitView';
 import type { BattleConfig } from './sim/battle';
 import { structureKinds } from './sim/modes';
+import { fitMapToMode, modeHasFixedMap } from './sim/mapModes';
 import { KIND_OF_TROOP, LEGACY_COUNT, MAX_TEAMS, STATS } from './sim/units';
 import { STATS_DEFAULT_SHOWN, StatsPanel } from './ui/stats';
 import { debugEnabled, setDebug } from './debug';
@@ -80,6 +81,14 @@ watchGlContext(app.canvas, () => healScene());
 healScene = (): number => healTextures(app.stage);
 
 const state = loadState();
+{
+  // A saved map that does not suit the saved mode is replaced by the first map of that mode (the sim does the same as a safety net).
+  const fit = modeHasFixedMap(state.rules) ? null : fitMapToMode(state.map, state.rules);
+  if (fit?.changed) {
+    state.map = { ...fit.spec };
+    state.mapPreset = fit.presetId ?? 'custom';
+  }
+}
 if (params.get('env') === 'off') state.env = false;
 if (params.get('kite') === 'off') state.kite = false;
 if (Number(params.get('seed'))) state.seed = Number(params.get('seed'));

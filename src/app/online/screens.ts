@@ -11,6 +11,7 @@ import { hex } from '../state';
 import { playerColor } from './cursors';
 import { ModePicker } from '../modePicker';
 import { isSelectableMode } from '../modeIds';
+import type { GameModeId } from '../../sim/modes';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const COLORS = PALETTES[0].colors;
@@ -242,6 +243,7 @@ export class LobbyScreen {
         else this.session.send({ t: 'settings', settings: { mapMode: 'fixed', map: ms.map, mapSeed: ms.seed } });
       },
       false,
+      () => (this.session.model.state?.settings.gameMode as GameModeId | undefined) ?? 'classic',
     );
     this.build();
     // Tabs on narrow screens: the host sees the settings first, a guest sees the players.

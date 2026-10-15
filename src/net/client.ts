@@ -13,6 +13,7 @@ import {
   type ServerMsg,
 } from './protocol';
 import type { Transport } from './transport';
+import type { GameModeId } from '../sim/modes/types';
 
 export interface PresenceInfo {
   id: string;
@@ -61,6 +62,8 @@ export class OnlineModel {
   lastFail: { cids: number[]; reason: PlaceFailReason } | null = null;
   /** Why the host's last 'start' was refused (null: not refused). */
   startFailed: StartFailReason | null = null;
+  /** The last map replacement the host's settings change caused (null: none yet); set on the host's client only. */
+  mapFit: { presetId: string | null; mode: GameModeId } | null = null;
   pendingResync: { step: number; data: string } | null = null;
   /** UI subscription: called after every server message. */
   listeners: Array<(msg: ServerMsg) => void> = [];
@@ -124,6 +127,9 @@ export class OnlineModel {
         break;
       case 'startFail':
         this.startFailed = msg.reason;
+        break;
+      case 'mapFitted':
+        this.mapFit = { presetId: msg.presetId, mode: msg.mode };
         break;
       case 'chat':
         this.chat.push({ n: ++this.chatN, id: msg.id, name: msg.name, text: msg.text, ts: msg.ts });

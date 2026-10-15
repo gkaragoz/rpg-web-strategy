@@ -12,13 +12,14 @@ const EVAL_EVERY = 5;
 
 /**
  * Where the core stands: the map's keep (decor kind 'keep', citadel layout) snapped to the nearest walkable tile of the
- * main region; without a keep, the centroid of the defender's initial units snapped the same way. Pure and deterministic.
+ * main region; on the plateau layout the middle of the plateau (the defenders' last stand); otherwise the centroid of the defender's
+ * initial units snapped the same way. Pure and deterministic.
  * `cx, cy` is that centroid (the caller computes it from the spawned units; NaN: use the map centre).
  */
 export function siegeCorePoint(b: Battle, cx: number, cy: number): { x: number; y: number } {
   const keep = b.terrain?.decor.find((d) => d.kind === 'keep');
   if (keep) return ctfBasePoint(b, Math.floor(keep.x) + 0.5, Math.floor(keep.y) + 0.5);
-  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return ctfBasePoint(b, b.mapSize / 2, b.mapSize / 2);
+  if (b.terrain?.layout === 'plateau' || !Number.isFinite(cx) || !Number.isFinite(cy)) return ctfBasePoint(b, b.mapSize / 2, b.mapSize / 2);
   return ctfBasePoint(b, cx, cy);
 }
 

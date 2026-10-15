@@ -360,3 +360,12 @@ body:has(.result:not([hidden])) #stats {
     top: calc(var(--hud-stack, 58px) + 6px);
   }
 }
+
+/* ---- Map cards that do not fit the selected game mode (shown with "Show all maps") ---- */
+.map-card.off {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.map-card.off:hover {
+  border-color: var(--panel-border);
+}

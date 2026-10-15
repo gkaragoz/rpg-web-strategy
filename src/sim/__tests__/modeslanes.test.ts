@@ -266,7 +266,7 @@ describe('lanes layout', () => {
     expect(tr.layout).toBe('lanes');
     expect(tr.size).toBe(LANES_MIN_SIZE);
     expect(tr.spec.biome).toBe(PRESETS[3].spec.biome);
-    expect(terrainFor({ ...base, rules: 'siege', map: PRESETS[3].spec })!.layout).toBe(PRESETS[3].spec.layout);
+    expect(terrainFor({ ...base, rules: 'hill', map: PRESETS[3].spec })!.layout).toBe(PRESETS[3].spec.layout);
     // The configured seed still varies the map.
     expect(Array.from(terrainFor({ ...base, terrainSeed: 1 })!.flags)).not.toEqual(Array.from(terrainFor({ ...base, terrainSeed: 2 })!.flags));
   });

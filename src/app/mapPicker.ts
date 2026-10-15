@@ -7,8 +7,8 @@ import {
   CROSSING_NAMES,
   FORESTS,
   FOREST_NAMES,
-  LAYOUTS,
   LAYOUT_NAMES,
+  SELECTABLE_LAYOUTS,
   RELIEFS,
   RELIEF_NAMES,
   PRESETS,
@@ -16,10 +16,13 @@ import {
   RIVER_NAMES,
   VILLAGES,
   VILLAGE_NAMES,
-  randomSpec,
   type Biome,
   type MapSpec,
 } from '../sim/mapSpec';
+import { compatibleLayouts, mapsFor, modeHasFixedMap, randomSpecFor } from '../sim/mapModes';
+import type { GameModeId } from '../sim/modes';
+import { isSelectableMode } from './modeIds';
+import { modeName } from './modePicker';
 import { mulberry32 } from '../sim/random';
 import { T_BLOCKED, T_BRIDGE, T_GRASS, T_PATH, T_WATER, Terrain } from '../sim/terrain';
 import { trackDialog } from '../net/act';
@@ -109,6 +112,8 @@ export function drawMinimapCached(canvas: HTMLCanvasElement, spec: MapSpec, seed
 export class MapPicker {
   private readonly dlg: HTMLDialogElement;
   private filter: Biome | 'all' = 'all';
+  /** Mode filter off: incompatible maps are listed too, greyed out and not selectable. */
+  private showAll = false;
   private readonly actTrack: { open(): void };
   /** Minimaps are generated one per frame, visible cards first (building a terrain is the slow part). */
   private readonly queue = new MinimapQueue();
@@ -119,6 +124,8 @@ export class MapPicker {
     private readonly onChange: () => void,
     /** false: choices are not written to localStorage (online lobby). */
     private readonly persist = true,
+    /** The game mode the map is for (maps that do not fit it are hidden or disabled). */
+    private readonly mode: () => GameModeId | undefined = () => undefined,
   ) {
     this.dlg = document.createElement('dialog');
     this.dlg.className = 'unit-dialog map-dialog';
@@ -166,7 +173,7 @@ export class MapPicker {
       return;
     }
     const p = PRESETS.find((q) => q.id === id);
-    if (!p) return;
+    if (!p || !this.fits(p.id)) return;
     s.map = { ...p.spec };
     s.mapPreset = p.id;
     this.commit();
@@ -176,7 +183,7 @@ export class MapPicker {
   private roll(): void {
     const s = this.state;
     const rnd = mulberry32((Math.random() * 4294967296) >>> 0);
-    s.map = randomSpec(rnd);
+    s.map = randomSpecFor(this.mode(), rnd);
     s.seed = 1 + Math.floor(rnd() * 999999);
     s.mapPreset = 'random';
     this.commit();
@@ -188,9 +195,21 @@ export class MapPicker {
     this.onChange();
   }
 
+  /** Whether a preset can be played in the current mode. */
+  private fits(id: string): boolean {
+    return id === 'random' || mapsFor(this.mode()).some((p) => p.id === id);
+  }
+
+  private modeLabel(): string {
+    const m = this.mode();
+    return m && isSelectableMode(m) ? modeName(m) : '';
+  }
+
   private card(id: string, name: string, sub: string): string {
     const sel = this.state.mapPreset === id;
-    return `<button type="button" class="map-card${sel ? ' sel' : ''}" data-id="${id}" aria-pressed="${sel}">
+    const off = !this.fits(id);
+    if (off) sub = t('maps.mode.incompatible', { mode: this.modeLabel() });
+    return `<button type="button" class="map-card${sel ? ' sel' : ''}${off ? ' off' : ''}" data-id="${id}" aria-pressed="${sel}"${off ? ' disabled' : ''}>
   ${id === 'random' && !sel ? '<span class="mc-dice" aria-hidden="true">?</span>' : `<canvas data-prev="${id}" aria-hidden="true"></canvas>`}
   <span class="mc-name">${esc(name)}</span>
   <span class="mc-sub">${esc(sub)}</span>
@@ -206,10 +225,16 @@ export class MapPicker {
     const keepScroll = this.dlg.querySelector('.map-body')?.scrollTop ?? 0;
     const s = this.state;
     const m = s.map;
+    const mode = this.mode();
+    if (modeHasFixedMap(mode)) {
+      this.dlg.innerHTML = `<form method="dialog"><header><h2>${esc(t('maps.dlg.title'))}</h2><p>${esc(t('maps.mode.fixed', { mode: this.modeLabel() }))}</p></header><footer><span class="note"></span><button type="submit" class="primary">${esc(t('maps.ok'))}</button></footer></form>`;
+      return;
+    }
+    const filtered = !!mode && mode !== 'classic';
     const chips = [{ id: 'all', name: t('maps.filter.all') }, ...BIOMES.map((b) => ({ id: b, name: loc(BIOME_NAMES[b]) }))]
       .map((c) => `<button type="button" data-f="${c.id}" aria-pressed="${this.filter === c.id}">${esc(c.name)}</button>`)
-      .join('');
-    const list = PRESETS.filter((p) => this.filter === 'all' || p.spec.biome === this.filter);
+      .join('') + (filtered ? `<button type="button" id="mp-showall" aria-pressed="${this.showAll}">${esc(this.showAll ? t('maps.mode.showFit', { mode: this.modeLabel() }) : t('maps.mode.showAll'))}</button>` : '');
+    const list = PRESETS.filter((p) => (this.filter === 'all' || p.spec.biome === this.filter) && (!filtered || this.showAll || this.fits(p.id)));
     const rnd = this.card('random', t('maps.card.random'), s.mapPreset === 'random' ? t('maps.card.random.sub', { biome: loc(BIOME_NAMES[m.biome]), seed: s.seed }) : t('maps.card.random.idle'));
     const cards = list.map((p) => this.card(p.id, loc(p.name), `${loc(BIOME_NAMES[p.spec.biome])} · ${loc(p.spec.layout !== 'classic' ? LAYOUT_NAMES[p.spec.layout] : p.spec.relief !== 'flat' ? RELIEF_NAMES[p.spec.relief] : RIVER_NAMES[p.spec.river])}`)).join('');
     const detail =
@@ -220,7 +245,7 @@ export class MapPicker {
 
     this.dlg.innerHTML = `
 <form method="dialog">
-  <header><h2>${esc(t('maps.dlg.title'))}</h2><p>${esc(t('maps.dlg.desc'))}</p></header>
+  <header><h2>${esc(t('maps.dlg.title'))}</h2><p>${esc(filtered && !this.showAll ? t('maps.mode.only', { mode: this.modeLabel() }) : t('maps.dlg.desc'))}</p></header>
   <div class="map-chips seg" role="group" aria-label="${esc(t('maps.filter.aria'))}">${chips}</div>
   <div class="map-body">
     <div class="map-grid">${rnd}${cards}</div>
@@ -229,10 +254,10 @@ export class MapPicker {
       <h3>${esc(t('maps.custom'))}</h3>
       <div class="map-fields">
         <label>${esc(t('maps.field.biome'))}<select id="mp-biome">${this.opt(BIOMES, BIOME_NAMES, m.biome)}</select></label>
-        <label>${esc(t('maps.field.river'))}<select id="mp-river"${m.layout === 'citadel' || m.layout === 'crossroads' || m.layout === 'archipelago' ? ' disabled' : ''}>${this.opt(RIVERS, RIVER_NAMES, m.river)}</select></label>
+        <label>${esc(t('maps.field.river'))}<select id="mp-river"${['citadel', 'crossroads', 'archipelago', 'arena', 'forts', 'plateau'].includes(m.layout) ? ' disabled' : ''}>${this.opt(RIVERS, RIVER_NAMES, m.river)}</select></label>
         <label>${esc(t('maps.field.forest'))}<select id="mp-forest">${this.opt(FORESTS, FOREST_NAMES, m.forest)}</select></label>
         <label>${esc(t('maps.field.village'))}<select id="mp-village">${this.opt(VILLAGES, VILLAGE_NAMES, m.village)}</select></label>
-        <label>${esc(t('maps.field.layout'))}<select id="mp-layout">${this.opt(LAYOUTS, LAYOUT_NAMES, m.layout)}</select></label>
+        <label>${esc(t('maps.field.layout'))}<select id="mp-layout">${this.opt(SELECTABLE_LAYOUTS.filter((l) => !filtered || compatibleLayouts(mode).includes(l) || l === m.layout), LAYOUT_NAMES, m.layout)}</select></label>
         <label>${esc(t('maps.field.relief'))}<select id="mp-relief"${m.layout !== 'classic' ? ' disabled' : ''}>${this.opt(RELIEFS, RELIEF_NAMES, m.relief)}</select></label>
         <label>${esc(t('maps.field.crossing'))}<select id="mp-crossing"${m.river === 'none' ? ' disabled' : ''}>${this.opt(CROSSINGS, CROSSING_NAMES, m.crossing)}</select></label>
       </div>
@@ -249,7 +274,11 @@ export class MapPicker {
         this.render();
       }),
     );
-    this.dlg.querySelectorAll<HTMLElement>('.map-card').forEach((b) => b.addEventListener('click', () => this.pick(b.dataset.id!)));
+    this.dlg.querySelector('#mp-showall')?.addEventListener('click', () => {
+      this.showAll = !this.showAll;
+      this.render();
+    });
+    this.dlg.querySelectorAll<HTMLElement>('.map-card:not([disabled])').forEach((b) => b.addEventListener('click', () => this.pick(b.dataset.id!)));
     this.dlg.querySelector('#mp-reroll')?.addEventListener('click', () => this.roll());
     this.dlg.querySelector('#mp-lock')?.addEventListener('click', () => {
       s.mapPreset = 'custom';

@@ -3,8 +3,8 @@ import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
 import type { GameModeId } from '../sim/modes/types';
 
-/** Protocol version: a client with a different version cannot join the lobby. Bumped for wire changes and also when simulation or map generation results change (v11: valley gates, path costs, chase watchdog; v12: game modes, result scores; v13: VIP mode, vip/vipSet messages, BattleStart.vips; v14: Siege mode, siegeDefender setting / GameInit field, structure unit kind; v15: Horde mode with allied teams, startFail message; v16: Lane Conquest mode, lanes map layout, StartFailReason lanesNeedTwoTeams), because lockstep needs identical results. */
-export const PROTOCOL = 16;
+/** Protocol version: a client with a different version cannot join the lobby. Bumped for wire changes and also when simulation or map generation results change (v11: valley gates, path costs, chase watchdog; v12: game modes, result scores; v13: VIP mode, vip/vipSet messages, BattleStart.vips; v14: Siege mode, siegeDefender setting / GameInit field, structure unit kind; v15: Horde mode with allied teams, startFail message; v16: Lane Conquest mode, lanes map layout, StartFailReason lanesNeedTwoTeams; v17: mode maps (arena, forts, plateau layouts), maps are fitted to the game mode, mapFitted message), because lockstep needs identical results. */
+export const PROTOCOL = 17;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;
@@ -165,6 +165,11 @@ export type ServerMsg =
   | { t: 'placeFail'; cids: number[]; reason: PlaceFailReason }
   /** The host's own 'start' was refused (sent to the host only; the room stays in the lobby). */
   | { t: 'startFail'; reason: StartFailReason }
+  /**
+   * The host's settings change replaced the map because the game mode cannot be played on it (sent to the host only, after the new 'state'):
+   * `presetId` is the id of the map now in the settings (null: a custom recipe), `mode` the room's game mode. The UI toasts it.
+   */
+  | { t: 'mapFitted'; presetId: string | null; mode: GameModeId }
   | { t: 'unplaced'; owner: string; ids: number[] }
   /** The host refused to remove these units (the player is ready or placement is over): the client restores them. */
   | { t: 'unplaceFail'; ids: number[] }

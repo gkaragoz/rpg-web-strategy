@@ -1,5 +1,6 @@
 import { Terrain } from './terrain';
-import { lanesSpec, type MapSpec } from './mapSpec';
+import { DEFAULT_MAP, lanesSpec, type MapSpec } from './mapSpec';
+import { fitMapToMode } from './mapModes';
 import type { GameModeId } from './modes/types';
 import { KIND_OF_TROOP, MAX_TEAMS, type StatOverrides } from './units';
 import { HORDE_MAX_HUMANS, hordePoolSize } from './modes/hordeWaves';
@@ -183,11 +184,15 @@ function baseMapSize(config: BattleConfig): number {
 }
 
 /**
- * The map recipe a battle really uses: the configured one, except in Lane Conquest, which always plays on the dedicated 'lanes'
- * layout (only the biome of the configured recipe is kept, for the look). The app uses this for previews and drawing.
+ * The map recipe a battle really uses: the configured one when the mode can be played on it (an unset recipe is the default forest map),
+ * otherwise the first supported map of the mode (`fitMapToMode`: a game is never played on an incompatible map, whatever the entry point).
+ * Lane Conquest always plays on the dedicated 'lanes' layout (only the biome of the configured recipe is kept, for the look). The app uses
+ * this for previews and drawing: read the biome and the look from it, not from `config.map`.
  */
 export function effectiveMapSpec(config: BattleConfig): MapSpec | undefined {
-  return config.rules === 'lanes' ? lanesSpec(config.map) : config.map;
+  if (config.rules === 'lanes') return lanesSpec(config.map);
+  const fit = fitMapToMode(config.map ?? DEFAULT_MAP, config.rules);
+  return fit.changed ? fit.spec : config.map;
 }
 
 /** Area covered by the spawns: obstacles/decor are not placed in this area. */

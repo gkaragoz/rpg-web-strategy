@@ -7,7 +7,7 @@
     "type": "git",
     "url": "https://github.com/gkaragoz/rpg-web-strategy.git"
   },
-  "version": "2.6.2",
+  "version": "2.7.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,7 +15,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "check": "tsc --noEmit && node scripts/check-repo.mjs && node scripts/check-layers.mjs && vitest run",
-    "check:fast": "tsc --noEmit && node scripts/check-repo.mjs && node scripts/check-layers.mjs && vitest run --exclude \"**/{fuzz,rosterfuzz,comedy,mapSpec,onlinesetup,economy,troops,determinism,snapsize,crowd}.test.ts\"",
+    "check:fast": "tsc --noEmit && node scripts/check-repo.mjs && node scripts/check-layers.mjs && vitest run --exclude \"**/{fuzz,rosterfuzz,comedy,mapSpec,mapmodesaudit,onlinesetup,economy,troops,determinism,snapsize,crowd}.test.ts\"",
     "lint:repo": "node scripts/check-repo.mjs",
     "lint:layers": "node scripts/check-layers.mjs",
     "test:cov": "vitest run --coverage",
@@ -26,9 +26,9 @@
     "balance": "node scripts/balance.mjs",
     "balance:quick": "node scripts/balance.mjs --quick",
     "balance:calibrate": "node scripts/balance.mjs --quick --calibrate 8 --write",
-    "test:fast": "vitest run --exclude \"**/{fuzz,rosterfuzz,comedy,mapSpec,onlinesetup,economy,troops,determinism,snapsize,crowd}.test.ts\"",
+    "test:fast": "vitest run --exclude \"**/{fuzz,rosterfuzz,comedy,mapSpec,mapmodesaudit,onlinesetup,economy,troops,determinism,snapsize,crowd}.test.ts\"",
     "test:net": "vitest run net lan chunk onlinesetup",
-    "test:sim": "vitest run skills troops edge terrain determinism crowd comedy armies economy mapSpec",
+    "test:sim": "vitest run skills troops edge terrain determinism crowd comedy armies economy mapSpec mapmodes",
     "screenshots": "npm run build && node scripts/screenshots.mjs"
   },
   "dependencies": {

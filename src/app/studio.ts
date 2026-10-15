@@ -1,7 +1,9 @@
-import { getLang, t } from '../i18n';
+import { getLang, loc, t } from '../i18n';
+import { fitMapToMode, modeHasFixedMap } from '../sim/mapModes';
+import { PRESETS } from '../sim/mapSpec';
 import { isPlainShortcut, langKeys } from './hotkeys';
 import { Tour, shouldStartTour } from './tutorial';
-import { ModePicker } from './modePicker';
+import { ModePicker, modeName } from './modePicker';
 import type { UnitPreview } from './unitPreview';
 import { initSheet } from './sheet';
 import { LEGACY_COUNT, MAX_TEAMS, unitDisplayName } from '../sim/units';
@@ -62,15 +64,32 @@ export class Studio {
         this.render();
       },
     });
-    this.maps = new MapPicker(d.state, () => {
-      d.onMapChange();
-      this.render();
-    });
+    this.maps = new MapPicker(
+      d.state,
+      () => {
+        d.onMapChange();
+        this.render();
+      },
+      true,
+      () => d.state.rules,
+    );
     root.innerHTML = this.template();
     this.$ = (sel) => root.querySelector(sel) as HTMLElement;
     this.bind();
     initSheet(root.querySelector('.dock') as HTMLElement);
     window.addEventListener('keydown', (e) => this.onKey(e));
+  }
+
+  /** The map must suit the mode: otherwise the first map of the mode replaces it (Lane Conquest keeps the stored map, it always plays on its own). */
+  fitMap(): void {
+    const s = this.d.state;
+    if (modeHasFixedMap(s.rules)) return;
+    const fit = fitMapToMode(s.map, s.rules);
+    if (!fit.changed) return;
+    const to = PRESETS.find((p) => p.id === fit.presetId);
+    s.map = { ...fit.spec };
+    s.mapPreset = fit.presetId ?? 'custom';
+    this.toast(t('maps.fitted', { mode: modeName(s.rules), to: to ? loc(to.name) : t('maps.label.custom') }));
   }
 
   /** Starts the quick tour (first run, or the "?" button). The side panels are closed first so they do not cover the highlighted controls. */
@@ -208,6 +227,7 @@ export class Studio {
       onPick: (id) => {
         s.rules = id;
         if (id !== 'vip' && s.tool === 'vip') s.tool = 'place';
+        this.fitMap();
         saveState(s);
         this.d.onPaletteChange(); // the atlas needs the horde colour (and the structure kinds) of the new mode
         this.d.onMapChange(); // Lane Conquest plays on its own map: the studio world is rebuilt (and soldiers that no longer fit are moved)

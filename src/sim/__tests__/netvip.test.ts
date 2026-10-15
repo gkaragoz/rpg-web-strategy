@@ -269,6 +269,8 @@ describe('BattleStart.vips', () => {
       for (const rn of runners) rn.advance(1 / 60);
       r.hub.pump();
     }
+    // Which map the random room drew decides how soon the battle ends; a guest that is a few steps behind the host at that moment catches up before the hashes are compared.
+    while (guestSim.stepCount < hostSim.stepCount && guestSim.winner < 0) guestSim.step(guestSim.dt);
     expect(guestSim.hash()).toBe(hostSim.hash());
     expect(['battle', 'result']).toContain(b.model.state!.phase);
   }, 120000);

@@ -352,6 +352,41 @@ const tests = [
     },
   },
   {
+    name: 'maps-follow-the-mode-studio',
+    async run({ stack }) {
+      const page = await stack.page({ width: 1280, height: 800 });
+      await page.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await page.clickSel('#m-own');
+      await page.waitFor(`!!document.querySelector('#start')`, 'studio');
+      await page.waitFor(`!!localStorage.getItem('rpgweb.studio.v1')`, 'saved studio state', 15000);
+      const preset = () => page.eval(`JSON.parse(localStorage.getItem('rpgweb.studio.v1')).mapPreset`);
+      assert((await preset()) === 'pine-valley', 'default map expected');
+      // Siege only supports citadel/forts/plateau maps: the first of them replaces the current map and the user is told.
+      await page.clickSel('.mode-card[data-mode="siege"]');
+      await page.waitFor(`JSON.parse(localStorage.getItem('rpgweb.studio.v1')).mapPreset === 'citadel-hill'`, 'fallback to the first siege map', 10000);
+      assert(await page.eval(`!!document.querySelector('.toast') && /siege/i.test(document.querySelector('.toast').textContent)`), 'a toast should explain the switch');
+      // The picker only lists maps of the mode; "Show all maps" lists the others disabled.
+      await page.clickSel('#map-btn');
+      await page.waitFor(`!!document.querySelector('.map-grid')`, 'map picker');
+      const fit = await page.eval(`[...document.querySelectorAll('.map-card[data-id]')].filter((c) => c.dataset.id !== 'random').length`);
+      const total = await page.eval(`(() => { document.querySelector('#mp-showall').click(); return [...document.querySelectorAll('.map-card[data-id]')].filter((c) => c.dataset.id !== 'random').length; })()`);
+      const off = await page.eval(`document.querySelectorAll('.map-card.off[disabled]').length`);
+      assert(fit > 0 && fit < total && off === total - fit, 'filter counts: ' + [fit, total, off]);
+      // A disabled card does nothing.
+      await page.eval(`document.querySelector('.map-card.off').click()`);
+      assert((await preset()) === 'citadel-hill', 'incompatible map must not be selectable');
+      // Back to classic keeps the siege map (every map fits classic); lanes keeps the stored map (own fixed map).
+      await page.eval(`document.querySelector('.map-dialog form footer button').click()`);
+      await page.clickSel('.mode-card[data-mode="lanes"]');
+      await sleep(600);
+      assert((await preset()) === 'citadel-hill', 'lanes must not overwrite the stored map');
+      await page.clickSel('#map-btn');
+      await page.waitFor(`!!document.querySelector('.map-dialog')?.open`, 'map dialog');
+      assert(await page.eval(`/own map/i.test(document.querySelector('.map-dialog').textContent) && !document.querySelector('.map-grid')`), 'lanes shows the fixed-map note instead of the grid');
+      noErrors(page, 'maps');
+    },
+  },
+  {
     name: 'battle-3d',
     async run({ stack }) {
       const page = await stack.page({ width: 1280, height: 800 });
@@ -676,6 +711,8 @@ const tests = [
       await sleep(1500);
       for (const p of [host, guest]) await p.clickSel('#pg-ready');
       for (const p of [host, guest]) await p.waitFor(`!!window.__sim && window.__sim.modeHud.kind === 'siege' && window.__sim.modeHud.coreUnit >= 0 && !!document.querySelector('.hud-mode') && !document.querySelector('.hud-mode').hidden`, 'siege battle with the objective strip', 60000);
+      const layout = await host.eval(`window.__session.model.start.init.spec.layout`);
+      assert(['citadel', 'forts', 'plateau'].includes(layout), 'siege must be played on a siege map, got ' + layout);
       noErrors(host, 'host');
       noErrors(guest, 'guest');
     },

@@ -14,6 +14,7 @@ import { MassRenderer, type MassOptions, type MassViewport } from '../render/mas
 import { DEATH_FADE, UnitView, type TeamColors } from '../render/unitView';
 import type { SimBackend } from '../sim/backend';
 import { hordeTeamIndex, terrainFor, type BattleConfig } from '../sim/battle';
+import { effectiveMapSpec } from '../sim/battleConfig';
 import { InlineSim } from '../sim/inlineSim';
 import { KIND_COUNT, STATS, unitDisplayName } from '../sim/units';
 import { WorkerSim } from '../sim/workerSim';
@@ -198,7 +199,7 @@ export class BattleScene {
     const atlas = this.d.getAtlas();
     const { world, camera, app } = this.d;
     const r3 = this.d.battle3d;
-    const reliefMap = !!cfg.map && cfg.map.relief !== 'flat';
+    const reliefMap = (effectiveMapSpec(cfg)?.relief ?? 'flat') !== 'flat';
     world.rebuild(cfg, atlas, detailed, !opts.bench || reliefMap);
     const terr = world.terrain;
     this.elev = terr && terr.hasRelief ? (x, y) => terr.elevPx(x, y) : () => 0;
