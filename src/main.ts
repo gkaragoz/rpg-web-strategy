@@ -1,4 +1,4 @@
-import { Application, Container, Rectangle, Texture } from 'pixi.js';
+import { Application, Container, Rectangle } from 'pixi.js';
 import { getLang, t } from './i18n';
 import { startBottomStack } from './app/bottomStack';
 import { mountLangPicker } from './app/langPicker';
@@ -22,6 +22,7 @@ import type { BattleConfig } from './sim/battle';
 import { KIND_OF_TROOP, LEGACY_COUNT, STATS } from './sim/units';
 import { STATS_DEFAULT_SHOWN, StatsPanel } from './ui/stats';
 import { setDebug } from './debug';
+import { healTextures, installErrorHandlers, watchGlContext } from './app/errors';
 
 // Benchmark and debug parameters (they skip the studio):
 //   ?bench=10000&auto=30  -> units per team, automatic report
@@ -35,54 +36,9 @@ document.documentElement.lang = getLang();
 document.title = t('sys.title');
 if (loading?.firstElementChild) loading.firstElementChild.textContent = t('sys.loading');
 
-/** Unexpected error: a short, self-dismissing notice for the user; details go to the console. */
-let lastErr = '';
-let lastErrAt = 0;
-function showError(msg: string): void {
-  // A failure that repeats every frame must not pile up hundreds of notices.
-  const now = performance.now();
-  if (msg === lastErr && now - lastErrAt < 5000) return;
-  lastErr = msg;
-  lastErrAt = now;
-  const el = document.createElement('div');
-  el.className = 'err-toast';
-  el.textContent = t('sys.error.unexpected', { msg: msg.slice(0, 160) });
-  document.body.appendChild(el);
-  window.setTimeout(() => el.remove(), 6000);
-}
-/**
- * Replaces textures whose GPU source was destroyed (an atlas freed while something still drew from it) with an empty texture, so the next
- * frame renders instead of throwing "reading 'addressModeU' of null" every frame. Returns how many were replaced.
- */
-function healTextures(node: Container & { particleChildren?: Array<{ texture?: Texture }> }): number {
-  let healed = 0;
-  const bad = (tx: Texture | undefined): boolean => !!tx && !!tx.source && (tx.destroyed || tx.source.destroyed || !tx.source.style);
-  const holder = node as unknown as { texture?: Texture };
-  if (bad(holder.texture)) {
-    holder.texture = Texture.EMPTY;
-    healed++;
-  }
-  if (node.particleChildren) for (const p of node.particleChildren) if (bad(p.texture)) {
-    p.texture = Texture.EMPTY;
-    healed++;
-  }
-  for (const c of node.children ?? []) healed += healTextures(c as Container);
-  return healed;
-}
-const looksLikeDeadTexture = (msg: string): boolean => /addressMode|reading 'style'|texture.*destroyed/i.test(msg);
 /** Heals the whole stage once it exists (assigned after the Pixi app is created). */
 let healScene: () => number = () => 0;
-
-window.addEventListener('error', (e) => {
-  console.error(e.error ?? e.message);
-  // A render error caused by a destroyed texture is repaired in place; nothing worth a notice for the player.
-  if (looksLikeDeadTexture(String(e.message)) && healScene() > 0) return;
-  showError(e.message || t('sys.error.unknown'));
-});
-window.addEventListener('unhandledrejection', (e) => {
-  console.error(e.reason);
-  showError(String((e.reason as Error)?.message ?? e.reason));
-});
+installErrorHandlers(() => healScene());
 
 const params = new URLSearchParams(location.search);
 const benchPer = params.has('bench') ? Math.max(10, Number(params.get('bench')) || 10000) : 0;
@@ -119,23 +75,7 @@ try {
 document.body.prepend(app.canvas);
 app.ticker.stop();
 
-// If the WebGL context is lost (GPU reset, memory pressure), suggest reloading the page.
-const onGlLost = (e: Event): void => {
-  e.preventDefault();
-  if (document.querySelector('.fatal')) return;
-  const el = document.createElement('div');
-  el.className = 'fatal';
-  el.innerHTML = `<div>${t('sys.gl.lost')}<br /><button type="button" id="reload-btn">${t('sys.gl.reload')}</button></div>`;
-  document.body.appendChild(el);
-  el.querySelector('#reload-btn')!.addEventListener('click', () => location.reload());
-};
-// The browser restored the context by itself: the dialog is obsolete (Pixi re-uploads textures lazily; dead ones are replaced first).
-const onGlRestored = (): void => {
-  healScene();
-  document.querySelector('.fatal')?.remove();
-};
-app.canvas.addEventListener('webglcontextlost', onGlLost);
-app.canvas.addEventListener('webglcontextrestored', onGlRestored);
+watchGlContext(app.canvas, () => healScene());
 healScene = (): number => healTextures(app.stage);
 
 const state = loadState();
@@ -159,8 +99,7 @@ if (view3d) {
     camera = w3.camera3d;
     battle3d = w3;
     // The visible canvas is the Three.js one: if its context is lost for good the player must be told (three.js re-uploads everything itself on restore).
-    w3.canvas.addEventListener('webglcontextlost', onGlLost);
-    w3.canvas.addEventListener('webglcontextrestored', onGlRestored);
+    watchGlContext(w3.canvas, () => healScene());
     render = (dt) => {
       w3.camera3d.update(dt);
       w3.render(dt);

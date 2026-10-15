@@ -1,6 +1,6 @@
 # Simulation
 
-- `src/sim/battle.ts` (large; grep, do not read top to bottom) owns the step loop: targeting, movement on the grid (`grid.ts`), attacks, skills, projectiles (`projectiles.ts`), terrain effects (`terrain.ts`).
+- `src/sim/battle.ts` owns the step loop and the persistent state (the `Battle` class); the rest of the combat code is split into function modules that take the battle as first argument: `battleConfig.ts` (config, constants, capacities, `terrainFor`), `battleAi.ts` (threat, kiting, chase, leash, target choice), `battleSkills.ts` (attacks, skills, projectile landing), `battleDamage.ts` (damage, death, zones, comedy physics), `battleEffects.ts` (status effects, gathering), `battleSetup.ts` (spawn layouts). Members the modules need are marked `@internal`. It owns the step loop: targeting, movement on the grid (`grid.ts`), attacks, skills, projectiles (`projectiles.ts`), terrain effects (`terrain.ts`).
 - Unit state is struct-of-arrays in `units.ts` (typed arrays) for speed; stats are normalized from the raw roster numbers there.
 - **Determinism**: same seed + same inputs ⇒ same state on every client. Randomness only via `Mulberry` (`random.ts`). The state hash is compared every 60 steps online.
 - `snapshot.ts` serializes/restores a battle (used for late joiners and desync recovery); new state must be included in `serialize/restore/hash`.

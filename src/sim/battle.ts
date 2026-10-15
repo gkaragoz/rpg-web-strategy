@@ -1,108 +1,27 @@
 import { Grid } from './grid';
-import { Terrain, T_WATER } from './terrain';
-import type { MapSpec } from './mapSpec';
-import { PATH_MAX, simDtFor } from './constants';
+import { Terrain } from './terrain';
+import { simDtFor } from './constants';
 import { MovePool, PH_GRID, PH_MOVE, PH_PICK, PH_SEP_APPLY, PH_SEP_SCAN, phaseChunk, type HelperInit } from './movePool';
-import { PICK_KEEP, Picker } from './picker';
+import { Picker } from './picker';
 import { Separator } from './separator';
 import { Mover, MV_FACE, MV_INTENT, MV_ROUTE, CNT_PATHS, CNT_PATH_FAILS, CNT_STUCK } from './mover';
-import { PROJ_TAG, F_EXPLODED, F_RAGE, F_REVIVED, KIND_OF_TROOP, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, Kind, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isRanged, isTank, type StatOverrides, KIND_COUNT } from './units';
-import { PF_PIERCE, PF_SKILL, Projectiles } from './projectiles';
-import { SKILL_ELEMENT, skillParams, type SkillParams } from './data/skills';
-import { CC_IMMUNE, SPLASH_TARGETS, TYPE_MULT, highGroundDamage, highGroundRange, splashFactor } from './data/combat';
-
-/** Damage type / armor class per kind (indices into TYPE_MULT). */
-const DMG_OF = Uint8Array.from(STATS, (s) => s.dmgType);
-const ARM_OF = Uint8Array.from(STATS, (s) => s.armorCls);
-import type { SkillId } from './data/troops';
+import { F_RAGE, ST_BURN, ST_FEAR, ST_INVULN, ST_SHIELD, ST_SLOW, ST_STUN, ST_TAUNT, KITE, MAX_TEAMS, MOTION, STATS, TANK, Units, applyStats, isHealer, isMelee, isTank, KIND_COUNT } from './units';
+import { Projectiles } from './projectiles';
+import { skillParams, type SkillParams } from './data/skills';
 import { Mulberry } from './random';
 import { GRID_CELL, MELEE_SLACK, SEP_CELL, SEP_DECAY, SEP_GAIN, SEP_MAX_STEP, SEP_STRIDE } from './tuning';
 import { copyTyped, fnv, pasteTyped, type BattleSnapshot, type Typed } from './snapshot';
+import type { SkillId } from './data/troops';
+import { TANK_REACH, BAN_TIME, NO_DAMAGE_DRAW, NO_DAMAGE_DRAW_FIRST, NO_DAMAGER_DRAW, EVENT_CAP, DBG_KEYS, EXTRA_DBG, unitCapacity, projectileCapacity, mapSizeFor, terrainFor, type SimEvent, type BattleConfig, type Zone } from './battleConfig';
+import { sp, atkRate, burst } from './battleEffects';
+import { damage, updateZones, flyStep, applyKnockback } from './battleDamage';
+import { resolveHit, periodic, arrowLanded } from './battleSkills';
+import { beyondLeash, canShoot, updateThreat, tryKite, chaseWatchdog, leashHold, pickNow, marchToEnemy, followArmy } from './battleAi';
+import { spawnLayout, spawnArmy, spawnBenchArmy, setupSkills } from './battleSetup';
 
-export const MAP_SIZE = 56;
-const ARROW_SPEED = 13;
-const LANDING_RADIUS = 0.75;
-/** If no one dies for this many seconds, damage grows by STALE_RAMP percent per second. */
-const STALE_AFTER = 20;
-const STALE_RAMP = 0.08;
-/** Extra close-combat range margin against tank targets (tank push radius 1.8 > 1.4). */
-const TANK_REACH = 0.6;
-/** Comedy physics: longest launch distance (tiles). */
-const MAX_LAUNCH = 14;
-/** Progress watchdog: a unit that cannot get closer to its target bans it after this time. */
-const CHASE_TIMEOUT = 6;
-const BAN_TIME = 8;
-/** If a unit waits this many seconds because of the leash, the leash is temporarily disabled. */
-const LEASH_HOLD_MAX = 3;
-const LEASH_OFF = 8;
-/** Draw if there is no damage for this long (s): once damage has occurred / if none ever has. */
-const NO_DAMAGE_DRAW = 90;
-const NO_DAMAGE_DRAW_FIRST = 150;
-/** Draw after this time if no unit that can deal damage remains. */
-const NO_DAMAGER_DRAW = 4;
-const DEMO_GAP_HALF = 9;
-const BENCH_GAP = 24;
-
-export interface SimEvent {
-  /** hit: took damage (value = damage), shot: arrow fired, land: arrow landed on nothing, heal: healed (value = amount). */
-  type: 'heal' | 'death' | 'bash' | 'slam' | 'hit' | 'shot' | 'land' | 'burst';
-  x: number;
-  y: number;
-  unit: number;
-  /** bash: push direction (radians, in the world x/y plane). */
-  angle?: number;
-  value?: number;
-  /** Kind of the unit the event belongs to (for death/hit). */
-  kind?: number;
-  /** burst: effect element (0 physical, 1 fire, 2 ice, 3 holy, 4 dark, 5 nature, 6 energy); value = radius. */
-  element?: number;
-}
-
-/** Upper limit of events produced per step (so messages/allocations do not blow up in big crowds). */
-const EVENT_CAP = 300;
-/** Number of pre-allocated (dormant) skeletons per Bone Caller. */
-const SUMMON_POOL = 8;
-
-/** Persistent effect zone: burning, curse (affects enemy teams). */
-interface Zone {
-  x: number;
-  y: number;
-  r: number;
-  t: number;
-  dps: number;
-  /** Team that placed the zone (the other teams are affected). */
-  team: number;
-  slowK: number;
-}
-
-export interface BattleConfig {
-  /** 'demo': hand-made 10v10 layout, 'bench': block layout of perTeam units per team,
-   *  'custom': the user-placed `layout`. */
-  mode: 'demo' | 'bench' | 'custom';
-  perTeam: number;
-  /** Number of teams (2..6); default 2. */
-  teamCount?: number;
-  /** custom: map size (tiles). */
-  mapSize?: number;
-  /** custom: units, in groups of 4 (team, kind, x, y). */
-  layout?: Float32Array;
-  /** Unit stat overrides (by kind index); defaults if absent. */
-  stats?: StatOverrides;
-  /** false: no environment (river, obstacles), the old bare map. Default true. */
-  env?: boolean;
-  /** Map recipe (biome, river, forest, village, pass); the default forest map if absent. */
-  map?: MapSpec;
-  /** Comedy physics: hits launch units, some fall into water and die (sim only; visuals are separate). */
-  comedy?: boolean;
-  /** Map seed. */
-  terrainSeed?: number;
-  /** false: archer/priest kiting and the line limit are off (old behavior, for comparison). */
-  kite?: boolean;
-}
-
-export const DBG_KEYS = ['kites', 'kiteSteps', 'snapShots', 'archerDeaths', 'archerDeathsKiting', 'stuck', 'cornered'] as const;
-/** Sim-internal counters only (for verification): not written to shared. */
-export const EXTRA_DBG = ['bans', 'leashBreaks', 'paths', 'pathFails'] as const;
+// Public API re-exported from the split modules: other code keeps importing everything from './battle'.
+export { MAP_SIZE, DBG_KEYS, EXTRA_DBG, benchLayout, unitCapacity, projectileCapacity, mapSizeFor, terrainFor } from './battleConfig';
+export type { SimEvent, BattleConfig } from './battleConfig';
 
 export class Battle {
   readonly units: Units;
@@ -141,43 +60,57 @@ export class Battle {
   private noDamagerSince = -1;
   readonly alivePerTeam: number[] = new Array(MAX_TEAMS).fill(0);
   private rngObj = new Mulberry(1);
-  private rng: () => number = this.rngObj.next;
-  private get kiteOn(): boolean {
+  /** @internal */
+  rng: () => number = this.rngObj.next;
+  /** @internal */
+  get kiteOn(): boolean {
     return this.config.kite !== false;
   }
-  private stepNo = 0;
+  /** @internal */
+  stepNo = 0;
   /** Time scale of the current step relative to 30 Hz (1 at 30 Hz): per-step constants are scaled by it so a 20 Hz battle behaves alike. */
   private tk = 1;
   private brakeK = MOTION.brake;
   private sepDecayK = SEP_DECAY;
   private losEvery = 20;
-  private scanEveryK = KITE.scanEvery;
-  /** A* paths for stuck units (unit -> waypoints) and the per-frame path computation budget. */
-  private mover: Mover;
-  private readonly picker: Picker;
+  /** @internal */
+  scanEveryK = KITE.scanEvery;
+  /** A* paths for stuck units (unit -> waypoints) and the per-frame path computation budget. @internal */
+  mover: Mover;
+  /** @internal */
+  readonly picker: Picker;
   private readonly separator: Separator;
   private aliveMask = 0;
   private pool: MovePool | null = null;
   /** Test hook: permutation of the movement chunks to execute (see runMoves). */
   chunkOrder: ((chunks: number) => number[]) | null = null;
-  private lastDeathTime = 0;
-  private readonly centroidX: number[] = new Array(MAX_TEAMS).fill(0);
-  private readonly centroidY: number[] = new Array(MAX_TEAMS).fill(0);
-  /** Melee center (line limit); the team center if there is no melee. */
-  private readonly frontX: number[] = new Array(MAX_TEAMS).fill(0);
-  private readonly frontY: number[] = new Array(MAX_TEAMS).fill(0);
-  private readonly hasFront: boolean[] = new Array(MAX_TEAMS).fill(false);
-  /** Nearest living enemy team per team (-1: none) and the list of living enemy teams. */
-  private readonly nearestEnemy = new Int8Array(MAX_TEAMS).fill(-1);
-  private readonly enemyList: number[][] = Array.from({ length: MAX_TEAMS }, () => []);
+  /** @internal */
+  lastDeathTime = 0;
+  /** @internal */
+  readonly centroidX: number[] = new Array(MAX_TEAMS).fill(0);
+  /** @internal */
+  readonly centroidY: number[] = new Array(MAX_TEAMS).fill(0);
+  /** Melee center (line limit); the team center if there is no melee. @internal */
+  readonly frontX: number[] = new Array(MAX_TEAMS).fill(0);
+  /** @internal */
+  readonly frontY: number[] = new Array(MAX_TEAMS).fill(0);
+  /** @internal */
+  readonly hasFront: boolean[] = new Array(MAX_TEAMS).fill(false);
+  /** Nearest living enemy team per team (-1: none) and the list of living enemy teams. @internal */
+  readonly nearestEnemy = new Int8Array(MAX_TEAMS).fill(-1);
+  /** @internal */
+  readonly enemyList: number[][] = Array.from({ length: MAX_TEAMS }, () => []);
   private readonly teamCount: number;
-  /** Whether comedy physics is on (config.comedy). */
-  private readonly comedy: boolean;
-  private readonly allTeams: number[];
-  /** Number of living non-priest units per team (so a team made only of priests does not flee). */
-  private readonly damagerCount: number[] = new Array(MAX_TEAMS).fill(0);
-  private readonly selfList: number[][] = Array.from({ length: MAX_TEAMS }, (_, t) => [t]);
-  private readonly grids: Grid[];
+  /** Whether comedy physics is on (config.comedy). @internal */
+  readonly comedy: boolean;
+  /** @internal */
+  readonly allTeams: number[];
+  /** Number of living non-priest units per team (so a team made only of priests does not flee). @internal */
+  readonly damagerCount: number[] = new Array(MAX_TEAMS).fill(0);
+  /** @internal */
+  readonly selfList: number[][] = Array.from({ length: MAX_TEAMS }, (_, t) => [t]);
+  /** @internal */
+  readonly grids: Grid[];
   private readonly sepGrid: Grid;
   private sepTick = 0;
 
@@ -224,8 +157,8 @@ export class Battle {
     this.pool = null;
   }
 
-  /** In bench mode, death/heal events are not produced (the renderer does not use them). */
-  private get emitEvents(): boolean {
+  /** In bench mode, death/heal events are not produced (the renderer does not use them). @internal */
+  get emitEvents(): boolean {
     return this.config.mode !== 'bench';
   }
 
@@ -250,78 +183,16 @@ export class Battle {
     this.links.clear();
     this.pools.clear();
     if (this.config.mode === 'custom') {
-      this.spawnLayout();
-      this.setupSkills();
+      spawnLayout(this);
+      setupSkills(this);
     } else if (this.config.mode === 'bench') {
-      this.spawnBenchArmy(0, -1);
-      this.spawnBenchArmy(1, 1);
+      spawnBenchArmy(this, 0, -1);
+      spawnBenchArmy(this, 1, 1);
     } else {
-      this.spawnArmy(0, -1);
-      this.spawnArmy(1, 1);
+      spawnArmy(this, 0, -1);
+      spawnArmy(this, 1, 1);
     }
     this.countAlive();
-  }
-
-  /** Units placed by the user. */
-  private spawnLayout(): void {
-    const L = this.config.layout;
-    if (!L) return;
-    for (let k = 0; k + 3 < L.length; k += 4) {
-      let x = L[k + 2];
-      let y = L[k + 3];
-      // When the seed changes, a unit left under water/an obstacle is moved to the nearest walkable point.
-      if (this.terrain && !(this.terrain.walkable(x, y) && this.terrain.reachable(x, y))) {
-        const p = this.terrain.nearestWalkable(x, y, 20, true);
-        if (!p) continue;
-        x = p.x;
-        y = p.y;
-      }
-      const i = this.units.spawn(L[k] | 0, L[k + 1] | 0, x, y, this.rng);
-      this.units.retarget[i] = this.rng() * 1.5;
-    }
-  }
-
-  /** Armies line up facing each other along the horizontal screen axis (the x-y axis); the river lies between them. */
-  private spawnArmy(team: number, side: number): void {
-    const c = this.mapSize / 2;
-    const ux = Math.SQRT1_2 * side;
-    const uy = -Math.SQRT1_2 * side;
-    const vx = Math.SQRT1_2;
-    const vy = Math.SQRT1_2;
-    const rows: Array<[number, number, number, number]> = [
-      [Kind.Warrior, 5, 1.5, 0],
-      [Kind.Archer, 3, 2.2, 2.5],
-      [Kind.Priest, 2, 2.5, 4.5],
-    ];
-    for (const [kind, n, spacing, depth] of rows) {
-      for (let k = 0; k < n; k++) {
-        const off = (k - (n - 1) / 2) * spacing + (this.rng() - 0.5) * 0.4;
-        const d = DEMO_GAP_HALF + depth + (this.rng() - 0.5) * 0.4;
-        this.units.spawn(team, kind, c + ux * d + vx * off, c + uy * d + vy * off, this.rng);
-      }
-    }
-  }
-
-  /** Block layout: warriors in front, archers behind them, priests at the very back. */
-  private spawnBenchArmy(team: number, side: number): void {
-    const n = this.config.perTeam;
-    const { cols, spacing } = benchLayout(n);
-    const c = this.mapSize / 2;
-    const ux = Math.SQRT1_2 * side;
-    const uy = -Math.SQRT1_2 * side;
-    const vx = Math.SQRT1_2;
-    const vy = Math.SQRT1_2;
-    const warriors = Math.round(n * 0.5);
-    const archers = Math.round(n * 0.3);
-    for (let k = 0; k < n; k++) {
-      const kind = k < warriors ? Kind.Warrior : k < warriors + archers ? Kind.Archer : Kind.Priest;
-      const row = Math.floor(k / cols);
-      const col = k % cols;
-      const off = (col - (cols - 1) / 2) * spacing + (this.rng() - 0.5) * 0.3;
-      const d = BENCH_GAP / 2 + row * spacing + (this.rng() - 0.5) * 0.3;
-      const i = this.units.spawn(team, kind, c + ux * d + vx * off, c + uy * d + vy * off, this.rng);
-      this.units.retarget[i] = this.rng() * 3;
-    }
   }
 
   private countAlive(): void {
@@ -432,7 +303,7 @@ export class Battle {
     tp = tn;
 
     if (this.winner < 0) {
-      if (this.zones.length > 0) this.updateZones(dt);
+      if (this.zones.length > 0) updateZones(this, dt);
       // The order is reversed every step: so the low-index (first-spawned) team gains no permanent advantage.
       const cnt = u.count;
       const rev = (this.stepNo & 1) === 1;
@@ -452,7 +323,7 @@ export class Battle {
     }
 
     if (this.config.mode !== 'bench') this.updateStatus();
-    this.projectiles.update(dt, (x, y, team, dmg, idx) => this.arrowLanded(x, y, team, dmg, idx));
+    this.projectiles.update(dt, (x, y, team, dmg, idx) => arrowLanded(this, x, y, team, dmg, idx));
     pf.arrows += performance.now() - tp;
     pf.steps++;
     this.countAlive();
@@ -499,16 +370,28 @@ export class Battle {
     if (this.time - this.lastDamageT > limit) this.winner = -2;
   }
 
-  private pushEvent(e: SimEvent): void {
+  /** @internal */
+  pushEvent(e: SimEvent): void {
     if (this.events.length < EVENT_CAP) this.events.push(e);
   }
 
-  private startAttack(i: number): void {
+  /** @internal */
+  startAttack(i: number): void {
     const u = this.units;
     const s = STATS[u.kind[i]];
     u.cooldown[i] = s.cooldown;
     u.swing[i] = s.swing;
     u.hitPending[i] = 1;
+  }
+
+  /** Can unit i (not melee) hit target t from this distance (height advantage, ridges blocking fire); see battleAi.ts. */
+  canShoot(i: number, t: number, dist: number): boolean {
+    return canShoot(this, i, t, dist);
+  }
+
+  /** Archers/priests must not get in front of their own warrior center (also used by the stall detector); see battleAi.ts. */
+  beyondLeash(i: number): boolean {
+    return beyondLeash(this, i);
   }
 
   private updateUnit(i: number, dt: number): void {
@@ -519,11 +402,11 @@ export class Battle {
     if (this.comedy) {
       if (u.airImm[i] > 0) u.airImm[i] -= dt;
       if (u.airT[i] > 0) {
-        this.flyStep(i, dt);
+        flyStep(this, i, dt);
         return;
       }
     }
-    u.cooldown[i] -= dt * (u.slowT[i] > 0 || u.flags[i] !== 0 ? this.atkRate(i) : 1);
+    u.cooldown[i] -= dt * (u.slowT[i] > 0 || u.flags[i] !== 0 ? atkRate(this, i) : 1);
     u.retarget[i] -= dt;
     if (u.slowT[i] > 0) u.slowT[i] -= dt;
     if (u.shieldT[i] > 0) u.shieldT[i] -= dt;
@@ -533,13 +416,13 @@ export class Battle {
     if (u.stackT[i] > 0 && (u.stackT[i] -= dt) <= 0) u.stacks[i] = 0;
     if (u.burnT[i] > 0) {
       u.burnT[i] -= dt;
-      this.damage(i, u.burnDps[i] * dt, -1, false, true);
+      damage(this, i, u.burnDps[i] * dt, -1, false, true);
       if (!u.alive[i]) return;
     }
     const skill = s.skill;
-    if (skill === 'rage' && (u.flags[i] & F_RAGE) === 0 && u.hp[i] < u.maxHp[i] * this.sp('rage').b) {
+    if (skill === 'rage' && (u.flags[i] & F_RAGE) === 0 && u.hp[i] < u.maxHp[i] * sp(this, 'rage').b) {
       u.flags[i] |= F_RAGE;
-      this.burst(u.x[i], u.y[i], 2, skill);
+      burst(this, u.x[i], u.y[i], 2, skill);
     }
     if (u.sideT[i] > 0) u.sideT[i] -= dt;
     if (u.banT[i] > 0) u.banT[i] -= dt;
@@ -547,7 +430,7 @@ export class Battle {
     if (u.ccImmT[i] > 0) u.ccImmT[i] -= dt;
 
     // A unit that is being knocked back or stunned cannot act this step.
-    if (u.kbVx[i] !== 0 || u.kbVy[i] !== 0) this.applyKnockback(i, dt);
+    if (u.kbVx[i] !== 0 || u.kbVy[i] !== 0) applyKnockback(this, i, dt);
     if (u.stunT[i] > 0) {
       u.stunT[i] -= dt;
       u.swing[i] = 0;
@@ -566,10 +449,10 @@ export class Battle {
       this.queueMove(i, u.x[i] + (fx / fl) * 6, u.y[i] + (fy / fl) * 6, s.speed * 1.15, true, false);
       return;
     }
-    if (skill === 'mock' || skill === 'taunt' || skill === 'stoneWill') this.periodic(i, dt, skill);
+    if (skill === 'mock' || skill === 'taunt' || skill === 'stoneWill') periodic(this, i, dt, skill);
 
     if (ranged && this.kiteOn) {
-      this.updateThreat(i);
+      updateThreat(this, i);
       if (u.kiteState[i] !== 1) u.stamina[i] = Math.min(1, u.stamina[i] + KITE.staminaRecharge * dt);
     }
 
@@ -579,24 +462,24 @@ export class Battle {
       if (t >= 0 && u.alive[t]) this.faceTo(i, u.x[t] - u.x[i], u.y[t] - u.y[i]);
       if (u.hitPending[i] && s.swing - u.swing[i] >= s.hitAt) {
         u.hitPending[i] = 0;
-        this.resolveHit(i);
+        resolveHit(this, i);
       }
       return;
     }
 
     if (u.retarget[i] <= 0) {
       const tq = performance.now();
-      this.pickNow(i);
+      pickNow(this, i);
       this.prof.pick += performance.now() - tq;
       u.retarget[i] = u.target[i] < 0 ? 0.4 + this.rng() * 0.3 : 1.8 + this.rng() * 2.0;
     }
 
-    if (ranged && this.kiteOn && this.tryKite(i, dt)) return;
+    if (ranged && this.kiteOn && tryKite(this, i, dt)) return;
 
     const t = u.target[i];
     if (t < 0) {
-      if (isHealer(kind)) this.followArmy(i);
-      else this.marchToEnemy(i, dt);
+      if (isHealer(kind)) followArmy(this, i);
+      else marchToEnemy(this, i, dt);
       return;
     }
 
@@ -607,7 +490,7 @@ export class Battle {
     const tr = isTank(u.kind[t]) && !isTank(kind) ? TANK_REACH : 0;
 
     // Ranged attackers: height advantage extends the range, and a ridge in the way blocks direct fire (they must move).
-    const inRange = isMelee(kind) ? dist <= s.range + MELEE_SLACK + tr : this.canShoot(i, t, dist);
+    const inRange = isMelee(kind) ? dist <= s.range + MELEE_SLACK + tr : canShoot(this, i, t, dist);
     if (inRange) {
       // Entering range does not count instantly: a unit jittering at the range edge in a crowd cannot reset the counter.
       u.rangeT[i] += dt;
@@ -617,7 +500,7 @@ export class Battle {
       }
     } else {
       u.rangeT[i] = 0;
-      if (this.chaseWatchdog(i, t, dist, dt)) return;
+      if (chaseWatchdog(this, i, t, dist, dt)) return;
     }
 
     if (isMelee(kind)) {
@@ -651,7 +534,7 @@ export class Battle {
         } else {
           this.queueMove(i, u.x[t], u.y[t], s.speed);
         }
-      } else if (this.leashHold(i, dt)) {
+      } else if (leashHold(this, i, dt)) {
         this.faceTo(i, dx, dy);
       } else {
         this.queueMove(i, u.x[t], u.y[t], s.speed);
@@ -661,21 +544,6 @@ export class Battle {
 
     this.faceTo(i, dx, dy);
     if (u.cooldown[i] <= 0) this.startAttack(i);
-  }
-
-  /**
-   * Can unit i (not melee) hit target t from this distance: height advantage extends the range of ranged attackers
-   * (disadvantage shortens it), and a ridge in the way blocks direct fire (arrows, bolts), but not lobbed or magic shots.
-   */
-  canShoot(i: number, t: number, dist: number): boolean {
-    const u = this.units;
-    const s = STATS[u.kind[i]];
-    const tr = this.terrain;
-    if (!tr || !tr.hasRelief || !isRanged(u.kind[i])) return dist <= s.range * 0.95;
-    const reach = (s.range + highGroundRange(tr.heightAt(u.x[i], u.y[i]) - tr.heightAt(u.x[t], u.y[t]))) * 0.95;
-    if (dist > reach) return false;
-    if (s.magical || s.splash >= 3 || s.skill === 'ship') return true;
-    return !tr.blocksFire(u.x[i], u.y[i], u.x[t], u.y[t]);
   }
 
   /** Display data for the renderer: height advantage of every unit over its current target (half steps). */
@@ -691,244 +559,6 @@ export class Battle {
       const dh = tr.heightAt(u.x[i], u.y[i]) - tr.heightAt(u.x[t], u.y[t]);
       u.hgAdv[i] = Math.max(-127, Math.min(127, Math.round(dh * 2)));
     }
-  }
-
-  /** Melee threat scan: 3x3 cells on the coarse grid, staggered per unit. */
-  private updateThreat(i: number): void {
-    if ((i + this.stepNo) % this.scanEveryK !== 0) return;
-    const u = this.units;
-    const danger = isRanged(u.kind[i]) ? KITE.archerDanger : KITE.priestDanger;
-    const d2max = danger * danger;
-    const enemies = this.enemyList[u.team[i]];
-    const g0 = this.grids[0];
-    const cols = g0.cols;
-    const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / g0.cell) | 0));
-    const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / g0.cell) | 0));
-    const xi = u.x[i];
-    const yi = u.y[i];
-    let best = Infinity;
-    let ax = 0;
-    let ay = 0;
-    for (let e = 0; e < enemies.length; e++) {
-      const grid = this.grids[enemies[e]];
-      for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
-        for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
-          const c = gy * cols + gx;
-          for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
-            const j = grid.items[k];
-            if (!isMelee(u.kind[j])) continue;
-            const dx = xi - u.x[j];
-            const dy = yi - u.y[j];
-            const d2 = dx * dx + dy * dy;
-            if (d2 >= d2max) continue;
-            const w = 1 / (d2 + 0.5);
-            ax += dx * w;
-            ay += dy * w;
-            if (d2 < best) best = d2;
-          }
-        }
-      }
-    }
-    if (best === Infinity) {
-      u.threatDist[i] = Infinity;
-      return;
-    }
-    const mag = Math.sqrt(ax * ax + ay * ay) || 1;
-    u.threatDx[i] = ax / mag;
-    u.threatDy[i] = ay / mag;
-    u.threatDist[i] = Math.sqrt(best);
-  }
-
-  /**
-   * Archer/priest kiting: retreats if there is a threat. The archer may first take a quick shot, and fights
-   * when stamina runs out or when cornered. While running back it faces the enemy.
-   * true: moved/attacked this step.
-   */
-  private tryKite(i: number, dt: number): boolean {
-    const u = this.units;
-    const archer = isRanged(u.kind[i]);
-    const danger = archer ? KITE.archerDanger : KITE.priestDanger;
-    const safe = archer ? KITE.archerSafe : KITE.priestSafe;
-    const td = u.threatDist[i];
-
-    if (u.kiteState[i] === 1) {
-      if (td >= safe || u.stamina[i] <= 0.05) u.kiteState[i] = 0;
-    } else if (td < danger) {
-      if (u.stamina[i] <= KITE.staminaMin) return false; // tired: cannot flee
-      if (archer) {
-        if (td <= KITE.archerCornered) {
-          this.dbg.cornered++;
-          return false; // fight: last defensive shot
-        }
-        const t = u.target[i];
-        if (u.cooldown[i] <= 0 && td >= KITE.archerSnapMin && t >= 0 && u.alive[t]) {
-          const ex = u.x[t] - u.x[i];
-          const ey = u.y[t] - u.y[i];
-          if (ex * ex + ey * ey <= STATS[u.kind[i]].range * STATS[u.kind[i]].range) {
-            this.faceTo(i, ex, ey);
-            this.startAttack(i);
-            this.dbg.snapShots++;
-            return true;
-          }
-        }
-      }
-      u.kiteState[i] = 1;
-      this.dbg.kites++;
-    }
-    if (u.kiteState[i] !== 1) return false;
-
-    const tm = u.team[i];
-    let dx = u.threatDx[i];
-    let dy = u.threatDy[i];
-    let px = this.centroidX[tm] - u.x[i];
-    let py = this.centroidY[tm] - u.y[i];
-    const pl = Math.sqrt(px * px + py * py);
-    if (pl > 1e-3) {
-      px /= pl;
-      py /= pl;
-      dx = dx * (1 - KITE.armyPull) + px * KITE.armyPull;
-      dy = dy * (1 - KITE.armyPull) + py * KITE.armyPull;
-    }
-    const sp = STATS[u.kind[i]].speed * (archer ? KITE.archerSprint : KITE.priestSprint);
-    const step = sp * dt;
-    const mv = this.mover.move(i, u.x[i] + dx * 3, u.y[i] + dy * 3, sp, dt, false, false);
-    this.faceTo(i, -u.threatDx[i], -u.threatDy[i]);
-    this.dbg.kiteSteps++;
-    u.stamina[i] = Math.max(0, u.stamina[i] - (archer ? KITE.staminaDrain : KITE.priestStaminaDrain) * dt);
-    if (mv < step * 0.2) {
-      // Stuck at a river/obstacle: give up fleeing.
-      u.kiteState[i] = 0;
-      u.stamina[i] = 0;
-      this.dbg.cornered++;
-    }
-    return true;
-  }
-
-  /**
-   * Progress watchdog: a unit that cannot get closer to its target (crowd, obstacle, unreachable) bans
-   * that target after a while and picks another one. true: the target was dropped.
-   */
-  private chaseWatchdog(i: number, t: number, dist: number, dt: number): boolean {
-    const u = this.units;
-    // A unit following a detour (a ramp around a cliff) gets farther from its target in a straight line before it gets closer:
-    // while it walks a path, progress is measured along that path.
-    if (u.pathN[i] > 0) {
-      const m = this.chaseWalk(i, t);
-      if (m > u.chaseBest[i] + 4) {
-        // A new, longer route was found: it is the new baseline, not a lack of progress.
-        u.chaseBest[i] = m;
-        u.chaseT[i] = 0;
-        return false;
-      }
-      dist = m;
-    }
-    if (dist < u.chaseBest[i] - 0.5) {
-      u.chaseBest[i] = dist;
-      u.chaseT[i] = 0;
-      return false;
-    }
-    u.chaseT[i] += dt;
-    if (u.chaseT[i] < CHASE_TIMEOUT) return false;
-    u.banTarget[i] = t;
-    u.banT[i] = BAN_TIME;
-    if (u.attackers[t] > 0 && !(isHealer(u.kind[i]))) u.attackers[t]--;
-    if (u.healers[t] > 0 && isHealer(u.kind[i])) u.healers[t]--;
-    u.target[i] = -1;
-    u.retarget[i] = 0;
-    u.chaseT[i] = 0;
-    u.chaseBest[i] = Infinity;
-    this.dbg.bans++;
-    return true;
-  }
-
-  /** Remaining walking distance to the target along the unit's current path (its waypoints, then the straight leg to the target). */
-  private chaseWalk(i: number, t: number): number {
-    const u = this.units;
-    const m = u.pathN[i];
-    const pts = u.pathPts;
-    const base = i * PATH_MAX * 2;
-    let k = Math.min(u.pathK[i], m - 1);
-    let d = Math.hypot(pts[base + k * 2] - u.x[i], pts[base + k * 2 + 1] - u.y[i]);
-    for (; k < m - 1; k++) d += Math.hypot(pts[base + (k + 1) * 2] - pts[base + k * 2], pts[base + (k + 1) * 2 + 1] - pts[base + k * 2 + 1]);
-    return d + Math.hypot(u.x[t] - pts[base + (m - 1) * 2], u.y[t] - pts[base + (m - 1) * 2 + 1]);
-  }
-
-  /** Leash: true if it is holding the unit back; if the wait was too long, temporarily disables it. */
-  private leashHold(i: number, dt: number): boolean {
-    const u = this.units;
-    if (!this.beyondLeash(i)) {
-      u.holdT[i] = 0;
-      return false;
-    }
-    u.holdT[i] += dt;
-    if (u.holdT[i] > LEASH_HOLD_MAX) {
-      u.leashOffT[i] = LEASH_OFF;
-      u.holdT[i] = 0;
-      this.dbg.leashBreaks++;
-      return false;
-    }
-    return true;
-  }
-
-  /** Archers/priests must not get in front of their own warrior center (toward the enemy). */
-  private beyondLeash(i: number): boolean {
-    const u = this.units;
-    const tm = u.team[i];
-    if (!this.kiteOn || !this.hasFront[tm] || u.leashOffT[i] > 0) return false;
-    const en = this.nearestEnemy[tm];
-    if (en < 0) return false;
-    let ex = this.centroidX[en] - this.frontX[tm];
-    let ey = this.centroidY[en] - this.frontY[tm];
-    const len = Math.sqrt(ex * ex + ey * ey);
-    if (len < 1e-3) return false;
-    ex /= len;
-    ey /= len;
-    return (u.x[i] - this.frontX[tm]) * ex + (u.y[i] - this.frontY[tm]) * ey > KITE.leash;
-  }
-
-  /**
-   * The unit's target choice at its retarget moment: normally the result of the picking phase at the start of the step
-   * (`Picker`), recomputed here when that result is missing or no longer valid.
-   */
-  private pickNow(i: number): void {
-    const u = this.units;
-    if (u.tauntT[i] > 0) {
-      const b = u.tauntBy[i];
-      if (b >= 0 && u.alive[b]) {
-        u.target[i] = b;
-        return;
-      }
-    }
-    let best: number;
-    if (u.pickMark[i]) {
-      best = u.pickBest[i];
-      u.pickMark[i] = 0;
-      // The chosen unit (or the locked current target) may have died since the phase ran.
-      if ((best >= 0 && !u.alive[best]) || (best === PICK_KEEP && !(u.target[i] >= 0 && u.alive[u.target[i]]))) best = this.picker.pick(i);
-    } else best = this.picker.pick(i);
-    this.applyPick(i, best);
-  }
-
-  /** Makes the choice effective: attacker/healer counts and chase state. */
-  private applyPick(i: number, best: number): void {
-    const u = this.units;
-    if (best === PICK_KEEP) return;
-    const cur = u.target[i];
-    const isPriest = isHealer(u.kind[i]);
-    if (cur >= 0 && cur !== best) {
-      if (isPriest) {
-        if (u.healers[cur] > 0) u.healers[cur]--;
-      } else if (u.attackers[cur] > 0) u.attackers[cur]--;
-    }
-    if (best >= 0 && best !== cur) {
-      if (isPriest) u.healers[best]++;
-      else u.attackers[best]++;
-    }
-    if (best !== cur) {
-      u.chaseT[i] = 0;
-      u.chaseBest[i] = Infinity;
-    }
-    u.target[i] = best;
   }
 
   /** Publishes this step's inputs to the parallel kernels (and the helper threads). */
@@ -971,293 +601,22 @@ export class Battle {
     }
   }
 
-  private marchToEnemy(i: number, dt: number): void {
-    const u = this.units;
-    const en = this.nearestEnemy[u.team[i]];
-    if (en < 0) return;
-    if (!isMelee(u.kind[i]) && this.leashHold(i, dt)) return;
-    this.queueMove(i, this.centroidX[en], this.centroidY[en], STATS[u.kind[i]].speed);
-  }
-
-  private followArmy(i: number): void {
-    const u = this.units;
-    const tm = u.team[i];
-    const en = this.nearestEnemy[tm];
-    // With no warriors (only priests) there is no one to escort: do not flee into a corner.
-    if (en < 0 || this.damagerCount[tm] === 0) return;
-    let ax = this.centroidX[tm] - this.centroidX[en];
-    let ay = this.centroidY[tm] - this.centroidY[en];
-    const len = Math.sqrt(ax * ax + ay * ay) || 1;
-    ax /= len;
-    ay /= len;
-    const gx = this.centroidX[tm] + ax * 2.5;
-    const gy = this.centroidY[tm] + ay * 2.5;
-    const gdx = gx - u.x[i];
-    const gdy = gy - u.y[i];
-    if (gdx * gdx + gdy * gdy > 2.25) this.queueMove(i, gx, gy, STATS[u.kind[i]].speed);
-  }
-
-  private resolveHit(i: number): void {
-    const u = this.units;
-    const kind = u.kind[i];
-    const s = STATS[kind];
-    const skill = s.skill;
-    if (skill === 'summonSkeleton') {
-      this.summon(i);
-      return;
-    }
-    const t = u.target[i];
-    if (t < 0 || !u.alive[t]) return;
-    const dx = u.x[t] - u.x[i];
-    const dy = u.y[t] - u.y[i];
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const power = s.power * this.dealMul(i);
-
-    if (kind === Kind.Shield) {
-      this.shieldBash(i, dx, dy, dist);
-    } else if (kind === Kind.Brute) {
-      this.bruteSlam(i);
-    } else if (isHealer(kind)) {
-      if (dist <= s.range + 1 && u.hp[t] < u.maxHp[t]) {
-        const before = u.hp[t];
-        const stale = this.time - this.lastDeathTime - STALE_AFTER;
-        const heal = stale > 0 ? s.power / (1 + stale * STALE_RAMP) : s.power;
-        u.hp[t] = Math.min(u.maxHp[t], u.hp[t] + heal);
-        this.counters.heal += u.hp[t] - before;
-        if (this.emitEvents) this.pushEvent({ type: 'heal', x: u.x[t], y: u.y[t], unit: t, value: heal, kind: u.kind[t] });
-        if (skill === 'cleanse') {
-          // Nun: also heals the target and the allies around it, removes control effects.
-          const p = this.sp('cleanse');
-          this.cleanse(t);
-          const out = this.scratch;
-          this.gather(this.selfList[u.team[i]], u.x[t], u.y[t], p.radius, out, 24);
-          for (let k = 0; k < out.length; k++) {
-            if (out[k] === t) continue;
-            this.healUnit(out[k], heal * 0.5);
-            this.cleanse(out[k]);
-          }
-          this.burst(u.x[t], u.y[t], p.radius, skill);
-        }
-      }
-    } else if (isRanged(kind)) {
-      this.fireShot(i, t, dist, power, skill);
-    } else {
-      this.meleeHit(i, t, dist, dx, dy, power, skill);
-    }
-  }
-
-  /** Shield Tank: damage in the cone in front of it + strong knockback. */
-  private shieldBash(i: number, dx: number, dy: number, dist: number): void {
-    const u = this.units;
-    const s = STATS[Kind.Shield];
-    let fx = dx;
-    let fy = dy;
-    if (dist > 0.01) {
-      fx /= dist;
-      fy /= dist;
-    } else {
-      fx = u.facing[i];
-      fy = -u.facing[i];
-    }
-    this.areaStrike(i, s.aoe, s.power, s.knockback, fx, fy, true);
-    if (this.emitEvents) this.pushEvent({ type: 'bash', x: u.x[i], y: u.y[i], unit: i, angle: Math.atan2(fy, fx) });
-  }
-
-  /** Hammer Tank: circular strike around it; survivors are pushed back by half. */
-  private bruteSlam(i: number): void {
-    const u = this.units;
-    const s = STATS[Kind.Brute];
-    this.areaStrike(i, s.aoe, s.power, s.knockback, 0, 0, false);
-    if (this.emitEvents) this.pushEvent({ type: 'slam', x: u.x[i], y: u.y[i], unit: i });
-  }
-
-  /** Scans the cells around the tank in the enemy grids: damage + knockback (cone or circle). */
-  private areaStrike(i: number, radius: number, power: number, push: number, fx: number, fy: number, cone: boolean): void {
-    const u = this.units;
-    const ax = u.x[i];
-    const ay = u.y[i];
-    const enemies = this.enemyList[u.team[i]];
-    const g0 = this.grids[0];
-    const cols = g0.cols;
-    const cx = Math.min(cols - 1, Math.max(0, (ax / g0.cell) | 0));
-    const cy = Math.min(cols - 1, Math.max(0, (ay / g0.cell) | 0));
-    const victims: number[] = [];
-    for (let e = 0; e < enemies.length; e++) {
-      const grid = this.grids[enemies[e]];
-      for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
-        for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
-          const c = gy * cols + gx;
-          for (let k = grid.start[c]; k < grid.start[c + 1]; k++) victims.push(grid.items[k]);
-        }
-      }
-    }
-    for (const j of victims) {
-      if (!u.alive[j]) continue;
-      const dx = u.x[j] - ax;
-      const dy = u.y[j] - ay;
-      const d = Math.sqrt(dx * dx + dy * dy);
-      if (d > radius) continue;
-      let ux = d > 0.01 ? dx / d : 1;
-      let uy = d > 0.01 ? dy / d : 0;
-      if (cone && d > 0.01 && (dx * fx + dy * fy) / d < TANK.coneCos) continue;
-      this.damage(j, power, i, true);
-      if (!u.alive[j]) continue;
-      if (this.comedy && u.airT[j] <= 0) {
-        this.launch(j, cone ? fx : ux, cone ? fy : uy, push * 3.4 + 1.2);
-        continue;
-      }
-      if (cone) {
-        ux = fx;
-        uy = fy;
-      }
-      // A victim that is itself a tank is pushed half as far.
-      const amount = isTank(u.kind[j]) ? push * 0.5 : push;
-      u.kbVx[j] = ux * amount * 9;
-      u.kbVy[j] = uy * amount * 9;
-      u.stunT[j] = TANK.stun;
-    }
-  }
-
-  /** Applies the knockback velocity: never pushed onto a non-walkable tile, the velocity decays per step. */
-  private applyKnockback(i: number, dt: number): void {
-    const u = this.units;
-    const t = this.terrain;
-    const ox = u.x[i];
-    const oy = u.y[i];
-    let nx = Math.fround(Math.min(this.mapSize - 0.5, Math.max(0.5, ox + u.kbVx[i] * dt)));
-    let ny = Math.fround(Math.min(this.mapSize - 0.5, Math.max(0.5, oy + u.kbVy[i] * dt)));
-    if (t && !t.stepOk(ox, oy, nx, ny)) {
-      if (t.walkable(nx, oy)) ny = oy;
-      else if (t.walkable(ox, ny)) nx = ox;
-      else {
-        nx = ox;
-        ny = oy;
-      }
-    }
-    u.x[i] = nx;
-    u.y[i] = ny;
-    u.moving[i] = 1;
-    u.kbVx[i] *= TANK.kbDecay;
-    u.kbVy[i] *= TANK.kbDecay;
-    if (Math.abs(u.kbVx[i]) + Math.abs(u.kbVy[i]) < 0.3) u.kbVx[i] = u.kbVy[i] = 0;
-  }
-
   // ===================================================================
-  // Skills and status effects
+  // Skill state (the skill code lives in battleEffects/battleDamage/battleSkills.ts)
   // ===================================================================
 
-  private readonly skillCache: Partial<Record<SkillId, SkillParams>> = {};
-  private readonly zones: Zone[] = [];
-  /** Hex Poppets -> linked enemies; Bone Caller -> bone soldier pool. */
-  private readonly links = new Map<number, number[]>();
-  private readonly pools = new Map<number, number[]>();
-  private readonly scratch: number[] = [];
-  private readonly scratch2: number[] = [];
-
-  // ===================================================================
-  // Comedy physics: launch, flight, landing
-  // ===================================================================
-
-  /** Launches j through the air `dist` tiles in the direction (ux,uy) (peak height grows with distance). */
-  private launch(j: number, ux: number, uy: number, dist: number): void {
-    const u = this.units;
-    if (!this.comedy || !u.alive[j] || u.airT[j] > 0) return;
-    const heavy = STATS[u.kind[j]].scale > 1 ? 0.5 : 1;
-    const d = Math.min(MAX_LAUNCH, dist * heavy);
-    if (d < 1) return;
-    const lim = this.mapSize - 0.5;
-    const len = Math.hypot(ux, uy) || 1;
-    // Slight deviation: every launch looks different (deterministic rng).
-    const a = Math.atan2(uy, ux) + (this.rng() - 0.5) * 0.7;
-    u.airX0[j] = u.x[j];
-    u.airY0[j] = u.y[j];
-    u.airX1[j] = Math.min(lim, Math.max(0.5, u.x[j] + Math.cos(a) * d * (len > 0 ? 1 : 0)));
-    u.airY1[j] = Math.min(lim, Math.max(0.5, u.y[j] + Math.sin(a) * d));
-    u.airDur[j] = 0.42 + d * 0.06;
-    u.airT[j] = u.airDur[j];
-    u.airH[j] = 1.1 + d * 0.2;
-    u.swing[j] = 0;
-    u.hitPending[j] = 0;
-    u.kbVx[j] = u.kbVy[j] = 0;
-    u.stunT[j] = 0;
-    u.sepX[j] = u.sepY[j] = 0;
-    u.pathN[j] = 0;
-    u.mvFlags[j] = 0;
-    if (this.emitEvents) this.pushEvent({ type: 'burst', x: u.x[j], y: u.y[j], unit: -1, value: 0.8, element: 8 });
-  }
-
-  /** Flight step: linear progress + parabolic height; calls land() on touchdown. */
-  private flyStep(i: number, dt: number): void {
-    const u = this.units;
-    u.airT[i] -= dt;
-    const k = Math.min(1, Math.max(0, 1 - u.airT[i] / u.airDur[i]));
-    u.x[i] = u.airX0[i] + (u.airX1[i] - u.airX0[i]) * k;
-    u.y[i] = u.airY0[i] + (u.airY1[i] - u.airY0[i]) * k;
-    u.lift[i] = 4 * u.airH[i] * k * (1 - k);
-    u.moving[i] = 1;
-    u.swing[i] = 0;
-    u.hitPending[i] = 0;
-    if (u.airT[i] <= 0) this.land(i);
-  }
-
-  /** Landing: water -> drowns; obstacle/cliff -> nearest walkable point; then lying on the ground + crushing. */
-  private land(i: number): void {
-    const u = this.units;
-    u.airT[i] = 0;
-    u.lift[i] = 0;
-    u.x[i] = Math.fround(u.airX1[i]);
-    u.y[i] = Math.fround(u.airY1[i]);
-    const t = this.terrain;
-    if (t) {
-      const f = t.flags[((u.y[i] | 0) * t.size + (u.x[i] | 0)) | 0];
-      if (f === T_WATER) {
-        if (this.emitEvents) this.pushEvent({ type: 'burst', x: u.x[i], y: u.y[i], unit: -1, value: 1.8, element: 9 });
-        this.killUnit(i);
-        return;
-      }
-      if (!t.walkable(u.x[i], u.y[i]) || !t.reachable(u.x[i], u.y[i])) {
-        const p = t.nearestWalkable(u.x[i], u.y[i], 12, true);
-        if (!p) {
-          this.killUnit(i);
-          return;
-        }
-        u.x[i] = Math.fround(p.x);
-        u.y[i] = Math.fround(p.y);
-      }
-    }
-    u.px[i] = u.x[i];
-    u.py[i] = u.y[i];
-    u.winX[i] = u.x[i];
-    u.winY[i] = u.y[i];
-    u.winT[i] = 0;
-    u.stunT[i] = 0.9 + this.rng() * 0.6;
-    u.airImm[i] = 2.4;
-    u.target[i] = -1;
-    u.retarget[i] = 0.6;
-    // Crush: small damage to neighbors caught under the landing unit.
-    const out = this.scratch2;
-    this.gather(this.allTeams, u.x[i], u.y[i], 0.8, out, 12);
-    const crush = Math.max(2, u.maxHp[i] * 0.03);
-    for (let k = 0; k < out.length; k++) {
-      const j = out[k];
-      if (j !== i && u.airT[j] <= 0) this.damage(j, crush, i, false, true);
-    }
-    if (this.emitEvents) this.pushEvent({ type: 'burst', x: u.x[i], y: u.y[i], unit: -1, value: 1.2, element: 0 });
-  }
-
-  /** After a hit: if the damage is a big share of health, throws the unit into the air (comedy physics). */
-  private comedyHit(j: number, src: number, amount: number, melee: boolean): void {
-    const u = this.units;
-    if (u.airImm[j] > 0 || u.airT[j] > 0 || !u.alive[j]) return;
-    const ratio = amount / Math.max(1, u.maxHp[j]);
-    const srcMul = (isTank(u.kind[src]) ? 2.2 : 1) * (melee ? 1 : 0.4);
-    const dist = (ratio * 34 + 0.4) * srcMul * (0.8 + this.rng() * 0.4);
-    if (dist < 2.6) return;
-    const dx = u.x[j] - u.x[src];
-    const dy = u.y[j] - u.y[src];
-    const l = Math.hypot(dx, dy);
-    this.launch(j, l > 0.01 ? dx / l : 1, l > 0.01 ? dy / l : 0, dist);
-  }
+  /** @internal */
+  readonly skillCache: Partial<Record<SkillId, SkillParams>> = {};
+  /** @internal */
+  readonly zones: Zone[] = [];
+  /** Hex Poppets -> linked enemies; Bone Caller -> bone soldier pool. @internal */
+  readonly links = new Map<number, number[]>();
+  /** @internal */
+  readonly pools = new Map<number, number[]>();
+  /** @internal */
+  readonly scratch: number[] = [];
+  /** @internal */
+  readonly scratch2: number[] = [];
 
   // ===================================================================
   // Online: state snapshot (resync / spectator / reconnect) and checksum
@@ -1381,688 +740,12 @@ export class Battle {
     }
   }
 
-  private sp(id: SkillId): SkillParams {
-    return (this.skillCache[id] ??= skillParams(id));
-  }
-
-  /** Damage multiplier: weaken, rage, spear stacks. */
-  private dealMul(i: number): number {
-    const u = this.units;
-    let m = 1;
-    if (u.weakT[i] > 0) m *= u.weakK[i];
-    if ((u.flags[i] & F_RAGE) !== 0) m *= 1 + this.sp('rage').a;
-    if (u.stacks[i] > 0) m *= 1 + u.stacks[i] * this.sp('spearBuild').a;
-    return m;
-  }
-
-  private atkRate(i: number): number {
-    const u = this.units;
-    let m = u.slowT[i] > 0 ? u.slowA[i] : 1;
-    if ((u.flags[i] & F_RAGE) !== 0) m *= 1 + this.sp('rage').a;
-    return m;
-  }
-
-  private tick(i: number, every: number): boolean {
-    const u = this.units;
-    if (++u.skillN[i] >= every) {
-      u.skillN[i] = 0;
-      return true;
-    }
-    return false;
-  }
-
-  private burst(x: number, y: number, radius: number, skill: SkillId | null): void {
-    if (this.emitEvents) this.pushEvent({ type: 'burst', x, y, unit: -1, value: radius, element: skill ? (SKILL_ELEMENT[skill] ?? 0) : 0 });
-  }
-
-  /** Collects the living units of the given teams within radius r of (x,y) into out. */
-  private gather(teams: number[], x: number, y: number, r: number, out: number[], max = 96): number {
-    const u = this.units;
-    out.length = 0;
-    const g0 = this.grids[0];
-    const cols = g0.cols;
-    const cell = g0.cell;
-    const gx0 = Math.max(0, ((x - r) / cell) | 0);
-    const gx1 = Math.min(cols - 1, ((x + r) / cell) | 0);
-    const gy0 = Math.max(0, ((y - r) / cell) | 0);
-    const gy1 = Math.min(cols - 1, ((y + r) / cell) | 0);
-    const r2 = r * r;
-    for (let a = 0; a < teams.length; a++) {
-      const grid = this.grids[teams[a]];
-      for (let gy = gy0; gy <= gy1; gy++) {
-        for (let gx = gx0; gx <= gx1; gx++) {
-          const c = gy * cols + gx;
-          for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
-            const j = grid.items[k];
-            if (!u.alive[j]) continue;
-            const dx = u.x[j] - x;
-            const dy = u.y[j] - y;
-            if (dx * dx + dy * dy <= r2) {
-              out.push(j);
-              if (out.length >= max) return out.length;
-            }
-          }
-        }
-      }
-    }
-    return out.length;
-  }
-
-  /** Enemies in the strip of length x half-width from point (ox,oy) in direction (dx,dy). */
-  private gatherLine(teams: number[], ox: number, oy: number, dx: number, dy: number, length: number, half: number, out: number[]): number {
-    const u = this.units;
-    const tmp = this.scratch2;
-    this.gather(teams, ox + (dx * length) / 2, oy + (dy * length) / 2, length / 2 + half, tmp, 200);
-    out.length = 0;
-    for (let k = 0; k < tmp.length; k++) {
-      const j = tmp[k];
-      const rx = u.x[j] - ox;
-      const ry = u.y[j] - oy;
-      const along = rx * dx + ry * dy;
-      if (along < -0.3 || along > length) continue;
-      if (Math.abs(rx * dy - ry * dx) <= half) out.push(j);
-    }
-    return out.length;
-  }
-
-  private applySlow(j: number, dur: number, moveK: number, atkK: number): void {
-    const u = this.units;
-    if (u.invulnT[j] > 0) return;
-    if (u.slowT[j] > 0) {
-      u.slowK[j] = Math.min(u.slowK[j], moveK);
-      u.slowA[j] = Math.min(u.slowA[j], atkK);
-    } else {
-      u.slowK[j] = moveK;
-      u.slowA[j] = atkK;
-    }
-    u.slowT[j] = Math.max(u.slowT[j], dur);
-  }
-
-  private applyStun(j: number, dur: number): void {
-    const u = this.units;
-    if (u.invulnT[j] > 0 || !u.alive[j] || u.ccImmT[j] > 0) return;
-    u.stunT[j] = Math.max(u.stunT[j], dur);
-    u.ccImmT[j] = dur + CC_IMMUNE;
-  }
-
-  private applyFear(j: number, dur: number, fx: number, fy: number): void {
-    const u = this.units;
-    if (u.invulnT[j] > 0 || !u.alive[j] || u.ccImmT[j] > 0) return;
-    u.fearT[j] = Math.max(u.fearT[j], dur);
-    u.ccImmT[j] = dur + CC_IMMUNE;
-    u.fearX[j] = fx;
-    u.fearY[j] = fy;
-  }
-
-  private applyWeak(j: number, dur: number, k: number): void {
-    const u = this.units;
-    u.weakK[j] = u.weakT[j] > 0 ? Math.min(u.weakK[j], k) : k;
-    u.weakT[j] = Math.max(u.weakT[j], dur);
-  }
-
-  private applyShield(j: number, dur: number, k: number): void {
-    const u = this.units;
-    u.shieldK[j] = u.shieldT[j] > 0 ? Math.min(u.shieldK[j], k) : k;
-    u.shieldT[j] = Math.max(u.shieldT[j], dur);
-  }
-
-  private applyTaunt(j: number, by: number, dur: number): void {
-    const u = this.units;
-    if (u.invulnT[j] > 0) return;
-    // If another tank is already taunting, do not switch targets (to avoid oscillation).
-    if (u.tauntT[j] > 0 && u.tauntBy[j] !== by && u.tauntBy[j] >= 0 && u.alive[u.tauntBy[j]]) return;
-    u.tauntBy[j] = by;
-    u.tauntT[j] = Math.max(u.tauntT[j], dur);
-    u.target[j] = by;
-    u.retarget[j] = dur;
-  }
-
-  private cleanse(j: number): void {
-    const u = this.units;
-    u.stunT[j] = u.slowT[j] = u.fearT[j] = u.burnT[j] = u.weakT[j] = 0;
-  }
-
-  private pushUnit(j: number, ux: number, uy: number, amount: number): void {
-    const u = this.units;
-    if (!u.alive[j]) return;
-    if (this.comedy) {
-      this.launch(j, ux, uy, amount * 3.2 + 1);
-      return;
-    }
-    const a = isTank(u.kind[j]) ? amount * 0.5 : amount;
-    u.kbVx[j] = ux * a * 9;
-    u.kbVy[j] = uy * a * 9;
-  }
-
-  private healUnit(j: number, amount: number): number {
-    const u = this.units;
-    if (!u.alive[j]) return 0;
-    const before = u.hp[j];
-    u.hp[j] = Math.min(u.maxHp[j], u.hp[j] + amount);
-    const gained = u.hp[j] - before;
-    this.counters.heal += gained;
-    if (gained > 0 && this.emitEvents) this.pushEvent({ type: 'heal', x: u.x[j], y: u.y[j], unit: j, value: gained, kind: u.kind[j] });
-    return gained;
-  }
-
-  /** Heals the friendly units around (including those at the center). */
-  private healArea(team: number, x: number, y: number, r: number, amount: number): void {
-    const out = this.scratch;
-    this.gather(this.selfList[team], x, y, r, out, 64);
-    for (let k = 0; k < out.length; k++) if (this.units.hp[out[k]] < this.units.maxHp[out[k]]) this.healUnit(out[k], amount);
-  }
-
-  private addZone(x: number, y: number, r: number, t: number, dps: number, team: number, slowK: number, skill: SkillId): void {
-    if (this.zones.length >= 32) this.zones.shift();
-    this.zones.push({ x, y, r, t, dps, team, slowK });
-    this.burst(x, y, r, skill);
-  }
-
-  private updateZones(dt: number): void {
-    const out = this.scratch;
-    for (let k = this.zones.length - 1; k >= 0; k--) {
-      const z = this.zones[k];
-      z.t -= dt;
-      if (z.t <= 0) {
-        this.zones.splice(k, 1);
-        continue;
-      }
-      this.gather(this.enemyList[z.team], z.x, z.y, z.r, out, 64);
-      for (let a = 0; a < out.length; a++) {
-        const j = out[a];
-        if (z.dps > 0) this.damage(j, z.dps * dt, -1, false, true);
-        if (z.slowK < 1 && this.units.alive[j]) this.applySlow(j, 0.4, z.slowK, z.slowK);
-      }
-    }
-  }
-
-  /** Lifecycle setup for skilled units: bone soldier pool, hex links. */
-  private setupSkills(): void {
-    const u = this.units;
-    const skelKind = KIND_OF_TROOP['bone-soldier'];
-    const n = u.count;
-    for (let i = 0; i < n; i++) {
-      const skill = STATS[u.kind[i]].skill;
-      if (skill === 'summonSkeleton') {
-        const pool: number[] = [];
-        for (let k = 0; k < SUMMON_POOL; k++) {
-          const s = u.spawn(u.team[i], skelKind, u.x[i], u.y[i], this.rng);
-          u.alive[s] = 0;
-          u.deathT[s] = 1000;
-          u.hp[s] = 0;
-          u.owner[s] = i;
-          pool.push(s);
-        }
-        this.pools.set(i, pool);
-      } else if (skill === 'destinyBond') {
-        const foes: number[] = [];
-        for (let j = 0; j < n; j++) if (u.alive[j] && u.team[j] !== u.team[i] && STATS[u.kind[j]].skill !== 'destinyBond') foes.push(j);
-        const pick: number[] = [];
-        const want = Math.min(this.sp('destinyBond').count, foes.length);
-        while (pick.length < want) {
-          const f = foes[Math.floor(this.rng() * foes.length)];
-          if (!pick.includes(f)) pick.push(f);
-        }
-        if (pick.length) this.links.set(i, pick);
-      }
-    }
-  }
-
-  /** Bone Caller: wakes a bone soldier from the pool. */
-  private summon(i: number): void {
-    const u = this.units;
-    const pool = this.pools.get(i);
-    if (!pool) return;
-    let n = this.sp('summonSkeleton').count;
-    for (let a = 0; a < pool.length && n > 0; a++) {
-      const k = pool[a];
-      if (u.alive[k]) continue;
-      let x = u.x[i] + (this.rng() - 0.5) * 3;
-      let y = u.y[i] + (this.rng() - 0.5) * 3;
-      if (this.terrain) {
-        const p = this.terrain.nearestWalkable(x, y, 3, true);
-        if (!p) continue;
-        x = p.x;
-        y = p.y;
-      }
-      u.alive[k] = 1;
-      u.hp[k] = u.maxHp[k];
-      u.deathT[k] = 0;
-      u.x[k] = u.px[k] = x;
-      u.y[k] = u.py[k] = y;
-      u.target[k] = -1;
-      u.retarget[k] = 0;
-      u.cooldown[k] = 0.4;
-      u.flash[k] = 0.25;
-      u.stunT[k] = u.slowT[k] = u.fearT[k] = u.burnT[k] = 0;
-      u.winX[k] = x;
-      u.winY[k] = y;
-      u.winT[k] = 0;
-      n--;
-      this.burst(x, y, 1.6, 'summonSkeleton');
-    }
-  }
-
-  private explode(i: number): void {
-    const u = this.units;
-    if ((u.flags[i] & F_EXPLODED) !== 0) return;
-    u.flags[i] |= F_EXPLODED;
-    const p = this.sp('explode');
-    // May be called during death: a local array so as not to corrupt the shared array of nested loops.
-    const out: number[] = [];
-    this.gather(this.enemyList[u.team[i]], u.x[i], u.y[i], p.radius, out, 64);
-    for (let k = 0; k < out.length; k++) this.damage(out[k], p.dmg, i, false);
-    this.addZone(u.x[i], u.y[i], p.radius, p.dur, p.a / p.dur, u.team[i], 1, 'explode');
-    if (u.alive[i]) this.killUnit(i);
-  }
-
-  /** Periodic skills: taunt, mockery, stone will. */
-  private periodic(i: number, dt: number, skill: SkillId): void {
-    const u = this.units;
-    u.skillT[i] -= dt;
-    if (u.skillT[i] > 0) return;
-    const p = this.sp(skill);
-    const out = this.scratch;
-    const team = u.team[i];
-    if (skill === 'mock' || skill === 'taunt') {
-      u.skillT[i] = p.b;
-      this.gather(this.enemyList[team], u.x[i], u.y[i], p.radius, out, 48);
-      if (out.length === 0) {
-        u.skillT[i] = 0.6;
-        return;
-      }
-      for (let k = 0; k < out.length; k++) {
-        // The taunt lasts until the next period: so the target does not keep changing.
-        this.applyTaunt(out[k], i, p.b + 0.5);
-        if (skill === 'mock') this.applyWeak(out[k], p.dur, p.a);
-      }
-      this.burst(u.x[i], u.y[i], p.radius, skill);
-    } else if (skill === 'stoneWill') {
-      u.skillT[i] = 6;
-      this.gather(this.enemyList[team], u.x[i], u.y[i], p.radius, out, 48);
-      if (out.length === 0) {
-        u.skillT[i] = 1;
-        return;
-      }
-      this.applyShield(i, p.dur, p.b);
-      for (let k = 0; k < out.length; k++) {
-        this.damage(out[k], STATS[u.kind[i]].power * 0.6, i, false);
-        this.applySlow(out[k], p.dur, p.a, p.a);
-      }
-      this.burst(u.x[i], u.y[i], p.radius, skill);
-    }
-  }
-
-  /** Melee hit: base damage + skill. */
-  private meleeHit(i: number, t: number, dist: number, dx: number, dy: number, power: number, skill: SkillId | null): void {
-    const u = this.units;
-    const s = STATS[u.kind[i]];
-    if (skill === 'explode') {
-      this.explode(i);
-      return;
-    }
-    if (dist > s.range + 0.6 + (isTank(u.kind[t]) && !isTank(u.kind[i]) ? TANK_REACH : 0)) return;
-    const nx = dist > 0.01 ? dx / dist : u.facing[i];
-    const ny = dist > 0.01 ? dy / dist : 0;
-    const out = this.scratch;
-    let dealt = 0;
-    if (skill === 'stun') {
-      // Night Lancer: every hit is a strong thrust into the strip in front of it + a stun.
-      const p = this.sp('stun');
-      this.gatherLine(this.enemyList[u.team[i]], u.x[i], u.y[i], nx, ny, p.length, p.half, out);
-      for (let k = 0; k < out.length; k++) {
-        this.damage(out[k], p.dmg, i, true);
-        this.applyStun(out[k], p.dur);
-      }
-      this.burst(u.x[i] + nx * 2, u.y[i] + ny * 2, 2, skill);
-      return;
-    }
-    if (s.shape === 1 && s.splash > 0) {
-      this.gather(this.enemyList[u.team[i]], u.x[t], u.y[t], s.splash, out, SPLASH_TARGETS);
-      for (let k = 0; k < out.length; k++) dealt += this.damage(out[k], power * splashFactor(Math.hypot(u.x[out[k]] - u.x[t], u.y[out[k]] - u.y[t]), s.splash), i, true);
-      this.burst(u.x[t], u.y[t], s.splash, null);
-    } else if (s.shape === 2 && s.splash > 0) {
-      this.gatherLine(this.enemyList[u.team[i]], u.x[i], u.y[i], nx, ny, s.splash * 1.7, s.splash * 0.5 + 0.3, out);
-      for (let k = 0; k < out.length; k++) dealt += this.damage(out[k], power, i, true);
-    } else {
-      dealt = this.damage(t, power, i, true);
-    }
-    if (!skill) return;
-    const p = this.sp(skill);
-    switch (skill) {
-      case 'lifesteal':
-        u.hp[i] = Math.min(u.maxHp[i], u.hp[i] + dealt * p.a);
-        break;
-      case 'heal':
-        this.healArea(u.team[i], u.x[i], u.y[i], p.radius, p.dmg);
-        this.burst(u.x[i], u.y[i], 1.8, skill);
-        break;
-      case 'bash':
-        if (this.tick(i, p.every)) {
-          this.areaStrike(i, p.radius, p.dmg, p.a, 0, 0, false);
-          this.burst(u.x[i], u.y[i], p.radius, skill);
-          if (this.emitEvents) this.pushEvent({ type: 'slam', x: u.x[i], y: u.y[i], unit: i });
-        }
-        break;
-      case 'knives':
-        if (this.tick(i, p.every)) {
-          this.gather(this.enemyList[u.team[i]], u.x[i], u.y[i], p.radius, out, p.count);
-          for (let k = 0; k < out.length; k++) this.damage(out[k], p.dmg, i, false);
-          this.burst(u.x[i], u.y[i], p.radius, skill);
-        }
-        break;
-      case 'shield':
-        if (this.tick(i, p.every)) {
-          this.gather(this.selfList[u.team[i]], u.x[i], u.y[i], p.radius, out, 48);
-          let n = p.count;
-          for (let k = 0; k < out.length && n > 0; k++) {
-            const j = out[k];
-            if (u.hp[j] < u.maxHp[j] * 0.7) {
-              this.applyShield(j, p.dur, p.a);
-              n--;
-            }
-          }
-          this.burst(u.x[i], u.y[i], p.radius, skill);
-        }
-        break;
-      case 'withstand':
-        if (this.tick(i, p.every)) {
-          this.gather(this.selfList[u.team[i]], u.x[i], u.y[i], p.radius, out, 48);
-          for (let k = 0; k < out.length; k++) this.applyShield(out[k], p.dur, p.a);
-          this.burst(u.x[i], u.y[i], p.radius, skill);
-        }
-        break;
-      case 'charge':
-        if (this.tick(i, p.every)) {
-          this.gatherLine(this.enemyList[u.team[i]], u.x[i], u.y[i], nx, ny, p.length, p.half, out);
-          for (let k = 0; k < out.length; k++) {
-            this.damage(out[k], p.dmg, i, true);
-            this.pushUnit(out[k], nx, ny, p.a);
-            this.applyStun(out[k], 0.3);
-          }
-          this.burst(u.x[i] + nx * 3, u.y[i] + ny * 3, 2.5, skill);
-        }
-        break;
-      case 'swarm':
-        if (this.tick(i, p.every)) {
-          this.gatherLine(this.enemyList[u.team[i]], u.x[i], u.y[i], nx, ny, p.length, p.half, out);
-          for (let k = 0; k < out.length; k++) this.damage(out[k], p.dmg, i, false);
-          this.burst(u.x[i] + nx * 4, u.y[i] + ny * 4, 3.5, skill);
-        }
-        break;
-      case 'fear':
-        if (this.tick(i, p.every)) {
-          this.gather(this.enemyList[u.team[i]], u.x[i], u.y[i], p.radius, out, 64);
-          for (let k = 0; k < out.length; k++) this.applyFear(out[k], p.dur, u.x[i], u.y[i]);
-          this.burst(u.x[i], u.y[i], p.radius, skill);
-        }
-        break;
-      case 'rockThrow':
-        if (this.tick(i, p.every)) {
-          this.gather(this.enemyList[u.team[i]], u.x[t], u.y[t], p.radius, out, 48);
-          for (let k = 0; k < out.length; k++) {
-            this.damage(out[k], p.dmg, i, false);
-            this.applyStun(out[k], p.dur);
-          }
-          this.burst(u.x[t], u.y[t], p.radius, skill);
-        }
-        break;
-      case 'refraction':
-        if (this.tick(i, p.every)) {
-          u.invulnT[i] = p.dur;
-          this.gather(this.enemyList[u.team[i]], u.x[i], u.y[i], p.radius, out, 48);
-          for (let k = 0; k < out.length; k++) this.damage(out[k], p.dmg, i, false);
-          this.burst(u.x[i], u.y[i], p.radius, skill);
-        }
-        break;
-    }
-  }
-
-  /** Ranged attack: spawns a projectile, sets the payload/flags for the skill. */
-  private fireShot(i: number, t: number, dist: number, power: number, skill: SkillId | null): void {
-    const u = this.units;
-    const s = STATS[u.kind[i]];
-    const team = u.team[i];
-    let dmg = power;
-    let flags = s.shape === 3 ? PF_PIERCE : 0;
-    const lob = s.splash >= 3 || skill === 'ship';
-    if (skill) {
-      const p = this.sp(skill);
-      switch (skill) {
-        case 'crit':
-          if (this.rng() < p.a) dmg *= p.b;
-          break;
-        case 'spearBuild':
-          u.stacks[i] = Math.min(p.count, u.stacks[i] + 1);
-          u.stackT[i] = p.dur;
-          break;
-        case 'frostBlast':
-        case 'fireball':
-        case 'ship':
-        case 'curseZone':
-        case 'chill':
-          if (this.tick(i, p.every)) flags |= PF_SKILL;
-          break;
-        case 'hex':
-          flags |= PF_SKILL;
-          break;
-        case 'orbs':
-          if (this.tick(i, p.every)) this.fireOrbs(i, p);
-          break;
-        case 'axes':
-          if (this.tick(i, p.every)) {
-            const nx = dist > 0.01 ? (u.x[t] - u.x[i]) / dist : 1;
-            const ny = dist > 0.01 ? (u.y[t] - u.y[i]) / dist : 0;
-            const out = this.scratch;
-            this.gatherLine(this.enemyList[team], u.x[i], u.y[i], nx, ny, p.length, p.half, out);
-            for (let k = 0; k < out.length; k++) this.damage(out[k], p.dmg, i, false);
-            this.burst(u.x[i] + nx * 5, u.y[i] + ny * 5, 3, skill);
-          }
-          break;
-      }
-    }
-    const speed = lob ? 10 : ARROW_SPEED;
-    const flight = Math.max(0.25, dist / speed);
-    const tx = u.x[t] + u.vx[t] * flight;
-    const ty = u.y[t] + u.vy[t] * flight;
-    const height = lob ? 30 + dist * 3 : 18 + dist * 2.2;
-    this.projectiles.spawn(u.x[i], u.y[i], tx, ty, flight, height, dmg, team, i, s.splash, flags, PROJ_TAG[u.kind[i]]);
-    if (this.emitEvents) this.pushEvent({ type: 'shot', x: u.x[i], y: u.y[i], unit: i, angle: Math.atan2(ty - u.y[i], tx - u.x[i]) });
-  }
-
-  /** Horned Seer: fireballs at several enemies at once. */
-  private fireOrbs(i: number, p: SkillParams): void {
-    const u = this.units;
-    const out = this.scratch;
-    this.gather(this.enemyList[u.team[i]], u.x[i], u.y[i], STATS[u.kind[i]].range, out, 12);
-    let n = p.count;
-    for (let k = 0; k < out.length && n > 0; k++, n--) {
-      const j = out[k];
-      const d = Math.hypot(u.x[j] - u.x[i], u.y[j] - u.y[i]);
-      this.projectiles.spawn(u.x[i], u.y[i], u.x[j], u.y[j], Math.max(0.3, d / ARROW_SPEED), 20 + d * 2, p.dmg, u.team[i], i, 0, 0, 1);
-    }
-  }
-
-  /** Projectile landed: area, piercing or single target; skill side effects. */
-  private arrowLanded(x: number, y: number, team: number, dmg: number, idx: number): void {
-    const u = this.units;
-    const pr = this.projectiles;
-    const src = pr.src[idx];
-    const spl = pr.splash[idx];
-    const fl = pr.flags[idx];
-    const skill = src >= 0 ? STATS[u.kind[src]].skill : null;
-    const out = this.scratch;
-    const enemies = this.enemyList[team];
-    out.length = 0;
-    if (spl > 0) {
-      this.gather(enemies, x, y, spl, out, SPLASH_TARGETS);
-      if (out.length > 0 && this.emitEvents && spl >= 2.5) this.burst(x, y, spl, skill);
-    } else {
-      const g0 = this.grids[0];
-      const cols = g0.cols;
-      const cx = Math.min(cols - 1, Math.max(0, (x / g0.cell) | 0));
-      const cy = Math.min(cols - 1, Math.max(0, (y / g0.cell) | 0));
-      let best = -1;
-      let bestD = LANDING_RADIUS;
-      for (let e = 0; e < enemies.length; e++) {
-        const grid = this.grids[enemies[e]];
-        for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
-          for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {
-            const c = gy * cols + gx;
-            for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
-              const j = grid.items[k];
-              if (!u.alive[j]) continue;
-              const ex = u.x[j] - x;
-              const ey = u.y[j] - y;
-              const d = Math.sqrt(ex * ex + ey * ey);
-              if (d < bestD) {
-                bestD = d;
-                best = j;
-              }
-            }
-          }
-        }
-      }
-      if (best >= 0) out.push(best);
-      if (best >= 0 && (fl & PF_PIERCE) !== 0) {
-        // Piercing: two more enemies right behind the same point, with reduced damage.
-        const extra = this.scratch2;
-        this.gather(enemies, x, y, 1.6, extra, 12);
-        let n = 2;
-        for (let k = 0; k < extra.length && n > 0; k++) {
-          if (extra[k] !== best) {
-            out.push(extra[k]);
-            n--;
-          }
-        }
-      }
-    }
-    if (out.length === 0) {
-      if (this.emitEvents) this.pushEvent({ type: 'land', x, y, unit: -1 });
-      if (skill === 'burnOil') this.landSkill(src, x, y, team, skill, fl);
-      return;
-    }
-    let amount = dmg;
-    let slowSkill: SkillParams | null = null;
-    let stun = 0;
-    if (skill && (fl & PF_SKILL) !== 0) {
-      const p = this.sp(skill);
-      if (skill === 'frostBlast') {
-        amount = p.dmg;
-        slowSkill = p;
-      } else if (skill === 'ship') {
-        amount = dmg * p.a;
-        stun = p.dur;
-      } else if (skill === 'chill') {
-        slowSkill = p;
-        stun = p.dur * 0.75;
-      } else if (skill === 'hex') stun = p.dur;
-    } else if (skill === 'hex') stun = this.sp('hex').dur;
-    else if (skill === 'chill') slowSkill = this.sp('chill');
-    const first = out[0];
-    for (let k = 0; k < out.length; k++) {
-      const j = out[k];
-      const fall = spl > 0 && !(skill && (fl & PF_SKILL) !== 0) ? splashFactor(Math.hypot(u.x[j] - x, u.y[j] - y), spl) : 1;
-      this.damage(j, (k === 0 || spl > 0 ? amount : amount * 0.6) * fall, src, false);
-      if (!u.alive[j]) continue;
-      if (slowSkill) this.applySlow(j, slowSkill.dur || 2, slowSkill.a, slowSkill.b);
-      if (stun > 0 && (skill !== 'chill' || (fl & PF_SKILL) !== 0)) this.applyStun(j, stun);
-    }
-    this.landSkill(src, x, y, team, skill, fl, first);
-  }
-
-  /** Skill effects after landing: zone, split balls. */
-  private landSkill(src: number, x: number, y: number, team: number, skill: SkillId | null, fl: number, first = -1): void {
-    if (!skill || src < 0) return;
-    const p = this.sp(skill);
-    if (skill === 'burnOil') this.addZone(x, y, p.radius, p.dur, p.dmg / p.dur, team, 1, skill);
-    else if (skill === 'curseZone' && (fl & PF_SKILL) !== 0) this.addZone(x, y, p.radius, p.dur, p.dmg, team, p.a, skill);
-    else if (skill === 'fireball' && (fl & PF_SKILL) !== 0) {
-      const near = this.scratch2;
-      this.gather(this.enemyList[team], x, y, p.radius, near, 24);
-      const u = this.units;
-      for (let k = 0; k < p.count && near.length > 0; k++) {
-        const j = near[Math.floor(this.rng() * near.length)];
-        if (j === first && near.length > 1) continue;
-        this.projectiles.spawn(x, y, u.x[j], u.y[j], 0.3, 14, p.dmg, team, src, 0, 0, 1);
-      }
-    }
-  }
-
-  /** Applies damage; returns the health actually lost. src: attacker, melee: close hit, quiet: do not produce events/flashes (damage over time). */
-  private damage(j: number, amount: number, src = -1, melee = false, quiet = false): number {
-    const u = this.units;
-    if (!u.alive[j] || u.invulnT[j] > 0) return 0;
-    // If no one has died for a long time, damage ramps up gradually: a heal stalemate cannot lock the battle.
-    const stale = this.time - this.lastDeathTime - STALE_AFTER;
-    if (stale > 0) amount *= 1 + stale * STALE_RAMP;
-    if (src >= 0 && src !== j && this.terrain && this.terrain.hasRelief) amount *= highGroundDamage(this.terrain.heightAt(u.x[src], u.y[src]) - this.terrain.heightAt(u.x[j], u.y[j]), melee);
-    if (src >= 0) amount *= TYPE_MULT[DMG_OF[u.kind[src]] * 4 + ARM_OF[u.kind[j]]];
-    amount *= 1 - STATS[u.kind[j]].armor;
-    if (u.shieldT[j] > 0) amount *= u.shieldK[j];
-    const dealt = Math.min(amount, Math.max(0, u.hp[j]));
-    this.counters.damage += dealt;
-    if (src >= 0) this.meter.dmg[u.team[src] * KIND_COUNT + u.kind[src]] += dealt;
-    if (!quiet) {
-      if (this.emitEvents) this.pushEvent({ type: 'hit', x: u.x[j], y: u.y[j], unit: j, value: amount, kind: u.kind[j] });
-      u.flash[j] = 0.12;
-    }
-    u.hp[j] -= amount;
-    const skill = STATS[u.kind[j]].skill;
-    if (skill === 'thorns' && melee && src >= 0 && u.alive[src]) this.damage(src, amount * this.sp('thorns').a, -1, false, true);
-    if (this.comedy && !quiet && src >= 0 && src !== j && u.hp[j] > 0) this.comedyHit(j, src, amount, melee);
-    if (!quiet && this.links.size > 0) {
-      const lk = this.links.get(j);
-      if (lk) for (const e of lk) if (u.alive[e]) this.damage(e, amount * this.sp('destinyBond').a, -1, false, true);
-    }
-    if (u.hp[j] <= 0) {
-      if (skill === 'revive' && (u.flags[j] & F_REVIVED) === 0) {
-        u.flags[j] |= F_REVIVED;
-        u.hp[j] = u.maxHp[j] * this.sp('revive').a;
-        u.invulnT[j] = 1;
-        this.cleanse(j);
-        this.burst(u.x[j], u.y[j], 2.2, skill);
-        return dealt;
-      }
-      if (skill === 'explode' && (u.flags[j] & F_EXPLODED) === 0) {
-        u.hp[j] = 1;
-        this.explode(j);
-        return dealt;
-      }
-      if (skill === 'destinyBond') {
-        const lk = this.links.get(j);
-        if (lk) for (const e of lk) if (u.alive[e]) this.damage(e, this.sp('destinyBond').dmg, -1, false, true);
-      }
-      this.killUnit(j, src, amount);
-    }
-    return dealt;
-  }
-
-  private killUnit(j: number, src = -1, dmg = 0): void {
-    const u = this.units;
-    u.hp[j] = 0;
-    this.lastDeathTime = this.time;
-    this.counters.kills++;
-    if (src >= 0 && src !== j) this.meter.kills[u.team[src]]++;
-    u.alive[j] = 0;
-    u.deathT[j] = 0;
-    u.target[j] = -1;
-    if (isRanged(u.kind[j])) {
-      this.dbg.archerDeaths++;
-      if (u.kiteState[j] === 1) this.dbg.archerDeathsKiting++;
-    }
-    if (this.emitEvents) {
-      // Direction away from the hit and last hit strength (for the comedy-look ragdoll launch).
-      const ang = src >= 0 && src !== j ? Math.atan2(u.y[j] - u.y[src], u.x[j] - u.x[src]) : u.facing[j] > 0 ? Math.PI : 0;
-      this.pushEvent({ type: 'death', x: u.x[j], y: u.y[j], unit: j, kind: u.kind[j], angle: ang, value: dmg });
-    }
-  }
-
   /**
    * Queues a move of unit i toward (gx, gy) for the movement phase at the end of the step (see `runMoves`): units decide
    * first, then every unit moves, so a decision never depends on the order in which units are processed.
+   * @internal
    */
-  private queueMove(i: number, gx: number, gy: number, speed: number, faceMove = true, useRoute = true): void {
+  queueMove(i: number, gx: number, gy: number, speed: number, faceMove = true, useRoute = true): void {
     const u = this.units;
     u.mvGx[i] = gx;
     u.mvGy[i] = gy;
@@ -2101,7 +784,8 @@ export class Battle {
     }
   }
 
-  private faceTo(i: number, dx: number, dy: number): void {
+  /** @internal */
+  faceTo(i: number, dx: number, dy: number): void {
     const sx = dx - dy; // screen x direction
     if (Math.abs(sx) > 0.05) this.units.facing[i] = sx >= 0 ? 1 : -1;
   }
@@ -2157,62 +841,4 @@ export class Battle {
       }
     }
   }
-}
-
-/** Block width (columns) and spacing; the block ends up wider than it is deep. */
-export function benchLayout(perTeam: number): { cols: number; rows: number; spacing: number } {
-  const cols = Math.max(2, Math.ceil(Math.sqrt(perTeam * 1.6)));
-  return { cols, rows: Math.ceil(perTeam / cols), spacing: 1.2 };
-}
-
-function benchMapSize(perTeam: number): number {
-  const { cols, rows, spacing } = benchLayout(perTeam);
-  const depth = 2 * rows * spacing + BENCH_GAP;
-  const width = cols * spacing;
-  // Since the armies line up along the diagonal (x-y) axis, the map diagonal (x1.41) must suffice.
-  return Math.ceil(Math.max(depth, width) / 1.38) + 8;
-}
-
-export function unitCapacity(config: BattleConfig): number {
-  if (config.mode === 'custom') {
-    const L = config.layout;
-    let necro = 0;
-    if (L) for (let k = 1; k < L.length; k += 4) if (L[k] === KIND_OF_TROOP['bone-caller']) necro++;
-    return Math.floor((L?.length ?? 0) / 4) + 16 + necro * SUMMON_POOL;
-  }
-  return config.perTeam * 2 + 16;
-}
-
-export function projectileCapacity(config: BattleConfig): number {
-  // Custom (solo studio / online) battles can have 30 000 soldiers: about 3 in 4 may have a shot in the air at once.
-  if (config.mode === 'custom') return Math.max(4096, Math.ceil(unitCapacity(config) * 0.75));
-  return config.mode === 'bench' ? 16384 : 1024;
-}
-
-export function mapSizeFor(config: BattleConfig): number {
-  if (config.mode === 'custom') return config.mapSize ?? MAP_SIZE;
-  if (config.mode !== 'bench') return MAP_SIZE;
-  // If the environment is on, room is left around the army block for forest/village.
-  return Math.ceil(benchMapSize(config.perTeam) * (config.env === false ? 1 : 1.3));
-}
-
-/** Area covered by the spawns: obstacles/decor are not placed in this area. */
-function spawnZone(config: BattleConfig): { spawnD0: number; spawnD1: number; spawnHalfS: number } {
-  // custom: the user places freely, no spawn area is reserved.
-  if (config.mode === 'custom') return { spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 };
-  if (config.mode === 'bench') {
-    const { cols, rows, spacing } = benchLayout(config.perTeam);
-    return {
-      spawnD0: BENCH_GAP / 2 - 1,
-      spawnD1: BENCH_GAP / 2 + rows * spacing + 2,
-      spawnHalfS: (cols * spacing) / 2 + 3,
-    };
-  }
-  return { spawnD0: DEMO_GAP_HALF - 1, spawnD1: DEMO_GAP_HALF + 4.5 + 1.5, spawnHalfS: 7 };
-}
-
-/** The sim (worker) and the renderer (main thread) both generate the same map with this. */
-export function terrainFor(config: BattleConfig): Terrain | null {
-  if (config.env === false) return null;
-  return new Terrain(mapSizeFor(config), { seed: config.terrainSeed ?? 1, spec: config.map, ...spawnZone(config) });
 }
