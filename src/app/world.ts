@@ -2,31 +2,19 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import { isoX, isoY } from '../iso';
 import type { Atlas } from '../render/atlas';
 import { PALETTES } from '../render/biome';
-import { bandPlanFor, bandZ, computeCover, computeLift, coverAt, DepthBoxIndex, liftAt } from '../render/depthSort';
+import { bandPlanFor, bandZ, computeCover, computeLift, coverAt, DepthBoxIndex, liftAt, type DepthInfo } from '../render/depthSort';
 import { buildGround } from '../render/ground';
 import { buildTerrainOverlay, drawRoadTile } from '../render/terrainView';
 import { POSES } from '../render/unitView';
 import { mapSizeFor, terrainFor, unitCapacity, type BattleConfig } from '../sim/battle';
 import { LEVEL_PX, type Terrain } from '../sim/terrain';
 import { MAX_TEAMS } from '../sim/units';
-import type { GhostSpec, PlacedLayer, PlacedLike, WorldBackend, ZoneSpec } from './backend';
+import type { GhostSpec, PlacedLayer, PlacedLike, WorldBackend, ZoneSpec } from '../contracts/backend';
 
 /** Screen ellipse of a circle: radius r tiles -> rx = r*TILE_W/2*sqrt2, ry = rx/2. */
 const ELLIPSE_X = 45.25;
 /** Zone tiles that terrain in front hides by more than this many pixels are not drawn. */
 const ZONE_HIDDEN_PX = 10;
-
-/** What the renderers need to order things against the terrain and the big decor (see render/depthSort.ts). */
-export interface DepthInfo {
-  /** Origin sums of the relief depth bands, ascending (empty on flat maps). */
-  cuts: number[];
-  boxes: DepthBoxIndex;
-  /** Per tile: pixels of terrain in front that hide a ground point (0 on flat maps). */
-  cover: Float32Array;
-  /** Per tile: key raise of entities standing there (1 where no terrain in front hides them; see computeLift). */
-  lift: Uint8Array;
-  size: number;
-}
 
 /**
  * The world shared by the scenes: flat ground + river/bridge layer (static), the sorted entity layer (units, decor sprites and

@@ -13,7 +13,7 @@ import type { UnitPreview } from '../unitPreview';
 import { Editor } from '../editor';
 import { UnitGallery } from '../unitGallery';
 import { BRUSHES, defaultState, hex, type AppState, type PlacedUnit } from '../state';
-import type { CameraBackend, PlacedLayer, WorldBackend, ZoneSpec } from '../backend';
+import type { CameraBackend, PlacedLayer, WorldBackend, ZoneSpec } from '../../contracts/backend';
 import { playerColor } from './cursors';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);

@@ -10,6 +10,8 @@ import { studio } from './i18n/studio';
 import { system } from './i18n/system';
 import type { Strings } from './i18n/types';
 import { units } from './i18n/units';
+import type { Localized } from './contracts/localized';
+import { setTranslator } from './sim/text';
 
 export type Lang = 'en' | 'tr';
 export const LANGS: Array<{ id: Lang; label: string }> = [
@@ -17,11 +19,7 @@ export const LANGS: Array<{ id: Lang; label: string }> = [
   { id: 'tr', label: 'Türkçe' },
 ];
 
-/** A text available in both languages. */
-export interface Localized {
-  en: string;
-  tr: string;
-}
+export type { Localized };
 
 const KEY = 'rpgweb.lang';
 let lang: Lang = detect();
@@ -81,6 +79,8 @@ export function t(key: string, vars?: Record<string, string | number>): string {
   }
   return s;
 }
+
+setTranslator((key) => t(key));
 
 /** `{n?one|other}` plural placeholder (see `t`). */
 const PLURAL_RE = /\{([a-zA-Z0-9]+)\?([^|{}]*)\|([^{}]*)\}/g;

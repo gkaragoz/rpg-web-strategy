@@ -2,7 +2,7 @@ import { drawProjectile, projStyle } from '../render/projectileStyle';
 import { DpsMeter, fmtDamage, fmtTime } from './dpsMeter';
 import { Graphics, type Application } from 'pixi.js';
 import type { Camera } from '../camera';
-import type { Battle3D, CameraBackend, WorldBackend } from './backend';
+import type { Battle3D, CameraBackend, WorldBackend } from '../contracts/backend';
 import { isoX, isoY } from '../iso';
 import type { Atlas } from '../render/atlas';
 import { AudioSystem } from '../render/audio';

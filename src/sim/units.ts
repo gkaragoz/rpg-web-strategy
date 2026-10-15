@@ -1,5 +1,5 @@
 import { PATH_MAX } from './constants';
-import { t } from '../i18n';
+import { simText as t } from './text';
 import { TROOPS, type MoveClass, type SkillId, type TroopDef } from './data/troops';
 import { ARM, DMG } from './data/combat';
 import { STAT_ADJ } from './data/costs';

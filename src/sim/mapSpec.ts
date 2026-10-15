@@ -1,4 +1,4 @@
-import type { Localized } from '../i18n';
+import type { Localized } from '../contracts/localized';
 
 /** Map recipe: the sim (terrain generation) and the renderer (appearance) share the same recipe. */
 export type Biome = 'forest' | 'desert' | 'snow' | 'swamp';

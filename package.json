@@ -14,9 +14,12 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "check": "tsc --noEmit && node scripts/check-repo.mjs && vitest run",
-    "check:fast": "tsc --noEmit && node scripts/check-repo.mjs && vitest run --exclude \"**/{fuzz,rosterfuzz,comedy,mapSpec,onlinesetup,economy,troops,determinism,snapsize,crowd}.test.ts\"",
+    "check": "tsc --noEmit && node scripts/check-repo.mjs && node scripts/check-layers.mjs && vitest run",
+    "check:fast": "tsc --noEmit && node scripts/check-repo.mjs && node scripts/check-layers.mjs && vitest run --exclude \"**/{fuzz,rosterfuzz,comedy,mapSpec,onlinesetup,economy,troops,determinism,snapsize,crowd}.test.ts\"",
     "lint:repo": "node scripts/check-repo.mjs",
+    "lint:layers": "node scripts/check-layers.mjs",
+    "test:cov": "vitest run --coverage",
+    "test:golden": "vitest run golden",
     "bench:sim": "node scripts/bench-sim.mjs",
     "balance": "node scripts/balance.mjs",
     "balance:quick": "node scripts/balance.mjs --quick",
@@ -34,6 +37,7 @@
   "devDependencies": {
     "@types/node": "^26.6.5",
     "@types/three": "0.170.0",
+    "@vitest/coverage-v8": "^4.1.11",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^4.1.11"

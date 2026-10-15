@@ -9,7 +9,7 @@ import { Editor } from './app/editor';
 import { Nav, screenOfState, type NavScreen, type NavVerdict } from './app/nav';
 import { OnlineApp, canRejoin } from './app/online/online';
 import { resumeAction, resumeScreenFor, saveResume, takeResume } from './app/resume';
-import type { Battle3D, CameraBackend, WorldBackend } from './app/backend';
+import type { Battle3D, CameraBackend, WorldBackend } from './contracts/backend';
 import { loadState, saveState, saveStateNow, teamColors } from './app/state';
 import { Studio } from './app/studio';
 import { WorldView } from './app/world';

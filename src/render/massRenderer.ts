@@ -11,7 +11,7 @@ import { DEATH_FADE, POSES, statusTint } from './unitView';
 import { projStyle } from './projectileStyle';
 import { flatColorFilter } from './outlineFilter';
 import { coverAt, HIDDEN_BODY_PX, liftAt, slabTable, slabZ } from './depthSort';
-import type { DepthInfo } from '../app/world';
+import type { DepthInfo } from './depthSort';
 
 const DEPTH_SCALE = 4;
 /** Below this camera zoom units are drawn idle-pose only (no walk/strike animation math). */

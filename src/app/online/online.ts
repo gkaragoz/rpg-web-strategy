@@ -16,7 +16,7 @@ import { KIND_OF_TROOP, LEGACY_COUNT, STATS } from '../../sim/units';
 import { STATS_DEFAULT_SHOWN, type StatsPanel } from '../../ui/stats';
 import type { BattleOptions, BattleScene } from '../battle';
 import { makeTeamColor } from '../state';
-import type { CameraBackend, WorldBackend } from '../backend';
+import type { CameraBackend, WorldBackend } from '../../contracts/backend';
 import { ConnBadge } from './badge';
 import type { UnitPreview } from '../unitPreview';
 import { ChatOverlay } from './chat';

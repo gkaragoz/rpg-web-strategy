@@ -1,5 +1,5 @@
 import { comedy } from './comedyFlag';
-import type { CameraBackend } from '../app/backend';
+import type { CameraBackend } from '../contracts/backend';
 import type { SimEvent } from '../sim/battle';
 import { isTank } from '../sim/units';
 

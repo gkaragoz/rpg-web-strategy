@@ -1,5 +1,5 @@
 import type { Renderer } from 'pixi.js';
-import type { Battle3D, GhostSpec, PlacedLayer, PlacedLike, WorldBackend, ZoneSpec } from '../app/backend';
+import type { Battle3D, GhostSpec, PlacedLayer, PlacedLike, WorldBackend, ZoneSpec } from '../contracts/backend';
 import type { Atlas } from '../render/atlas';
 import type { SimBackend } from '../sim/backend';
 import { mapSizeFor, terrainFor, type BattleConfig, type SimEvent } from '../sim/battle';

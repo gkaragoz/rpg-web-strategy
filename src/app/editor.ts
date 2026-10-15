@@ -2,7 +2,7 @@ import { t } from '../i18n';
 import { KIND_COUNT, MAX_TEAMS, STATS } from '../sim/units';
 import { composeArmy, composeFromKind, type Lane } from './armies';
 import { BRUSHES, MAX_PLACED, colorsOf, saveState, type AppState, type PlacedUnit } from './state';
-import type { CameraBackend, PlacedLayer, WorldBackend } from './backend';
+import type { CameraBackend, PlacedLayer, WorldBackend } from '../contracts/backend';
 
 interface Op {
   type: 'add' | 'remove';

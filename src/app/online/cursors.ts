@@ -3,7 +3,7 @@ import { act } from '../../net/act';
 import type { OnlineModel } from '../../net/client';
 import type { ClientMsg } from '../../net/protocol';
 import { PALETTES } from '../state';
-import type { WorldBackend } from '../backend';
+import type { WorldBackend } from '../../contracts/backend';
 
 const SEND_MS = 66; // ~15 Hz
 const STALE_MS = 4000;

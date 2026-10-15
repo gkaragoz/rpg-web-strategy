@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 import { comedy, hash01 } from './comedyFlag';
 import { Container, Particle, ParticleContainer, Text, type TextStyleOptions } from 'pixi.js';
-import type { CameraBackend } from '../app/backend';
+import type { CameraBackend } from '../contracts/backend';
 import { isoX, isoY } from '../iso';
 import type { SimEvent } from '../sim/battle';
 import { isTank } from '../sim/units';

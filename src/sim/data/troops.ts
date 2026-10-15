@@ -3,7 +3,7 @@
  * Stats are produced by a role/rarity budget (see `levelsFor`) in "raw" units; `src/sim/units.ts` normalizes them to
  * game scale (HP_DIV / ATK_DIV / ARMOR_K).
  */
-import type { Localized } from '../../i18n';
+import type { Localized } from '../../contracts/localized';
 import { ARM, DMG } from './combat';
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';

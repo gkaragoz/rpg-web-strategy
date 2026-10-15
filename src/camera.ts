@@ -1,5 +1,5 @@
 import type { Container } from 'pixi.js';
-import type { CameraBackend } from './app/backend';
+import type { CameraBackend } from './contracts/backend';
 import { TILE_H, TILE_W, isoX, isoY } from './iso';
 
 const PAN_SPEED = 900;

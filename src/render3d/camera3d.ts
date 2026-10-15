@@ -1,4 +1,4 @@
-import type { CameraBackend } from '../app/backend';
+import type { CameraBackend } from '../contracts/backend';
 import { orbitRig, panAxes, pinchRig, TILT_MAX, TILT_MIN } from './cameraRig';
 import { groundHeight } from './terrainMesh';
 import type { View3D } from './scene3d';

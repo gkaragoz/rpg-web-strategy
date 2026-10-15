@@ -1,10 +1,13 @@
-import { Graphics } from 'pixi.js';
+import { Graphics, type Container } from 'pixi.js';
 import { t } from '../i18n';
 import { isoX, isoY } from '../iso';
 import type { Battle } from '../sim/battle';
 import { STATS } from '../sim/units';
 import { StallDetector, type Flag } from '../sim/testing/stall';
-import type { WorldView } from '../app/world';
+/** The overlay only needs a layer to draw into. */
+interface DebugWorld {
+  fxLayer: Container;
+}
 
 const FLAG_SHOW_SECS = 12;
 
@@ -31,7 +34,7 @@ export class DebugOverlay {
 
   constructor(
     private readonly battle: Battle,
-    world: WorldView,
+    world: DebugWorld,
   ) {
     this.detector = new StallDetector(battle);
     world.fxLayer.addChild(this.regions, this.g);

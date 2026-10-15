@@ -401,3 +401,15 @@ export function coverAt(cover: Float32Array, size: number, x: number, y: number)
   const ty = y < 0 ? 0 : y >= size ? size - 1 : y | 0;
   return cover[ty * size + tx];
 }
+
+/** What the renderers need to order things against the terrain and the big decor . */
+export interface DepthInfo {
+  /** Origin sums of the relief depth bands, ascending (empty on flat maps). */
+  cuts: number[];
+  boxes: DepthBoxIndex;
+  /** Per tile: pixels of terrain in front that hide a ground point (0 on flat maps). */
+  cover: Float32Array;
+  /** Per tile: key raise of entities standing there (1 where no terrain in front hides them; see computeLift). */
+  lift: Uint8Array;
+  size: number;
+}
