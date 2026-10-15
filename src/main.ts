@@ -19,7 +19,7 @@ import { AudioSystem } from './render/audio';
 import { comedy } from './render/comedy';
 import { POSE_STATES, UnitView, type TeamColors } from './render/unitView';
 import type { BattleConfig } from './sim/battle';
-import { KIND_OF_TROOP, LEGACY_COUNT, STATS } from './sim/units';
+import { KIND_OF_TROOP, LEGACY_COUNT, MAX_TEAMS, STATS } from './sim/units';
 import { STATS_DEFAULT_SHOWN, StatsPanel } from './ui/stats';
 import { debugEnabled, setDebug } from './debug';
 import { healTextures, installErrorHandlers, watchGlContext } from './app/errors';
@@ -131,6 +131,7 @@ if (!view3d) {
   };
   setDebug('__camera', c2);
 }
+setDebug('__studioWorld', world);
 if (!isBench) {
   mountLangPicker({
     view: view3d ? '3d' : '2d',
@@ -241,8 +242,17 @@ let online: OnlineApp | null = null;
 /** Online mode: icon colors (null: studio palette). */
 let iconColors: TeamColors[] | null = null;
 
+/** VIP mode: per team, the position (in the layout array) of the unit marked as VIP, or -1 (the sim then picks one). */
+function vipLayoutIndices(): number[] {
+  const v = new Array<number>(MAX_TEAMS).fill(-1);
+  state.units.forEach((u, i) => {
+    if (u.vip && u.team >= 0 && u.team < MAX_TEAMS) v[u.team] = i;
+  });
+  return v;
+}
+
 function studioConfig(): BattleConfig {
-  return { mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, rules: state.rules, terrainSeed: state.seed, map: state.map, comedy: comedyPhysicsOn(), stats: state.stats };
+  return { vips: state.rules === 'vip' ? vipLayoutIndices() : undefined, mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, rules: state.rules, terrainSeed: state.seed, map: state.map, comedy: comedyPhysicsOn(), stats: state.stats };
 }
 
 function layoutArray(): Float32Array {

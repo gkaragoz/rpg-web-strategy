@@ -64,7 +64,7 @@ export class WorkerSim implements SimBackend {
   readonly units: UnitsView;
   readonly projectiles: ProjView;
   readonly meter: MeterView;
-  /** Display data of the game mode (hill scores and control points), refreshed with every frame(). */
+  /** Display data of the game mode (hill scores and control points, vip teams), refreshed with every frame(). */
   modeHud: ModeHud = { kind: 'classic' };
   /** Points per team of the mode, or undefined for classic. */
   get scores(): number[] | undefined {

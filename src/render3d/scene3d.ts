@@ -77,6 +77,17 @@ export class View3D {
   private water: THREE.Mesh | null = null;
   private zoneMesh: THREE.Mesh | null = null;
   private hover: THREE.Mesh;
+  private markers: Array<{ ring: THREE.Mesh; pin: THREE.Mesh }> = [];
+  private markerRing = (() => {
+    const g = new THREE.RingGeometry(0.82, 1, 40);
+    g.rotateX(-Math.PI / 2);
+    return g;
+  })();
+  private markerPin = (() => {
+    const g = new THREE.ConeGeometry(0.42, 0.9, 12);
+    g.rotateX(Math.PI);
+    return g;
+  })();
   private gpu: AtlasGpu | null = null;
   private inst: UnitInstances;
   private unitGeo = quadGeometry();
@@ -548,6 +559,28 @@ export class View3D {
     this.hover.position.set(hit.x, hit.y + 0.08, hit.z);
     this.hover.scale.setScalar(Math.max(0.3, radius));
     (this.hover.material as THREE.MeshBasicMaterial).color.setHex(color);
+  }
+
+  /** VIP crowns / flags: a team-coloured ring on the ground plus a pin (gold cone for a VIP, pole with a flag for a flag) above it. */
+  setMarkers(list: Array<{ x: number; y: number; z: number; color: number; kind: 'vip' | 'flag' }> | null): void {
+    const items = list ?? [];
+    while (this.markers.length < items.length) {
+      const ring = new THREE.Mesh(this.markerRing, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthTest: false }));
+      const pin = new THREE.Mesh(this.markerPin, new THREE.MeshBasicMaterial({ color: 0xffd34d, depthTest: false }));
+      ring.renderOrder = pin.renderOrder = 11;
+      this.scene.add(ring, pin);
+      this.markers.push({ ring, pin });
+    }
+    this.markers.forEach((m, i) => {
+      const it = items[i];
+      m.ring.visible = m.pin.visible = !!it;
+      if (!it) return;
+      m.ring.position.set(it.x, it.y + 0.09, it.z);
+      m.ring.scale.setScalar(0.9);
+      (m.ring.material as THREE.MeshBasicMaterial).color.setHex(it.color);
+      m.pin.position.set(it.x, it.y + 2.6, it.z);
+      (m.pin.material as THREE.MeshBasicMaterial).color.setHex(it.kind === 'vip' ? 0xffd34d : it.color);
+    });
   }
 
   setOutlineColor(c: number): void {

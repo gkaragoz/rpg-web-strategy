@@ -45,6 +45,8 @@ export class Placement {
   private readonly remoteIds = new Set<number>();
   private readonly pending = new Map<number, PlacedUnit>();
   private readonly cancelled = new Set<number>();
+  /** A unit marked VIP before the host confirmed it (its id is not known yet). */
+  private vipWait: PlacedUnit | null = null;
   /** Outgoing placements/removals: merged into batches and paced under the host's rate limit (see placeQueue.ts). */
   private readonly outbox = new PlaceQueue();
   private outTimer: ReturnType<typeof setTimeout> | null = null;
@@ -118,6 +120,7 @@ export class Placement {
       this.editor.sync = {
         added: (units) => this.sendAdded(units),
         removed: (units) => this.sendRemoved(units),
+        vip: (u) => this.sendVip(u),
       };
       this.editor.enter();
       if (this.state.units.length) this.ensureKinds();
@@ -191,6 +194,14 @@ export class Placement {
     this.pumpOutbox();
   }
 
+  /** VIP mode: tells the host which of our units is the VIP; a unit the host has not confirmed yet is sent once its id arrives. */
+  private sendVip(u: PlacedUnit): void {
+    if (u.id !== undefined) {
+      this.vipWait = null;
+      this.session.send({ t: 'vip', id: u.id });
+    } else this.vipWait = u;
+  }
+
   private sendRemoved(units: PlacedUnit[]): void {
     const ids: number[] = [];
     for (const u of units) {
@@ -258,6 +269,24 @@ export class Placement {
         this.ensureKinds();
         this.syncRemote();
         this.flushReady();
+        if (this.vipWait?.id !== undefined) this.sendVip(this.vipWait);
+        break;
+      }
+      case 'vipSet': {
+        // The host's view of our VIP (also after a refusal, a rejoin or a rematch): the local crowns follow it, unless a pick is still waiting for its id.
+        if (this.vipWait || !this.editor) break;
+        let changed = false;
+        for (const u of this.state.units) {
+          const want = msg.id >= 0 && u.id === msg.id;
+          if (!!u.vip !== want) {
+            u.vip = want ? true : undefined;
+            changed = true;
+          }
+        }
+        if (changed) {
+          this.editor.syncMarkers();
+          this.refreshUi();
+        }
         break;
       }
       case 'unplaced':
@@ -518,10 +547,13 @@ export class Placement {
       this.state.brush = Number(v);
       this.refreshUi();
     });
-    seg('#pg-tool', [['place', t('online.tool.place')], ['erase', t('online.tool.erase')]], this.state.tool, (v) => {
-      this.state.tool = v as 'place' | 'erase';
+    const tools: Array<[string, string]> = [['place', t('online.tool.place')], ['erase', t('online.tool.erase')]];
+    if (this.init.gameMode === 'vip') tools.push(['vip', t('mode.vip.tool')]);
+    seg('#pg-tool', tools, this.state.tool, (v) => {
+      this.state.tool = v as 'place' | 'erase' | 'vip';
       this.refreshUi();
     });
+    q('#pg-tool').querySelector('button[data-id="vip"]')?.setAttribute('title', t('mode.vip.tool.title'));
     (q('#pg-undo') as HTMLButtonElement).disabled = !this.editor!.canUndo || this.locked;
     (q('#pg-redo') as HTMLButtonElement).disabled = !this.editor!.canRedo || this.locked;
     (q('#pg-clear') as HTMLButtonElement).disabled = this.state.units.length === 0 || this.locked;

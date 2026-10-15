@@ -206,6 +206,7 @@ export class Studio {
       value: s.rules,
       onPick: (id) => {
         s.rules = id;
+        if (id !== 'vip' && s.tool === 'vip') s.tool = 'place';
         this.changed(false);
       },
     });
@@ -469,15 +470,17 @@ export class Studio {
         { id: 'place', label: t('studio.tool.place') },
         { id: 'erase', label: t('studio.tool.erase') },
         { id: 'eraseTeam', label: t('studio.tool.eraseTeam') },
+        ...(s.rules === 'vip' ? [{ id: 'vip', label: t('mode.vip.tool') }] : []),
       ],
-      s.tool === 'place' ? 'place' : s.eraseTeamOnly ? 'eraseTeam' : 'erase',
+      s.tool === 'vip' ? 'vip' : s.tool === 'place' ? 'place' : s.eraseTeamOnly ? 'eraseTeam' : 'erase',
       (id) => {
-        s.tool = id === 'place' ? 'place' : 'erase';
+        s.tool = id === 'vip' ? 'vip' : id === 'place' ? 'place' : 'erase';
         s.eraseTeamOnly = id === 'eraseTeam';
         this.render();
       },
     );
 
+    this.$('#tool').querySelector('button[data-id="vip"]')?.setAttribute('title', t('mode.vip.tool.title'));
     ($in('#undo') as unknown as HTMLButtonElement).disabled = !this.d.editor.canUndo;
     ($in('#redo') as unknown as HTMLButtonElement).disabled = !this.d.editor.canRedo;
     ($in('#clear') as unknown as HTMLButtonElement).disabled = s.units.length === 0;

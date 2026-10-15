@@ -9,7 +9,7 @@ import { POSES } from '../render/unitView';
 import { mapSizeFor, terrainFor, unitCapacity, type BattleConfig } from '../sim/battle';
 import { LEVEL_PX, type Terrain } from '../sim/terrain';
 import { MAX_TEAMS } from '../sim/units';
-import type { GhostSpec, PlacedLayer, PlacedLike, WorldBackend, ZoneSpec } from '../contracts/backend';
+import type { GhostSpec, MarkerSpec, PlacedLayer, PlacedLike, WorldBackend, ZoneSpec } from '../contracts/backend';
 
 /** Screen ellipse of a circle: radius r tiles -> rx = r*TILE_W/2*sqrt2, ry = rx/2. */
 const ELLIPSE_X = 45.25;
@@ -36,11 +36,12 @@ export class WorldView implements WorldBackend {
   depth: DepthInfo = { cuts: [], boxes: new DepthBoxIndex(1, []), cover: new Float32Array(1), lift: new Uint8Array(1), size: 1 };
   private readonly zoneGfx = new Graphics();
   private readonly ghostGfx = new Graphics();
+  private readonly markerGfx = new Graphics();
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.entityLayer.sortableChildren = true;
     this.root.addChild(this.staticLayer, this.shadowLayer, this.entityLayer, this.fxLayer);
-    this.fxLayer.addChild(this.zoneGfx, this.ghostGfx);
+    this.fxLayer.addChild(this.zoneGfx, this.ghostGfx, this.markerGfx);
   }
 
   size(): { w: number; h: number } {
@@ -183,6 +184,28 @@ export class WorldView implements WorldBackend {
         const c = p(tx + 1, ty + 1);
         const d = p(tx, ty + 1);
         g.poly([a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]]).fill({ color: z.color, alpha: z.strong ? 0.5 : z.mine ? 0.26 : 0.1 });
+      }
+    }
+  }
+
+  setMarkers(markers: MarkerSpec[] | null): void {
+    const g = this.markerGfx;
+    g.clear();
+    if (!markers) return;
+    // The camera zoom shrinks everything: markers grow when zoomed out so they stay readable (1.4x .. 3.2x).
+    const k = Math.min(3.2, Math.max(1.4, 1.2 / Math.max(0.05, this.root.scale.x)));
+    for (const m of markers) {
+      const cx = isoX(m.x, m.y);
+      const cy = isoY(m.x, m.y, this.elevAt(m.x, m.y));
+      g.ellipse(cx, cy, 15 * k, 7.5 * k).stroke({ width: 2 * k, color: m.color, alpha: 0.95 });
+      if (m.kind === 'vip') {
+        // Crown above the head: three points on a band.
+        const y = cy - 46 * k;
+        const p = (dx: number, dy: number): number[] => [cx + dx * k, y + dy * k];
+        g.poly([...p(-9, 8), ...p(-10, -4), ...p(-4, 2), ...p(0, -6), ...p(4, 2), ...p(10, -4), ...p(9, 8)]).fill(0xffd34d).stroke({ width: 1.5 * k, color: 0x6b4a00 });
+      } else {
+        g.moveTo(cx, cy).lineTo(cx, cy - 50 * k).stroke({ width: 2 * k, color: 0x2a2f39 });
+        g.poly([cx, cy - 50 * k, cx + 20 * k, cy - 43 * k, cx, cy - 36 * k]).fill(m.color).stroke({ width: 1.5 * k, color: 0x1b1f27 });
       }
     }
   }

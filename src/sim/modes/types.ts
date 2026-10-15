@@ -1,8 +1,9 @@
 import type { Battle } from '../battle';
+import { MAX_TEAMS } from '../units';
 
 /**
  * Game modes: extra win conditions and goals on top of the normal fight. All modes are autonomous (no player orders during
- * a battle). Only 'classic' and 'hill' have rules today; 'vip' and 'ctf' are accepted ids that fall back to classic rules.
+ * a battle). 'classic', 'hill' and 'vip' have rules today; 'ctf' is an accepted id that falls back to classic rules.
  */
 export type GameModeId = 'classic' | 'hill' | 'vip' | 'ctf';
 
@@ -37,7 +38,24 @@ export type ModeHud =
       points: HillPointHud[];
       /** Seconds of sim time left before the time limit decides the battle. */
       timeLeft: number;
+    }
+  | {
+      kind: 'vip';
+      /**
+       * One entry per team index (length = MAX_TEAMS; unused teams: unit -1, hp 0, alive false). `unit` is the VIP's unit
+       * index (stable for the battle), `hp` its health fraction 0..1 (0 when dead), `alive` false once the team is out.
+       */
+      teams: Array<{ unit: number; hp: number; alive: boolean }>;
+      /** Seconds of sim time left before the time limit decides the battle (VIP with the highest hp fraction wins). */
+      timeLeft: number;
     };
+
+/** Per-team VIP unit indices out of a mode HUD (length MAX_TEAMS, -1: none). Works for every backend that has `modeHud`. */
+export function vipUnitsOf(hud: ModeHud): Int32Array {
+  const out = new Int32Array(MAX_TEAMS).fill(-1);
+  if (hud.kind === 'vip') for (let t = 0; t < MAX_TEAMS; t++) out[t] = hud.teams[t]?.unit ?? -1;
+  return out;
+}
 
 /**
  * Rules of one mode instance (one per Battle). State must be plain numbers so it can go into Battle.serialize/restore/hash.
@@ -48,6 +66,8 @@ export interface ModeRules {
   init(b: Battle): void;
   /** Once per sim step, after the normal step logic and while the battle is undecided. */
   step(b: Battle, dt: number): void;
+  /** Optional: called from killUnit after unit `j` died (`src` = killer unit or -1). Must not allocate. */
+  onKill?(b: Battle, j: number, src: number): void;
   /** Team index to end the battle with, -2 for a draw, undefined to go on. */
   winner(b: Battle): number | undefined;
   /** Mode state as plain numbers (restore() accepts exactly this). */

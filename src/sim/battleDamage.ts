@@ -325,4 +325,5 @@ export function killUnit(b: Battle, j: number, src = -1, dmg = 0): void {
     const ang = src >= 0 && src !== j ? Math.atan2(u.y[j] - u.y[src], u.x[j] - u.x[src]) : u.facing[j] > 0 ? Math.PI : 0;
     b.pushEvent({ type: 'death', x: u.x[j], y: u.y[j], unit: j, kind: u.kind[j], angle: ang, value: dmg });
   }
+  if (b.mode.onKill) b.mode.onKill(b, j, src);
 }

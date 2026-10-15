@@ -1,5 +1,5 @@
 import type { Renderer } from 'pixi.js';
-import type { Battle3D, GhostSpec, PlacedLayer, PlacedLike, WorldBackend, ZoneSpec } from '../contracts/backend';
+import type { Battle3D, GhostSpec, MarkerSpec, PlacedLayer, PlacedLike, WorldBackend, ZoneSpec } from '../contracts/backend';
 import type { Atlas } from '../render/atlas';
 import type { SimBackend } from '../sim/backend';
 import { mapSizeFor, terrainFor, type BattleConfig, type SimEvent } from '../sim/battle';
@@ -186,6 +186,11 @@ export class World3D implements WorldBackend, Battle3D {
 
   setZones(zones: ZoneSpec[] | null): void {
     this.view.setZones(zones ? zones.map((z, i) => ({ team: i, color: z.color, tiles: z.tiles, mine: z.mine || !!z.strong })) : null);
+  }
+
+  setMarkers(markers: MarkerSpec[] | null): void {
+    const t = this.terrain;
+    this.view.setMarkers(markers && t ? markers.map((m) => ({ x: m.x, y: Math.max(0, groundHeight(t, Math.min(this.mapSize, Math.max(0, m.x)), Math.min(this.mapSize, Math.max(0, m.y)))), z: m.y, color: m.color, kind: m.kind })) : null);
   }
 
   createPlacedLayer(): PlacedLayer {

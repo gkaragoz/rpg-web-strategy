@@ -49,6 +49,14 @@ export interface ZoneSpec {
   tiles: Array<[number, number]>;
 }
 
+/** A mode marker on the map: a crown over a VIP unit, a flag. Positions are tile coordinates (units move, so it is set every frame in battle). */
+export interface MarkerSpec {
+  x: number;
+  y: number;
+  color: number;
+  kind: 'vip' | 'flag';
+}
+
 export interface WorldBackend {
   /** The element that receives pointer input (editor strokes, camera, cursors). */
   readonly canvas: HTMLCanvasElement;
@@ -66,6 +74,8 @@ export interface WorldBackend {
   toClient(x: number, y: number): { x: number; y: number };
   setGhost(g: GhostSpec | null): void;
   setZones(zones: ZoneSpec[] | null): void;
+  /** Mode markers (VIP crowns, flags); null or an empty list removes them. */
+  setMarkers(markers: MarkerSpec[] | null): void;
   createPlacedLayer(): PlacedLayer;
 }
 

@@ -85,6 +85,10 @@ export class PlaceIndex {
     return false;
   }
 
+  get(id: number): PlacedItem | undefined {
+    return this.items.get(id);
+  }
+
   /** All units in placement order (ids ascend). */
   all(): PlacedItem[] {
     return [...this.items.values()];

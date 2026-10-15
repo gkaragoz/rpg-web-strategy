@@ -23,7 +23,7 @@ import { hex } from './state';
 import type { WorldView } from './world';
 import { clearDebug, setDebug } from '../debug';
 import { Scope } from './scope';
-import { ModeStrip, hillZoneSpecs } from './modeHud';
+import { ModeStrip, hillZoneSpecs, vipMarkers } from './modeHud';
 
 /** Outline colour of the focused team's soldiers (team colours would vanish against their own units). */
 const FOCUS_OUTLINE = 0xffffff;
@@ -294,7 +294,10 @@ export class BattleScene {
     this.segs = [];
     this.hoverTeam = this.pinnedTeam = -1;
     this.meterUi = null;
-    if (this.modeStrip) this.d.world.setZones(null);
+    if (this.modeStrip) {
+      this.d.world.setZones(null);
+      this.d.world.setMarkers(null);
+    }
     this.modeStrip = null;
     this.zoneSig = '';
     this.d.hudRoot.innerHTML = '';
@@ -506,7 +509,7 @@ export class BattleScene {
           this.d.world.setZones(hillZoneSpecs(hud.points, this.opts.colors.map((c) => c.main), this.d.world.mapSize));
         }
       }
-      this.modeStrip.update(hud.kind === 'hill' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : null, this.opts.colors.length);
+      this.modeStrip.update(hud.kind === 'hill' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : hud.kind === 'vip' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : null, this.opts.colors.length);
       const top = document.getElementById('hud-teams')?.getBoundingClientRect().bottom ?? 52;
       this.modeStrip.el.style.top = `${Math.round(top + 6)}px`;
     }
@@ -756,6 +759,10 @@ export class BattleScene {
 
     const info = this.sim.frame(dt);
     if (this.simTimeBase < 0) this.simTimeBase = this.sim.time;
+    if (this.modeStrip) {
+      const hud = this.sim.modeHud;
+      if (hud.kind === 'vip') this.d.world.setMarkers(vipMarkers(hud, this.sim.units, info.alpha, this.opts.colors.map((c) => c.main)));
+    }
 
     const t1 = performance.now();
     if (this.comedySys) {

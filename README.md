@@ -112,7 +112,7 @@ palette, soldier placement and a benchmark.
 | Right click / drag | Erase (Shift: only the selected team) |
 | Q / E | Switch team · 1–5: soldier type · B: brush (F in Turkish) · X: place/erase · U: units gallery (B in Turkish; not while typing) |
 | Ctrl+Z / Ctrl+Y (or Z / Y) | Undo / redo |
-| Game mode cards (studio panel, online lobby) | Classic (last team standing) or King of the Hill (hold 3 control points, first to 100 points) |
+| Game mode cards (studio panel, online lobby) | Classic (last team standing), King of the Hill (hold 3 control points, first to 100 points) or VIP (mark one soldier per team with the VIP tool; when it falls its team is out) |
 | `?` button in the dock | Replay the quick tour (it also opens on the first visit to the studio) |
 | Wheel, WASD, middle button | Zoom, pan (2D view) |
 | Middle button or Alt + drag · Shift + middle button · `[` `]` · PageUp / PageDown | (3D view) rotate and tilt · pan · turn · tilt; the buttons at the bottom right do the same |

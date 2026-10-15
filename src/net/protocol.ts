@@ -3,8 +3,8 @@ import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
 import type { GameModeId } from '../sim/modes/types';
 
-/** Protocol version: a client with a different version cannot join the lobby. Bumped for wire changes and also when simulation or map generation results change (v11: valley gates, path costs, chase watchdog; v12: game modes, result scores), because lockstep needs identical results. */
-export const PROTOCOL = 12;
+/** Protocol version: a client with a different version cannot join the lobby. Bumped for wire changes and also when simulation or map generation results change (v11: valley gates, path costs, chase watchdog; v12: game modes, result scores; v13: VIP mode, vip/vipSet messages, BattleStart.vips), because lockstep needs identical results. */
+export const PROTOCOL = 13;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;
@@ -73,6 +73,11 @@ export interface BattleStart {
   simSeed: number;
   /** Packed start layout, sorted by unit id: 10 bytes per unit (u8 team, u8 kind, f32 x, f32 y), base64. Use `layoutOf()`. */
   layout: string;
+  /**
+   * VIP mode: per team index (length = init.teams) the layout unit index (position order in `layoutOf()`) of the team's VIP chosen
+   * during placement, -1 when the team did not choose (the sim auto-picks). Always present; all -1 in other modes.
+   */
+  vips: number[];
 }
 
 export interface LobbyState {
@@ -114,6 +119,8 @@ export type ClientMsg =
   | { t: 'presence'; x: number; y: number; ctx: 'world' | 'page'; act?: string }
   | { t: 'place'; items: PlaceItem[] }
   | { t: 'unplace'; ids: number[] }
+  /** Placement: mark one of the sender's own placed units (id = PlacedItem.id) as the team's VIP; -1 clears the choice. */
+  | { t: 'vip'; id: number }
   | { t: 'check'; step: number; hash: number }
   | { t: 'settings'; settings: Partial<LobbySettings>; password?: string | null }
   | { t: 'kick'; id: string }
@@ -148,6 +155,8 @@ export type ServerMsg =
   | { t: 'unplaced'; owner: string; ids: number[] }
   /** The host refused to remove these units (the player is ready or placement is over): the client restores them. */
   | { t: 'unplaceFail'; ids: number[] }
+  /** The sender's own team VIP unit id (-1: none). Sent after every change, as the answer to a refused 'vip', after a rematch and when (re)joining during placement. */
+  | { t: 'vipSet'; id: number }
   | { t: 'start'; start: BattleStart }
   | { t: 'tick'; step: number; speed: number; paused: boolean }
   /** The host switched the comedy look during the battle (look only; every client follows). */
@@ -172,6 +181,7 @@ export function battleConfig(s: BattleStart): BattleConfig {
     comedy: s.init.comedyPhysics,
     rules: s.init.gameMode,
     layout: layoutOf(s),
+    vips: Array.isArray(s.vips) ? s.vips.slice(0, s.init.teams) : undefined,
   };
 }
 

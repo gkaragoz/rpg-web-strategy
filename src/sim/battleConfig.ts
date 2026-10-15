@@ -87,6 +87,14 @@ export interface BattleConfig {
   kite?: boolean;
   /** Game mode rules (default 'classic'). Not the launch kind: that is `mode`. */
   rules?: GameModeId;
+  /**
+   * VIP mode only: per team index, the LAYOUT unit index (position order in `layout`, i.e. the k-th group of 4 floats) of the
+   * team's VIP, or -1 / missing for "auto" (highest max HP, ties: lowest layout index). Resolved at reset through
+   * `Battle.layoutUnits` (layout index -> unit index), because spawnLayout skips a layout entry whose spot has no walkable
+   * tile. A pick that is out of range, skipped, of another team or a summon-pool unit falls back to auto. Ignored by other
+   * modes and by the demo / bench layouts.
+   */
+  vips?: number[];
 }
 
 export const DBG_KEYS = ['kites', 'kiteSteps', 'snapShots', 'archerDeaths', 'archerDeathsKiting', 'stuck', 'cornered'] as const;

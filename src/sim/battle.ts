@@ -18,7 +18,7 @@ import { damage, updateZones, flyStep, applyKnockback } from './battleDamage';
 import { resolveHit, periodic, arrowLanded } from './battleSkills';
 import { beyondLeash, canShoot, updateThreat, tryKite, chaseWatchdog, leashHold, pickNow, marchToEnemy, followArmy } from './battleAi';
 import { spawnLayout, spawnArmy, spawnBenchArmy, setupSkills } from './battleSetup';
-import { modeFor } from './modes';
+import { modeFor, vipUnitsOf } from './modes';
 import type { ModeHud, ModeRules } from './modes/types';
 
 // Public API re-exported from the split modules: other code keeps importing everything from './battle'.
@@ -115,7 +115,9 @@ export class Battle {
   readonly grids: Grid[];
   private readonly sepGrid: Grid;
   private sepTick = 0;
-  /** Rules of the game mode (classic: none; vip/ctf play as classic until implemented). */
+  /** Custom layouts: unit index spawned for each layout entry (position order), -1 when the entry was skipped. @internal */
+  readonly layoutUnits: number[] = [];
+  /** Rules of the game mode (classic: none; ctf plays as classic until implemented). */
   readonly mode: ModeRules;
   /** Optional per-team goal set by the mode: units without a target march there instead of toward the nearest enemy. @internal */
   readonly teamGoalX = new Float32Array(MAX_TEAMS);
@@ -193,6 +195,7 @@ export class Battle {
     this.zones.length = 0;
     this.links.clear();
     this.pools.clear();
+    this.layoutUnits.length = 0;
     if (this.config.mode === 'custom') {
       spawnLayout(this);
       setupSkills(this);
@@ -215,6 +218,14 @@ export class Battle {
     return this.mode.hud(this);
   }
 
+  /**
+   * Unit index of each team's VIP (length MAX_TEAMS, -1: none / not a VIP battle). Stable for the whole battle; unit indices
+   * are identical on every backend (worker, lockstep). Backends that only have `modeHud` use `vipUnitsOf(hud)`.
+   */
+  vipUnits(): Int32Array {
+    return vipUnitsOf(this.modeHud());
+  }
+
   /** Same as modeScores(): the surface the lockstep runner reads when the battle ends. */
   get scores(): number[] | undefined {
     return this.modeScores();
@@ -225,7 +236,8 @@ export class Battle {
     return this.mode.scores()?.slice(0, this.allTeams.length);
   }
 
-  private countAlive(): void {
+  /** @internal */
+  countAlive(): void {
     const u = this.units;
     this.alivePerTeam.fill(0);
     for (let i = 0; i < u.count; i++) if (u.alive[i]) this.alivePerTeam[u.team[i]]++;

@@ -9,7 +9,9 @@ import type { Battle } from './battle';
 export function spawnLayout(b: Battle): void {
   const L = b.config.layout;
   if (!L) return;
+  b.layoutUnits.length = 0;
   for (let k = 0; k + 3 < L.length; k += 4) {
+    b.layoutUnits.push(-1);
     let x = L[k + 2];
     let y = L[k + 3];
     // When the seed changes, a unit left under water/an obstacle is moved to the nearest walkable point.
@@ -20,6 +22,7 @@ export function spawnLayout(b: Battle): void {
       y = p.y;
     }
     const i = b.units.spawn(L[k] | 0, L[k + 1] | 0, x, y, b.rng);
+    b.layoutUnits[k >> 2] = i;
     b.units.retarget[i] = b.rng() * 1.5;
   }
 }

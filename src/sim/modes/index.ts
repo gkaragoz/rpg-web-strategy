@@ -1,15 +1,17 @@
 import { ClassicRules } from './classic';
 import { HillRules } from './hill';
+import { VipRules } from './vip';
 import type { GameModeId, ModeRules } from './types';
 
 export * from './types';
+export { VIP_TIME_LIMIT } from './vip';
 export { HILL_TARGET, HILL_TIME_LIMIT, hillControlPoints, hillRadius } from './hill';
 
 const FACTORIES: Record<GameModeId, () => ModeRules> = {
   classic: () => new ClassicRules(),
   hill: () => new HillRules(),
-  // Not implemented yet: they play with the classic rules until their own rules exist.
-  vip: () => new ClassicRules(),
+  vip: () => new VipRules(),
+  // Not implemented yet: plays with the classic rules until its own rules exist.
   ctf: () => new ClassicRules(),
 };
 

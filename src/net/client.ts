@@ -44,6 +44,8 @@ export class OnlineModel {
   chat: ChatLine[] = [];
   private chatN = 0;
   result: { winner: number; alive: number[]; scores?: number[] } | null = null;
+  /** VIP mode: PlacedItem id of my team's VIP as confirmed by the host (-1: none). */
+  vip = -1;
   /** Comedy look chosen by the host during the battle (null: still the lobby value). */
   comedyVisual: boolean | null = null;
   /** Latest speed/pause info from the host. */
@@ -87,12 +89,14 @@ export class OnlineModel {
         if (this.state && msg.state.phase !== this.state.phase) {
           if (msg.state.phase === 'lobby') {
             this.placed.clear();
+            this.vip = -1;
             this.start = null;
             this.result = null;
             this.pendingResync = null;
           }
           if (msg.state.phase === 'placing') {
             this.placed.clear();
+            this.vip = -1;
             this.result = null;
             // Leftovers of the battle that just ended must not leak into the next one (a late resync of the old battle
             // would be restored into the new sim; stale host step/speed would make the new battle fast-forward).
@@ -108,6 +112,9 @@ export class OnlineModel {
         break;
       case 'unplaced':
         for (const id of msg.ids) this.placed.delete(id);
+        break;
+      case 'vipSet':
+        this.vip = Number.isInteger(msg.id) ? msg.id : -1;
         break;
       case 'placeFail':
         this.lastFail = { cids: msg.cids, reason: msg.reason };

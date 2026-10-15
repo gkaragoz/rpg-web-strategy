@@ -60,16 +60,29 @@ export const F_LAST_MS = 9;
 export const F_PROF = 10; // prep, grid, units, pick, separate, arrows, steps (7 values)
 export const F_DBG = 17; // in DBG_KEYS order (7 values)
 export const F_ALIVE_BASE = 24; // alive count per team (6 values)
-/** Game mode display data (hill): on flag, scores per team, owner per control point, x/y/radius per point, seconds left. */
+/** Game mode display data (on flag: 1 hill, 2 vip), scores per team, owner per control point, x/y/radius per point, seconds left. */
 export const F_MODE_ON = 30;
 export const F_TIME_LEFT = 31;
 export const F_SCORE_BASE = 32; // MAX_TEAMS values
 export const F_OWNER_BASE = 38; // 3 values
 export const F_POINT_BASE = 41; // 3 x (x, y, radius)
-export const F_LEN = 56;
+/** VIP mode (F_MODE_ON = 2): per team 3 values: unit index, hp fraction, alive flag. F_TIME_LEFT is shared with hill. */
+export const F_VIP_BASE = 56; // MAX_TEAMS x 3 values
+export const F_LEN = 74;
 
 /** Writes the mode HUD into the control block (worker side; classic: switches it off). */
 export function writeModeHud(f: Float64Array, hud: ModeHud): void {
+  if (hud.kind === 'vip') {
+    f[F_MODE_ON] = 2;
+    f[F_TIME_LEFT] = hud.timeLeft;
+    for (let t = 0; t < MAX_TEAMS; t++) {
+      const e = hud.teams[t];
+      f[F_VIP_BASE + t * 3] = e ? e.unit : -1;
+      f[F_VIP_BASE + t * 3 + 1] = e ? e.hp : 0;
+      f[F_VIP_BASE + t * 3 + 2] = e && e.alive ? 1 : 0;
+    }
+    return;
+  }
   if (hud.kind !== 'hill') {
     f[F_MODE_ON] = 0;
     return;
@@ -87,6 +100,11 @@ export function writeModeHud(f: Float64Array, hud: ModeHud): void {
 
 /** Reads the mode HUD back (main thread side). */
 export function readModeHud(f: Float64Array): ModeHud {
+  if (f[F_MODE_ON] === 2) {
+    const teams: Array<{ unit: number; hp: number; alive: boolean }> = [];
+    for (let t = 0; t < MAX_TEAMS; t++) teams.push({ unit: f[F_VIP_BASE + t * 3], hp: f[F_VIP_BASE + t * 3 + 1], alive: f[F_VIP_BASE + t * 3 + 2] === 1 });
+    return { kind: 'vip', teams, timeLeft: f[F_TIME_LEFT] };
+  }
   if (f[F_MODE_ON] !== 1) return { kind: 'classic' };
   const points: HillPointHud[] = [];
   for (let p = 0; p < 3; p++) points.push({ x: f[F_POINT_BASE + p * 3], y: f[F_POINT_BASE + p * 3 + 1], radius: f[F_POINT_BASE + p * 3 + 2], owner: f[F_OWNER_BASE + p] });

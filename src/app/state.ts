@@ -45,6 +45,8 @@ export interface PlacedUnit {
   cid?: number;
   /** Online: how many times the host asked to retry this placement (rate limited). */
   retry?: number;
+  /** VIP mode: this unit is its team's VIP (one per team). */
+  vip?: boolean;
 }
 
 /** Display and sound options. */
@@ -84,7 +86,7 @@ export interface AppState {
   selTeam: number;
   selKind: number;
   brush: number;
-  tool: 'place' | 'erase';
+  tool: 'place' | 'erase' | 'vip';
   /** Erasing only affects the selected team's units (the touch equivalent of Shift). */
   eraseTeamOnly: boolean;
   benchPerTeam: number;
@@ -226,7 +228,7 @@ export function loadState(): AppState {
         if (![team, kind, x, y].every((v) => typeof v === 'number' && Number.isFinite(v))) continue;
         if (team < 0 || team >= s.teamCount || kind < 0 || kind >= KIND_COUNT) continue;
         if (x < 0 || y < 0 || x > s.mapSize || y > s.mapSize) continue;
-        s.units.push({ team: team | 0, kind: kind | 0, x, y });
+        s.units.push((u as PlacedUnit).vip === true ? { team: team | 0, kind: kind | 0, x, y, vip: true } : { team: team | 0, kind: kind | 0, x, y });
       }
     }
     s.selTeam = 0;

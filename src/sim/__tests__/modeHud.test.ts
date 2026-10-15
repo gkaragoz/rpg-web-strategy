@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { hillZoneSpecs, pointsHeld, stripProgress, type StripData } from '../../app/modeHud';
+import { hillZoneSpecs, pointsHeld, stripProgress, type HillStrip } from '../../app/modeHud';
 import { SELECTABLE_MODES } from '../../app/modeIds';
 import { allStrings } from '../../i18n';
 
-const data = (owners: number[]): StripData => ({ kind: 'hill', scores: [10, 4], target: 100, timeLeft: 0, points: owners.map((owner, i) => ({ x: i, y: i, radius: 4, owner })) });
+const data = (owners: number[]): HillStrip => ({ kind: 'hill', scores: [10, 4], target: 100, timeLeft: 0, points: owners.map((owner, i) => ({ x: i, y: i, radius: 4, owner })) });
 
 describe('objective strip helpers', () => {
   it('progress is clamped to 0..1 and safe for a missing target', () => {
@@ -46,5 +46,15 @@ describe('mode picker', () => {
         expect(table[`mode.${id}.rule`], id).toBeTruthy();
       }
     }
+  });
+});
+
+describe('vip markers', () => {
+  it('shows only living VIPs at interpolated positions in the team colour', async () => {
+    const { vipMarkers } = await import('../../app/modeHud');
+    const units = { px: [0, 10, 20], py: [0, 10, 20], x: [2, 12, 22], y: [4, 14, 24], alive: [1, 1, 0] };
+    const hud = { kind: 'vip' as const, timeLeft: 0, teams: [{ unit: 0, hp: 1, alive: true }, { unit: 1, hp: 0, alive: false }, { unit: 2, hp: 0.5, alive: true }, { unit: -1, hp: 0, alive: false }] };
+    const m = vipMarkers(hud, units, 0.5, [0xff0000, 0x00ff00, 0x0000ff, 0xffffff]);
+    expect(m).toEqual([{ x: 1, y: 2, color: 0xff0000, kind: 'vip' }]);
   });
 });

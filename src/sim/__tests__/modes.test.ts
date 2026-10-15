@@ -57,7 +57,7 @@ function priestsAt(team: number, x: number, y: number, n: number): number[] {
 }
 
 describe('game modes: classic stays exactly as before', () => {
-  for (const rules of [undefined, 'classic', 'vip', 'ctf'] as const) {
+  for (const rules of [undefined, 'classic', 'ctf'] as const) {
     it(`rules=${String(rules)}: same hashes and winner as a battle without the field, no mode state in snapshots`, () => {
       const sc = makeScenario(9);
       const a = new Battle(sc.simSeed, sc.config);
@@ -75,10 +75,10 @@ describe('game modes: classic stays exactly as before', () => {
     });
   }
 
-  it('the registry knows every id and falls back to classic rules for the unfinished ones', () => {
+  it('the registry knows every id and falls back to classic rules for the unfinished ones (ctf)', () => {
     expect(modeFor('hill').id).toBe('hill');
     expect(modeFor('classic').id).toBe('classic');
-    expect(modeFor('vip').id).toBe('classic');
+    expect(modeFor('vip').id).toBe('vip');
     expect(modeFor('ctf').id).toBe('classic');
     expect(modeFor(undefined).id).toBe('classic');
   });

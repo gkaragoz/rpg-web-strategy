@@ -10,7 +10,13 @@ export interface HillStrip {
   /** Seconds of battle left before the fallback result (0 = no limit). */
   timeLeft: number;
 }
-export type StripData = HillStrip;
+/** VIP mode: one health bar per team's VIP (hp is the fraction of its maximum, 0 when dead). */
+export interface VipStrip {
+  kind: 'vip';
+  teams: Array<{ unit: number; hp: number; alive: boolean }>;
+  timeLeft: number;
+}
+export type StripData = HillStrip | VipStrip;
 
 /** Colours per team index as CSS strings. */
 export type StripColors = string[];
@@ -24,7 +30,7 @@ export function stripProgress(score: number, target: number): number {
 }
 
 /** Owned control points per team (index = team). */
-export function pointsHeld(data: StripData, teamCount: number): number[] {
+export function pointsHeld(data: HillStrip, teamCount: number): number[] {
   const held = new Array<number>(teamCount).fill(0);
   for (const p of data.points) if (p.owner >= 0 && p.owner < teamCount) held[p.owner]++;
   return held;
@@ -54,7 +60,20 @@ export class ModeStrip {
     }
     this.el.hidden = false;
     const key = `${data.kind}:${teamCount}`;
-    if (key !== this.builtFor) this.build(teamCount);
+    if (key !== this.builtFor) this.build(teamCount, data.kind);
+    if (data.kind === 'vip') {
+      for (let i = 0; i < teamCount; i++) {
+        const row = this.rows[i];
+        const team = data.teams[i];
+        if (!row || !team) continue;
+        row.fill.style.width = `${(Math.max(0, Math.min(1, team.hp)) * 100).toFixed(1)}%`;
+        row.score.textContent = team.alive ? `${Math.round(team.hp * 100)}%` : t('mode.hud.vip.down');
+        row.held.textContent = team.alive ? '♛' : '';
+      }
+      const left = data.timeLeft > 0 ? ` · ${t('mode.hud.vip.time', { time: fmtClock(data.timeLeft) })}` : '';
+      this.meta.textContent = `${t('mode.hud.vip.hint')}${left}`;
+      return;
+    }
     const held = pointsHeld(data, teamCount);
     for (let i = 0; i < teamCount; i++) {
       const row = this.rows[i];
@@ -68,8 +87,8 @@ export class ModeStrip {
     this.meta.textContent = `${t('mode.hud.hill.target', { target: data.target })} · ${t('mode.hud.hill.points', { n: held.reduce((a, b) => a + b, 0), total: data.points.length })}${left}`;
   }
 
-  private build(teamCount: number): void {
-    this.builtFor = `hill:${teamCount}`;
+  private build(teamCount: number, kind: StripData['kind']): void {
+    this.builtFor = `${kind}:${teamCount}`;
     this.el.innerHTML = '<div class="hm-rows"></div><div class="hm-meta"></div>';
     const rows = this.el.querySelector('.hm-rows') as HTMLElement;
     this.meta = this.el.querySelector('.hm-meta') as HTMLElement;
@@ -98,4 +117,20 @@ export function hillZoneSpecs(points: HillStrip['points'], teamColors: number[],
     }
     return { color: p.owner >= 0 ? (teamColors[p.owner] ?? neutral) : neutral, mine: true, strong: true, tiles };
   });
+}
+
+/** Map markers (crown + ring) of the VIPs that are still alive, at their interpolated positions. */
+export function vipMarkers(
+  hud: VipStrip,
+  units: { px: ArrayLike<number>; py: ArrayLike<number>; x: ArrayLike<number>; y: ArrayLike<number>; alive: ArrayLike<number> },
+  alpha: number,
+  teamColors: number[],
+): Array<{ x: number; y: number; color: number; kind: 'vip' }> {
+  const out: Array<{ x: number; y: number; color: number; kind: 'vip' }> = [];
+  hud.teams.forEach((team, ti) => {
+    const i = team.unit;
+    if (!team.alive || i < 0 || !units.alive[i]) return;
+    out.push({ x: units.px[i] + (units.x[i] - units.px[i]) * alpha, y: units.py[i] + (units.y[i] - units.py[i]) * alpha, color: teamColors[ti] ?? 0xffffff, kind: 'vip' });
+  });
+  return out;
 }

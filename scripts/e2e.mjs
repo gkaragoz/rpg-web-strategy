@@ -164,6 +164,33 @@ const tests = [
     },
   },
   {
+    name: 'mode-vip-studio',
+    async run({ stack }) {
+      const page = await stack.page({ width: 1280, height: 800 });
+      await page.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await page.clickSel('#m-own');
+      await page.waitFor(`!!document.querySelector('#start')`, 'studio');
+      await page.clickSel('.mode-card[data-mode="vip"]');
+      await page.waitFor(`!!document.querySelector('#tool button[data-id="vip"]')`, 'VIP tool button');
+      await page.clickSel('#tool button[data-id="vip"]');
+      await sleep(500);
+      // Click one of team 1's soldiers: its screen position comes from the debug handle of the studio world.
+      const pos = await page.eval(`(() => {
+        const s = JSON.parse(localStorage.getItem('rpgweb.studio.v1'));
+        const u = s.units.filter((x) => x.team === 0).sort((a, b) => a.x + a.y - (b.x + b.y))[0];
+        const c = window.__studioWorld.toClient(u.x, u.y);
+        return [c.x, c.y];
+      })()`);
+      await page.click(pos[0], pos[1]);
+      await page.waitFor(`JSON.parse(localStorage.getItem('rpgweb.studio.v1')).units.filter((u) => u.vip).length === 1`, 'exactly one VIP saved', 10000);
+      await page.clickSel('#start');
+      await page.waitFor(`!!window.__sim && window.__sim.modeHud.kind === 'vip' && !!document.querySelector('.hud-mode') && !document.querySelector('.hud-mode').hidden`, 'VIP battle with the strip', 30000);
+      const teams = await page.eval(`window.__sim.modeHud.teams.filter((t) => t.unit >= 0).length`);
+      assert(teams === 2, 'both teams should have a VIP, got ' + teams);
+      noErrors(page, 'vip');
+    },
+  },
+  {
     name: 'battle-3d',
     async run({ stack }) {
       const page = await stack.page({ width: 1280, height: 800 });
@@ -261,6 +288,62 @@ const tests = [
       noErrors(guest, 'guest');
     },
   },
+  {
+    name: 'mode-vip-online',
+    async run({ stack }) {
+      const host = await stack.page({ width: 1280, height: 800 });
+      const guest = await stack.page({ width: 1280, height: 800 });
+      await host.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await host.eval(`(() => { const lan = [...document.querySelectorAll('#m-tp button')].find((b) => /lan/i.test(b.textContent)); lan?.click(); })()`);
+      await host.clickSel('#m-host');
+      const code = await host.waitFor(`document.querySelector('#l-code')?.textContent?.trim()`, 'lobby code', 20000);
+      await host.clickSel('#l-mode .mode-card[data-mode="vip"]');
+      await guest.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await guest.eval(`(() => { const i = document.querySelector('#m-code'); i.value = ${JSON.stringify(code)}; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+      await guest.clickSel('#m-join');
+      await guest.waitFor(`!!document.querySelector('#l-mode')`, 'guest in lobby', 20000);
+      await guest.waitFor(`document.querySelector('#l-mode .mode-card[data-mode="vip"]')?.getAttribute('aria-checked') === 'true'`, 'guest sees vip');
+      assert(await guest.eval(`document.querySelector('#l-mode .mode-card[data-mode="classic"]').disabled`), 'guests must not change the mode');
+      await guest.clickSel('#l-ready');
+      await host.waitFor(`document.querySelectorAll('#l-players li').length >= 2`, 'two players');
+      await host.clickSel('#l-start');
+      for (const p of [host, guest]) await p.waitFor(`!!window.__placement && !!document.querySelector('.on-dock')`, 'placement', 30000);
+      // One soldier group per player inside its own team zone (found through the debug handle), then READY on both.
+      for (const p of [host, guest]) {
+        const n = await p.eval(`(() => {
+          const pl = window.__placement;
+          const z = pl.zones.find((q) => q.team === pl.myTeam);
+          const t = pl.env.world.terrain;
+          const items = [];
+          for (let y = 0; y < pl.init.size && items.length < 6; y++) for (let x = 0; x < pl.init.size && items.length < 6; x++) {
+            const px = x + 0.5, py = y + 0.5;
+            if (z.contains(px, py) && (!t || (t.walkable(px, py) && t.reachable(px, py))) && items.every((o) => Math.hypot(o.x - px, o.y - py) > 2)) items.push({ cid: 9000 + items.length, kind: 0, x: px, y: py });
+          }
+          window.__session.send({ t: 'place', items });
+          return items.length;
+        })()`);
+        assert(n >= 3, 'found no place to put soldiers');
+      }
+      await sleep(1500);
+      // Each player makes one of their placed soldiers the VIP (through the VIP tool of the dock and a click on it).
+      for (const p of [host, guest]) {
+        await p.clickSel('#pg-tool button[data-id="vip"]');
+        // The soldiers may lie outside the visible map area, so the tool is applied through the editor (the real click path is covered by the studio test).
+        await p.eval(`(() => {
+          const pl = window.__placement;
+          const u = pl.state.units.find((x) => x.id !== undefined);
+          const c = pl.env.world.toClient(u.x, u.y);
+          pl.editor.vipPick(c.x, c.y);
+        })()`);
+        await p.waitFor(`window.__placement.state.units.some((u) => u.vip)`, 'VIP marked locally', 10000);
+        await p.waitFor(`window.__session.model.vip >= 0`, 'host confirmed the VIP', 10000);
+      }
+      for (const p of [host, guest]) await p.clickSel('#pg-ready');
+      for (const p of [host, guest]) await p.waitFor(`!!window.__sim && window.__sim.modeHud.kind === 'vip' && window.__sim.modeHud.teams.filter((q) => q.unit >= 0).length === 2 && !!document.querySelector('.hud-mode') && !document.querySelector('.hud-mode').hidden`, 'VIP battle with the objective strip', 60000);
+      noErrors(host, 'host');
+      noErrors(guest, 'guest');
+    },
+  },
 ];
 
 const stack = await startStack();
@@ -270,6 +353,11 @@ try {
     if (only && !t.name.includes(only)) continue;
     const t0 = Date.now();
     try {
+      // Every test starts like a first visit: the profile (and so localStorage) is shared by all pages of the run.
+      const clean = await stack.page();
+      await clean.nav(`${stack.base}?lang=en&tour=off`);
+      await clean.eval('localStorage.clear(); sessionStorage.clear()');
+      clean.close();
       await Promise.race([t.run({ stack }), new Promise((_, rej) => setTimeout(() => rej(new Error('test timed out after 120 s')), 120000))]);
       results.push(`PASS ${t.name} (${Date.now() - t0} ms)`);
     } catch (e) {

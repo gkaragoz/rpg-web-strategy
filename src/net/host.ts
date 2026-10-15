@@ -90,6 +90,8 @@ export class HostLobby {
   private readonly issuedTokens = new Set<string>();
   private readonly units = new PlaceIndex(PLACE_GAP, (k) => this.init?.costs[k] ?? 0);
   private nextUnitId = 1;
+  /** VIP mode: PlacedItem id of each team's VIP (index = team, -1 / missing: none). Only the owner's team is told about it before the battle. */
+  private vipByTeam: number[] = [];
   private init: GameInit | null = null;
   private terrain: Terrain | null = null;
   private zones: Zone[] = [];
@@ -241,6 +243,7 @@ export class HostLobby {
       // Rate limited: placement edits must never vanish silently (the client already changed its own view).
       if (msg.t === 'place' && Array.isArray(msg.items)) this.sendTo(p.id, { t: 'placeFail', cids: msg.items.map((i) => i?.cid).filter((c) => Number.isInteger(c)), reason: 'busy' });
       else if (msg.t === 'unplace' && Array.isArray(msg.ids)) this.sendUnplaceFail(p.id, msg.ids);
+      else if (msg.t === 'vip') this.sendVip(p);
       return;
     }
     const isHost = from === this.hostId;
@@ -266,6 +269,9 @@ export class HostLobby {
         break;
       case 'unplace':
         if (Array.isArray(msg.ids)) this.onUnplace(p, msg.ids);
+        break;
+      case 'vip':
+        this.onVip(p, msg.id);
         break;
       case 'check':
         if (Number.isFinite(msg.step) && Number.isFinite(msg.hash)) this.onCheck(from, msg.step, msg.hash);
@@ -376,6 +382,8 @@ export class HostLobby {
       // Send the existing placements (all of them with open placement, otherwise only the player's own).
       const items = this.visibleUnits(this.player(to));
       this.sendPlacedBatches(to, items);
+      const me = this.player(to);
+      if (me) this.sendVip(me);
     }
   }
 
@@ -515,6 +523,7 @@ export class HostLobby {
     this.terrain = new Terrain(size, { seed, spec, spawnD0: 1e9, spawnD1: -1e9, spawnHalfS: 0 });
     this.zones = teamZones(size, teams, this.terrain);
     this.units.clear();
+    this.vipByTeam = [];
     this.nextUnitId = 1;
     this.init = {
       spec,
@@ -598,6 +607,30 @@ export class HostLobby {
     this.dirtyState = true;
   }
 
+  /** Sends the player their own team's current VIP unit id (-1: none). */
+  private sendVip(p: PlayerInfo): void {
+    if (p.role !== 'player') return;
+    this.sendTo(p.id, { t: 'vipSet', id: this.vipByTeam[p.team] ?? -1 });
+  }
+
+  /**
+   * VIP pick during placement: `id` is one of the sender's own placed units, -1 clears. Anything else (wrong phase, ready
+   * player, spectator, not a VIP room, unknown or foreign unit, bad shape) leaves the choice unchanged and is answered with the
+   * current value, so the client's view is corrected.
+   */
+  private onVip(p: PlayerInfo, id: unknown): void {
+    const ok = this.phase === 'placing' && p.role === 'player' && !p.ready && this.init?.gameMode === 'vip' && Number.isInteger(id);
+    if (ok) {
+      const want = id as number;
+      if (want === -1) this.vipByTeam[p.team] = -1;
+      else {
+        const it = this.units.get(want);
+        if (it && it.team === p.team) this.vipByTeam[p.team] = want;
+      }
+    }
+    this.sendVip(p);
+  }
+
   /** Tells the client that a removal was refused (in chunks, so nothing is truncated). */
   private sendUnplaceFail(to: string, ids: unknown[]): void {
     const ok = ids.filter((id): id is number => Number.isInteger(id));
@@ -612,7 +645,10 @@ export class HostLobby {
     }
     const removed = this.units.remove(ids, p.team);
     if (!removed.length) return;
+    const vipGone = this.vipByTeam[p.team] !== undefined && this.vipByTeam[p.team] >= 0 && removed.includes(this.vipByTeam[p.team]);
+    if (vipGone) this.vipByTeam[p.team] = -1;
     this.sendTo(p.id, { t: 'unplaced', owner: p.id, ids: removed });
+    if (vipGone) this.sendVip(p);
     if (this.settings.openPlacement) this.emit({ t: 'unplaced', owner: p.id, ids: removed }, p.id);
     this.dirtyState = true;
   }
@@ -624,7 +660,10 @@ export class HostLobby {
     this.resyncBusy.clear();
     this.lastResync.clear();
     this.lastResult = null;
-    this.battleStart = { init: this.init, simSeed: 1 + Math.floor(this.rnd() * 1000000), layout: packLayout(sorted) };
+    // VIP picks as layout indices (the layout is sorted by unit id; ids of VIPs that no longer exist give -1 = auto).
+    const vips: number[] = [];
+    for (let t = 0; t < this.init.teams; t++) vips.push(this.init.gameMode === 'vip' ? sorted.findIndex((u) => u.id === this.vipByTeam[t] && u.team === t) : -1);
+    this.battleStart = { init: this.init, simSeed: 1 + Math.floor(this.rnd() * 1000000), layout: packLayout(sorted), vips };
     this.phase = 'battle';
     this.hashes.clear();
     this.refreshCounts();
@@ -733,6 +772,7 @@ export class HostLobby {
       if (!p.connected) continue;
       const items = this.visibleUnits(p);
       this.sendPlacedBatches(p.id, items);
+      this.sendVip(p);
     }
   }
 
@@ -740,6 +780,7 @@ export class HostLobby {
     this.phase = 'lobby';
     this.lastResult = null;
     this.units.clear();
+    this.vipByTeam = [];
     this.init = null;
     this.battleStart = null;
     this.terrain = null;

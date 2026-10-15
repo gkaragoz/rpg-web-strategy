@@ -147,7 +147,56 @@ export class Editor {
     }
     // Alt + left drag is the 3D camera rotation, not a stroke.
     if (!this.active || (e.button !== 0 && e.button !== 2) || (e.altKey && e.button === 0)) return;
+    if (e.button === 0 && this.d.state.tool === 'vip') {
+      this.vipPick(e.clientX, e.clientY);
+      return;
+    }
     this.beginStroke(e.button === 2 || this.d.state.tool === 'erase', e.button, e.clientX, e.clientY, e.shiftKey);
+  }
+
+  /** VIP tool: marks the selected team's unit nearest to the click (within 1.6 tiles) as its VIP; any previous VIP of that team loses the crown. */
+  vipPick(cx: number, cy: number): void {
+    if (!this.editable()) return;
+    const p = this.toTile(cx, cy);
+    const team = this.d.state.selTeam;
+    let best: PlacedUnit | null = null;
+    let bestD = 1.6;
+    for (const u of this.d.state.units) {
+      if (u.team !== team) continue;
+      const d = Math.hypot(u.x - p.x, u.y - p.y);
+      if (d < bestD) {
+        bestD = d;
+        best = u;
+      }
+    }
+    if (!best) {
+      this.d.toast(t('mode.vip.pickNone'));
+      return;
+    }
+    this.setVip(best);
+  }
+
+  /** Makes `u` the VIP of its team (exclusive); `null` clears the team's choice through `clearVip`. */
+  setVip(u: PlacedUnit): void {
+    for (const o of this.d.state.units) if (o.team === u.team && o !== u) o.vip = undefined;
+    u.vip = true;
+    this.syncMarkers();
+    saveState(this.d.state);
+    this.sync?.vip?.(u);
+    this.d.onChange();
+  }
+
+  private markersDirty = false;
+  /** Crown markers over the VIP units (shown while placing); coalesced, since sprites are added one by one. */
+  syncMarkers(): void {
+    if (this.markersDirty) return;
+    this.markersDirty = true;
+    queueMicrotask(() => {
+      this.markersDirty = false;
+      const colors = colorsOf(this.d.state);
+      const list = this.d.state.units.filter((u) => u.vip).map((u) => ({ x: u.x, y: u.y, color: colors[Math.min(u.team, colors.length - 1)].main, kind: 'vip' as const }));
+      this.d.world.setMarkers(list.length > 0 && this.active ? list : null);
+    });
   }
 
   /** Online lock: while ready the host ignores edits, so every edit path is refused here (with a hint). */
@@ -178,6 +227,10 @@ export class Editor {
     const t = this.touchPending;
     this.touchPending = null;
     if (!t || !this.active || this.d.camera.touchCount > 1) return;
+    if (this.d.state.tool === 'vip') {
+      this.vipPick(t.x, t.y);
+      return;
+    }
     this.beginStroke(this.d.state.tool === 'erase', 0, t.x, t.y, false);
     if (this.stroke) this.stroke.touchAt = performance.now();
   }
@@ -366,14 +419,17 @@ export class Editor {
 
   private addSprite(u: PlacedUnit): void {
     this.layer.set(u, u);
+    if (u.vip) this.syncMarkers();
   }
 
   private dropSprite(u: PlacedUnit): void {
     this.layer.drop(u);
+    if (u.vip) this.syncMarkers();
   }
 
   private clearSprites(): void {
     this.layer.clear();
+    this.syncMarkers();
   }
 
   /** Rebuilds all sprites from state (when the atlas/palette changes, on entering the scene). */
@@ -529,7 +585,7 @@ export class Editor {
   /** Online placement constraint (null: free studio). */
   constraint: PlacementConstraint | null = null;
   /** Online sync: called for every add/remove (brush, undo, formation...). */
-  sync: { added(units: PlacedUnit[]): void; removed(units: PlacedUnit[]): void } | null = null;
+  sync: { added(units: PlacedUnit[]): void; removed(units: PlacedUnit[]): void; vip?(u: PlacedUnit): void } | null = null;
 
   /** Removes units without notifying (the host rejected them). */
   removeSilently(units: PlacedUnit[]): void {
