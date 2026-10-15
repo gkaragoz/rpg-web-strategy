@@ -10,6 +10,7 @@ import { Camera3D } from './camera3d';
 import { mountCamControls } from './camControls';
 import { View3D } from './scene3d';
 import { groundHeight } from './terrainMesh';
+import { setDebug } from '../debug';
 
 /** The soldiers of the editor as a static "units" view: the same writer draws them before and during the battle. */
 export class EditUnits implements UnitsLike {
@@ -123,7 +124,7 @@ export class World3D implements WorldBackend, Battle3D {
     this.camera3d = new Camera3D(this.view);
     mountCamControls(this.camera3d);
     window.addEventListener('resize', () => this.view.resize());
-    (window as unknown as { __v3: unknown }).__v3 = { view: this.view, world: this };
+    setDebug('__v3', { view: this.view, world: this });
   }
 
   markPlacedDirty(): void {

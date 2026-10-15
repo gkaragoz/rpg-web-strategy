@@ -8,6 +8,7 @@ import type { GameInit, PlacedItem, ServerMsg } from '../../net/protocol';
 import type { TeamColors } from '../../render/unitView';
 import { KIND_OF_TROOP, LEGACY_COUNT, STATS, unitDisplayName } from '../../sim/units';
 import { initSheet } from '../sheet';
+import { Scope } from '../scope';
 import { OUTBOX_MS, PlaceQueue } from './placeQueue';
 import type { UnitPreview } from '../unitPreview';
 import { Editor } from '../editor';
@@ -15,6 +16,7 @@ import { UnitGallery } from '../unitGallery';
 import { BRUSHES, defaultState, hex, type AppState, type PlacedUnit } from '../state';
 import type { CameraBackend, PlacedLayer, WorldBackend, ZoneSpec } from '../../contracts/backend';
 import { playerColor } from './cursors';
+import { clearDebug, getDebug, setDebug } from '../../debug';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -60,10 +62,10 @@ export class Placement {
   /** READY waits until every placement was confirmed, so a deferred removal cannot arrive after the host is ready. */
   private readyDeferred = false;
   private readonly gallery: UnitGallery | null;
-  private readonly keys: (e: KeyboardEvent) => void;
+  /** Owns the key handler and the top-bar timer. */
+  private readonly scope = new Scope();
   private lastLeft = -2;
   private leftAt = 0;
-  private timer: ReturnType<typeof setInterval> | null = null;
   private sheet: { destroy(): void } | null = null;
 
   constructor(
@@ -138,10 +140,9 @@ export class Placement {
       this.gallery = null;
       this.dock = null;
     }
-    (window as unknown as { __placement: Placement }).__placement = this; // diagnostics / scripted tests (like __session)
-    this.keys = (e) => this.onKey(e);
-    window.addEventListener('keydown', this.keys);
-    this.timer = setInterval(() => this.paintTop(), 250);
+    setDebug('__placement', this); // diagnostics / scripted tests
+    this.scope.on<KeyboardEvent>(window, 'keydown', (e) => this.onKey(e));
+    this.scope.interval(() => this.paintTop(), 250);
     this.refreshUi();
     // Process existing placements (reconnect/spectator).
     this.syncRemote();
@@ -553,10 +554,8 @@ export class Placement {
   }
 
   destroy(): void {
-    const w = window as unknown as { __placement?: Placement };
-    if (w.__placement === this) delete w.__placement; // the diagnostics handle must not pin a finished placement (and its DOM)
-    window.removeEventListener('keydown', this.keys);
-    if (this.timer) clearInterval(this.timer);
+    if (getDebug<Placement>('__placement') === this) clearDebug('__placement'); // the diagnostics handle must not pin a finished placement (and its DOM)
+    this.scope.dispose();
     if (this.readyTimer) clearTimeout(this.readyTimer);
     if (this.outTimer) clearTimeout(this.outTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);

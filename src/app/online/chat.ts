@@ -2,6 +2,7 @@ import { t } from '../../i18n';
 import type { Session } from '../../net/client';
 import { hex } from '../state';
 import { playerColor } from './cursors';
+import { Scope } from '../scope';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const SHOW_MS = 9000;
@@ -12,10 +13,8 @@ export class ChatOverlay {
   private readonly log: HTMLElement;
   private readonly input: HTMLInputElement;
   private seen = 0;
-  private readonly keys: (e: KeyboardEvent) => void;
-  private readonly timer: ReturnType<typeof setInterval>;
-  /** The visual-viewport listener lives on `window` (it outlives the overlay and would keep the session and its DOM alive). */
-  private placeFn: (() => void) | null = null;
+  /** Owns the window-level listeners (they outlive the overlay and would keep the session and its DOM alive). */
+  private readonly scope = new Scope();
 
   constructor(
     root: HTMLElement,
@@ -35,7 +34,7 @@ export class ChatOverlay {
       this.input.hidden = false;
       this.input.focus();
     });
-    this.keys = (e) => {
+    this.scope.on<KeyboardEvent>(window, 'keydown', (e) => {
       if (e.code === 'Enter' && document.activeElement !== this.input) {
         const t = e.target as HTMLElement | null;
         if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.tagName === 'BUTTON')) return;
@@ -43,8 +42,7 @@ export class ChatOverlay {
         this.input.hidden = false;
         this.input.focus();
       }
-    };
-    window.addEventListener('keydown', this.keys);
+    });
     // Stay above the bottom dock (tall on phones).
     const place = (): void => {
       const d = document.querySelector('.on-dock') ?? document.querySelector('.hud-bottom');
@@ -55,9 +53,8 @@ export class ChatOverlay {
       this.el.style.bottom = `${Math.max(dockBottom, kb)}px`;
     };
     place();
-    this.timer = setInterval(place, 400);
-    window.visualViewport?.addEventListener('resize', place);
-    this.placeFn = place;
+    this.scope.interval(place, 400);
+    if (window.visualViewport) this.scope.on(window.visualViewport, 'resize', place);
     this.input.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Enter') {
@@ -92,10 +89,7 @@ export class ChatOverlay {
   }
 
   destroy(): void {
-    window.removeEventListener('keydown', this.keys);
-    clearInterval(this.timer);
-    if (this.placeFn) window.visualViewport?.removeEventListener('resize', this.placeFn);
-    this.placeFn = null;
+    this.scope.dispose();
     this.el.remove();
   }
 }

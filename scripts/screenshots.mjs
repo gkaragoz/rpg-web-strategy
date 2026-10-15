@@ -165,12 +165,12 @@ const AMPLIFY = (k, extra) => `(() => {
 })()`;
 
 async function crowdPage(page, { k, state, options, map }) {
-  await page.nav(`${BASE}?lang=en`);
+  await page.nav(`${BASE}?lang=en&debug=1`);
   await page.eval(`document.getElementById('quick').click()`);
   await sleep(700);
   const n = await page.eval(AMPLIFY(k, { state, options, map }));
   console.log(`  crowd: ${n} soldiers`);
-  await page.nav(`${BASE}?lang=en`);
+  await page.nav(`${BASE}?lang=en&debug=1`);
 }
 
 /** Hides the statistics panel and hint, zooms in and centres the camera on the middle of the living units. */
@@ -208,19 +208,19 @@ const scenes = {
   },
   async home(page) {
     await page.viewport(1600, 900);
-    await page.nav(`${BASE}?lang=en`, false);
+    await page.nav(`${BASE}?lang=en&debug=1`, false);
     await page.shot('home');
   },
   async maps(page) {
     await page.viewport(1600, 900);
-    await page.nav(`${BASE}?lang=en`);
+    await page.nav(`${BASE}?lang=en&debug=1`);
     await page.eval(`document.getElementById('map-btn').click()`);
     await sleep(2500);
     await page.shot('maps');
   },
   async units(page) {
     await page.viewport(1600, 900);
-    await page.nav(`${BASE}?lang=en`);
+    await page.nav(`${BASE}?lang=en&debug=1`);
     await page.eval(`document.getElementById('gallery-btn').click()`);
     await sleep(1500);
     await page.eval(`document.querySelector('[data-r="epic"]').click()`);
@@ -277,7 +277,7 @@ const scenes = {
 /** Hosts a LAN lobby in `page` and joins it from a second page (ctx.guest); returns when both are in the lobby (guest ready). */
 async function onlineSession(ctx, page) {
   await page.viewport(1600, 900);
-  await page.nav(`${BASE}?lang=en`, false);
+  await page.nav(`${BASE}?lang=en&debug=1`, false);
   await page.eval(`(async () => {
     document.getElementById('m-name').value = 'Ayla';
     document.querySelector('#m-tp [data-tp="lan"]').click();
@@ -288,7 +288,7 @@ async function onlineSession(ctx, page) {
   const guest = await Page.open();
   ctx.guest = guest;
   await guest.viewport(1600, 900);
-  await guest.nav(`${BASE}?lang=en`, false);
+  await guest.nav(`${BASE}?lang=en&debug=1`, false);
   await guest.eval(`(async () => {
     document.getElementById('m-name').value = 'Bora';
     document.getElementById('m-code').value = ${JSON.stringify(code)};

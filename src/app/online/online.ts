@@ -23,6 +23,7 @@ import { ChatOverlay } from './chat';
 import { CursorLayer, playerColor } from './cursors';
 import { Placement } from './placement';
 import { LobbyScreen, MenuScreen } from './screens';
+import { clearDebug, getDebug, setDebug } from '../../debug';
 
 const PROFILE_KEY = 'rpgweb.online.profile';
 const LAST_KEY = 'rpgweb.online.last';
@@ -355,7 +356,7 @@ export class OnlineApp {
       return;
     }
     this.session = s;
-    (window as unknown as { __session: Session }).__session = s; // diagnostics / scripted load tests (like __sim)
+    setDebug('__session', s); // diagnostics / scripted load tests
     this.menu?.destroy();
     this.menu = null;
     this.cursors = new CursorLayer(s.model, (m) => s.send(m));
@@ -628,8 +629,7 @@ export class OnlineApp {
     this.dead = true;
     this.unhook?.();
     this.unhook = null;
-    const w = window as unknown as { __session?: Session };
-    if (w.__session === this.session) delete w.__session; // diagnostics handle: must not pin the finished session
+    if (getDebug<Session>('__session') === this.session) clearDebug('__session'); // diagnostics handle: must not pin the finished session
     if (!keepRejoin) saveLast(null);
     else touchLast(); // a quiet lobby (or a long confirm dialog) must not let the record expire right before the reload
     try {

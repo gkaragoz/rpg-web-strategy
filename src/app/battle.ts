@@ -21,6 +21,8 @@ import type { StatsPanel } from '../ui/stats';
 import { t } from '../i18n';
 import { hex } from './state';
 import type { WorldView } from './world';
+import { clearDebug, setDebug } from '../debug';
+import { Scope } from './scope';
 
 /** Outline colour of the focused team's soldiers (team colours would vanish against their own units). */
 const FOCUS_OUTLINE = 0xffffff;
@@ -114,7 +116,7 @@ export class BattleScene {
   /** Terrain height (screen pixels); 0 if there is no relief. */
   private elev: (x: number, y: number) => number = () => 0;
   private drawnLine = '';
-  private keyHandler: ((e: KeyboardEvent) => void) | null = null;
+  private readonly scope = new Scope();
   private lastHud = 0;
   private resultShown = false;
   private hiddenPaused = false;
@@ -228,8 +230,7 @@ export class BattleScene {
     }
 
     this.buildHud();
-    this.keyHandler = (e) => this.onKey(e);
-    window.addEventListener('keydown', this.keyHandler);
+    this.scope.on<KeyboardEvent>(window, 'keydown', (e) => this.onKey(e));
     // When the tab is hidden the sim pauses (the battle is not missed) and sound is muted.
     this.visHandler = () => {
       this.d.audio.setHidden(document.hidden);
@@ -244,22 +245,21 @@ export class BattleScene {
       }
     };
     document.addEventListener('visibilitychange', this.visHandler);
-    (window as unknown as { __sim: SimBackend }).__sim = this.sim;
-    (window as unknown as { __world: unknown }).__world = this.w2; // debug handle (depth/terrain inspection)
+    setDebug('__sim', this.sim);
+    setDebug('__world', this.w2); // depth/terrain inspection
   }
 
   exit(): void {
     this.enterId++;
     this.resetting = false;
     this.d.camera.singleFingerPan = false;
-    if (this.keyHandler) window.removeEventListener('keydown', this.keyHandler);
-    this.keyHandler = null;
+    this.scope.dispose();
     if (this.visHandler) document.removeEventListener('visibilitychange', this.visHandler);
     this.visHandler = null;
     this.sim?.dispose();
     // Drop the references to the finished simulation (its SharedArrayBuffers stay allocated while anything points at them).
     this.sim = undefined as unknown as SimBackend;
-    delete (window as unknown as { __sim?: SimBackend }).__sim;
+    clearDebug('__sim');
     for (const v of this.views) v.root.destroy({ children: true, context: true });
     this.views = [];
     for (const a of this.arrowViews) {
@@ -993,7 +993,7 @@ export class BattleScene {
     const r = this.summary();
     if (!r) return;
     this.reported = true;
-    (window as unknown as { __benchResult: unknown }).__benchResult = r;
+    setDebug('__benchResult', r);
     console.log('BENCH RESULT', JSON.stringify(r));
     const b = this.d.banner;
     b.style.display = 'flex';

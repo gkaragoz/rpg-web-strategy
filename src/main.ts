@@ -21,6 +21,7 @@ import { POSE_STATES, UnitView, type TeamColors } from './render/unitView';
 import type { BattleConfig } from './sim/battle';
 import { KIND_OF_TROOP, LEGACY_COUNT, STATS } from './sim/units';
 import { STATS_DEFAULT_SHOWN, StatsPanel } from './ui/stats';
+import { setDebug } from './debug';
 
 // Benchmark and debug parameters (they skip the studio):
 //   ?bench=10000&auto=30  -> units per team, automatic report
@@ -189,7 +190,7 @@ if (!view3d) {
     c2.apply(w2.root, app.screen.width, app.screen.height);
     app.render();
   };
-  (window as unknown as { __camera: Camera }).__camera = c2;
+  setDebug('__camera', c2);
 }
 if (!isBench) {
   mountLangPicker({
@@ -711,8 +712,8 @@ function frame(now: number): void {
   render(dt);
 }
 
-(window as unknown as { __audio: AudioSystem }).__audio = audio;
-(window as unknown as { __app: Application }).__app = app; // diagnostics (scene walks, context-loss tests)
+setDebug('__audio', audio);
+setDebug('__app', app); // diagnostics (scene walks, context-loss tests)
 
 if (isBench) {
   await startBench();
