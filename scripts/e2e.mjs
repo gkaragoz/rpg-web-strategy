@@ -87,6 +87,47 @@ const tests = [
     },
   },
   {
+    name: 'atlas-fits-gpu-with-every-unit',
+    async run({ stack }) {
+      // Six teams with one soldier of every kind: the single atlas texture must stay inside the GPU limit with all frames inside it
+      // (an oversized sheet lost its lower rows, so some units were invisible while still fighting).
+      const page = await stack.page({ width: 1280, height: 800 });
+      await page.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await page.waitFor(`!!localStorage.getItem('rpgweb.studio.v1')`, 'the studio state to be saved', 15000);
+      await page.eval(`(() => {
+        const KEY = 'rpgweb.studio.v1';
+        const s = JSON.parse(localStorage.getItem(KEY));
+        s.teamCount = 6;
+        s.fresh = false;
+        const size = s.mapSize || 56;
+        s.units = [];
+        for (let k = 0; k < 60; k++) for (let t = 0; t < 6; t++) s.units.push({ team: t, kind: k, x: 3 + (k % 10) * 4 + t * 0.5, y: 3 + Math.floor(k / 10) * 4 + t * 0.5 });
+        s.units = s.units.filter((u) => u.x < size && u.y < size);
+        localStorage.setItem(KEY, JSON.stringify(s));
+      })()`);
+      await page.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      const r = await page.waitFor(`(() => {
+        const a = window.__atlas, gl = window.__app && window.__app.renderer.gl;
+        if (!a || !gl) return null;
+        const max = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+        const first = a.unitTex.find(Boolean);
+        const src = first.source;
+        let outside = 0, missing = 0, count = 0;
+        for (let i = 0; i < a.unitTex.length; i++) {
+          const t = a.unitTex[i];
+          if (!t) { missing++; continue; }
+          count++;
+          if (t.frame.x < 0 || t.frame.y < 0 || t.frame.x + t.frame.width > src.width + 0.5 || t.frame.y + t.frame.height > src.height + 0.5) outside++;
+        }
+        return { max, pw: src.pixelWidth, ph: src.pixelHeight, kinds: a.kinds.size, outside, count };
+      })()`, 'atlas to exist', 30000);
+      assert(r.kinds >= 40, `expected an atlas with (nearly) every kind, got ${r.kinds}`);
+      assert(r.pw <= r.max && r.ph <= r.max, `atlas ${r.pw}x${r.ph} exceeds the GPU limit ${r.max}`);
+      assert(r.outside === 0, `${r.outside} unit frames lie outside the atlas texture`);
+      noErrors(page, 'atlas');
+    },
+  },
+  {
     name: 'battle-2d',
     async run({ stack }) {
       const page = await stack.page({ width: 1280, height: 800 });

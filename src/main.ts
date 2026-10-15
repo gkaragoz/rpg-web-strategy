@@ -21,7 +21,7 @@ import { POSE_STATES, UnitView, type TeamColors } from './render/unitView';
 import type { BattleConfig } from './sim/battle';
 import { KIND_OF_TROOP, LEGACY_COUNT, STATS } from './sim/units';
 import { STATS_DEFAULT_SHOWN, StatsPanel } from './ui/stats';
-import { setDebug } from './debug';
+import { debugEnabled, setDebug } from './debug';
 import { healTextures, installErrorHandlers, watchGlContext } from './app/errors';
 
 // Benchmark and debug parameters (they skip the studio):
@@ -176,6 +176,7 @@ function neededKinds(): Set<number> {
 let atlasBiome = state.map.biome;
 let atlas: Atlas = bakeAtlas(app.renderer, teamColors(state.palette, state.teamCount), atlasBiome, neededKinds());
 const getAtlas = (): Atlas => atlas;
+if (debugEnabled()) Object.defineProperty(window, '__atlas', { get: () => atlas, configurable: true }); // always the current atlas (tests)
 
 const audio = new AudioSystem();
 function applyOptions(): void {

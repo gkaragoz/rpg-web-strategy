@@ -2,7 +2,7 @@
  * Diagnostics hooks (`window.__sim`, `__session`, ...) used by the browser tests and scripted load tests. They are off for
  * players: they exist only with `?debug` (or `?bench`) in the URL, remembered for the tab session, and in the dev server.
  */
-export type DebugKey = '__sim' | '__world' | '__benchResult' | '__session' | '__placement' | '__camera' | '__audio' | '__app' | '__v3';
+export type DebugKey = '__sim' | '__world' | '__benchResult' | '__session' | '__placement' | '__camera' | '__audio' | '__app' | '__v3' | '__atlas';
 
 const FLAG = 'rpgweb.debug';
 

@@ -2,10 +2,17 @@ import { Container, Graphics, Rectangle, Texture, type Renderer } from 'pixi.js'
 import type { Biome } from '../sim/mapSpec';
 import type { DecorKind } from '../sim/terrain';
 import { LEGACY_COUNT, MAX_TEAMS, STATS } from '../sim/units';
+import { planSheet } from './sheetPlan';
 import { POSES, POSE_STATES, UnitView, type TeamColors } from './unitView';
 
-const SHEET_W = 1024;
 const PAD = 3;
+
+/** The GPU's largest texture side (4096 when it cannot be read: the safe size every WebGL device supports). */
+function maxTextureSize(renderer: Renderer): number {
+  const gl = (renderer as unknown as { gl?: WebGLRenderingContext }).gl;
+  const v = gl ? Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)) : 0;
+  return v >= 1024 ? v : 4096;
+}
 
 export interface Sprite9 {
   texture: Texture;
@@ -402,27 +409,13 @@ export function bakeAtlas(renderer: Renderer, teamColors: TeamColors[], biome: B
   add('keep', 272, 220, 136, 206, (g) => drawStone(g, 4, 4, 52, rockTheme, 0xd8333a));
   for (let style = 0; style < 2; style++) add('rubble', 30, 18, 15, 12, (g) => drawRubble(g, style, houseTheme));
 
-  // Shelf packing.
+  // Shelf packing on a sheet that fits the GPU's texture limit (see sheetPlan.ts: an oversized sheet loses its lower rows).
   const sheet = new Container();
-  const placed: Array<{ item: Item; x: number; y: number }> = [];
-  let x = 0;
-  let y = 0;
-  let rowH = 0;
-  for (const item of items) {
-    if (x + item.w > SHEET_W) {
-      x = 0;
-      y += rowH + PAD;
-      rowH = 0;
-    }
-    placed.push({ item, x, y });
-    item.draw(sheet, x, y);
-    x += item.w + PAD;
-    rowH = Math.max(rowH, item.h);
-  }
-  const sheetH = y + rowH + PAD;
-  // GPU texture limit: for a very tall atlas the resolution drops to 1.
-  const resolution = sheetH * 2 > 4096 ? 1 : 2;
-  const atlas = renderer.generateTexture({ target: sheet, frame: new Rectangle(0, 0, SHEET_W, sheetH), resolution, antialias: true });
+  const plan = planSheet(items, maxTextureSize(renderer), PAD);
+  const placed = items.map((item, i) => ({ item, x: plan.positions[i].x, y: plan.positions[i].y }));
+  for (const p of placed) p.item.draw(sheet, p.x, p.y);
+  const resolution = plan.resolution;
+  const atlas = renderer.generateTexture({ target: sheet, frame: new Rectangle(0, 0, plan.width, plan.height), resolution, antialias: true });
   sheet.destroy({ children: true, context: true });
   for (const { item, x: px, y: py } of placed) {
     item.done(new Texture({ source: atlas.source, frame: new Rectangle(px, py, item.w, item.h) }));
