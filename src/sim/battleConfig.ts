@@ -1,7 +1,8 @@
 import { Terrain } from './terrain';
 import type { MapSpec } from './mapSpec';
 import type { GameModeId } from './modes/types';
-import { KIND_OF_TROOP, type StatOverrides } from './units';
+import { KIND_OF_TROOP, MAX_TEAMS, type StatOverrides } from './units';
+import { HORDE_MAX_HUMANS, hordePoolSize } from './modes/hordeWaves';
 
 // Battle configuration, shared constants and the pure setup helpers (capacities, map size, spawn area, terrain).
 // Battle (battle.ts) re-exports the public parts.
@@ -69,7 +70,7 @@ export interface BattleConfig {
    *  'custom': the user-placed `layout`. */
   mode: 'demo' | 'bench' | 'custom';
   perTeam: number;
-  /** Number of teams (2..6); default 2. */
+  /** Number of (human) teams (2..6); default 2. Horde mode: 1..5 human teams, the AI horde is one extra team with index `teamCount`. */
   teamCount?: number;
   /** custom: map size (tiles). */
   mapSize?: number;
@@ -119,9 +120,36 @@ function benchMapSize(perTeam: number): number {
   return Math.ceil(Math.max(depth, width) / 1.38) + 8;
 }
 
+/** Number of human (player) teams of a battle. Horde: 1..5 (the horde needs the sixth team index); otherwise 2..6. */
+export function humanTeamCount(config: BattleConfig): number {
+  if (config.rules === 'horde') return Math.min(HORDE_MAX_HUMANS, Math.max(1, Math.floor(config.teamCount ?? 2)));
+  return Math.min(MAX_TEAMS, Math.max(2, config.teamCount ?? 2));
+}
+
+/** Team index of the AI horde (= the number of human teams), or -1 when the battle has no horde. */
+export function hordeTeamIndex(config: BattleConfig): number {
+  return config.rules === 'horde' ? humanTeamCount(config) : -1;
+}
+
+/** Number of team indices in play: the human teams plus the horde team in Horde mode. */
+export function totalTeamCount(config: BattleConfig): number {
+  return humanTeamCount(config) + (config.rules === 'horde' ? 1 : 0);
+}
+
+/**
+ * Alliance groups: `group[team]`. Teams with the same group are allies (never enemies of each other: no targeting, no damage,
+ * healers heal them). Classic and every other mode: each team is its own group. Horde: all human teams share group 0 and the
+ * horde team is alone in group `humans`.
+ */
+export function teamGroups(config: BattleConfig): number[] {
+  const total = totalTeamCount(config);
+  const horde = hordeTeamIndex(config);
+  return Array.from({ length: total }, (_, t) => (horde >= 0 && t < horde ? 0 : t));
+}
+
 export function unitCapacity(config: BattleConfig): number {
-  // Modes that spawn structures reserve a slot for each (Siege: the core).
-  const extra = config.rules === 'siege' ? 1 : 0;
+  // Modes that spawn structures reserve a slot for each (Siege: the core); Horde reserves its whole dormant wave pool.
+  const extra = (config.rules === 'siege' ? 1 : 0) + (config.rules === 'horde' ? hordePoolSize(humanTeamCount(config)) : 0);
   if (config.mode === 'custom') {
     const L = config.layout;
     let necro = 0;

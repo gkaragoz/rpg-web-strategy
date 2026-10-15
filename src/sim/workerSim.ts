@@ -70,6 +70,7 @@ export class WorkerSim implements SimBackend {
   get scores(): number[] | undefined {
     const h = this.modeHud;
     if (h.kind === 'hill') return h.scores.slice(0, this.alivePerTeam.length);
+    if (h.kind === 'horde') return [...Array.from({ length: h.hordeTeam }, () => h.wave), 0];
     return h.kind === 'ctf' ? h.captures.slice(0, this.alivePerTeam.length) : undefined;
   }
   protected readonly worker: Worker;

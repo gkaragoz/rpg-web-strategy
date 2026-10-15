@@ -15,7 +15,7 @@ import type { MapSpec } from '../../sim/mapSpec';
 import { KIND_OF_TROOP, LEGACY_COUNT, STATS } from '../../sim/units';
 import { STATS_DEFAULT_SHOWN, type StatsPanel } from '../../ui/stats';
 import type { BattleOptions, BattleScene } from '../battle';
-import { makeTeamColor } from '../state';
+import { makeTeamColor, withHorde } from '../state';
 import type { CameraBackend, WorldBackend } from '../../contracts/backend';
 import { ConnBadge } from './badge';
 import type { UnitPreview } from '../unitPreview';
@@ -382,6 +382,7 @@ export class OnlineApp {
       const l = loadLast();
       if (l) saveLast({ ...l, at: Date.now() });
     }
+    if (msg.t === 'startFail') this.toast(t(`online.reason.${msg.reason}`));
     if (msg.t === 'state' || msg.t === 'welcome' || msg.t === 'start') this.sync();
     this.lobby?.update();
     this.chat?.update();
@@ -477,7 +478,7 @@ export class OnlineApp {
   private teamColorsFor(init: GameInit): TeamColors[] {
     const st = this.session!.model.state!;
     // By team index (a player id can turn into a ghost id mid-game).
-    return init.teamPlayers.map((_, i) => makeTeamColor(playerColor(st.players.find((p) => p.role === 'player' && p.team === i)?.color ?? 0)));
+    return withHorde(init.teamPlayers.map((_, i) => makeTeamColor(playerColor(st.players.find((p) => p.role === 'player' && p.team === i)?.color ?? 0))), init.gameMode);
   }
 
   private mapConfig(init: GameInit) {

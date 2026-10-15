@@ -153,6 +153,14 @@ export function colorsOf(s: AppState): TeamColors[] {
   return s.customColors ?? teamColors(s.palette, s.teamCount);
 }
 
+/** The horde (AI team of the Horde mode) always gets this dark red. */
+export const HORDE_COLOR_MAIN = 0xb23a3a;
+
+/** Team colours of a battle: the player teams, plus the horde's colour at the next index in Horde mode. */
+export function withHorde(colors: TeamColors[], rules: string | undefined): TeamColors[] {
+  return rules === 'horde' ? [...colors, makeTeamColor(HORDE_COLOR_MAIN)] : colors;
+}
+
 /** Team color from a single main color (the dark shade is derived). */
 export function makeTeamColor(main: number): TeamColors {
   return { main, dark: darken(main, 0.55) };

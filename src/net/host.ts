@@ -2,6 +2,7 @@ import { randomSpec, sanitizeSpec, DEFAULT_MAP } from '../sim/mapSpec';
 import { mulberry32 } from '../sim/random';
 import { Terrain } from '../sim/terrain';
 import { isGameModeId } from '../sim/modes/types';
+import { HORDE_MAX_HUMANS } from '../sim/modes/hordeWaves';
 import { STATS, KIND_COUNT } from '../sim/units';
 import { TROOP_BY_ID } from '../sim/data/troops';
 import { PlaceIndex } from './placeIndex';
@@ -504,10 +505,19 @@ export class HostLobby {
   /** Start: everyone (except the host) is ready and there are at least 2 players. */
   canStart(): boolean {
     const pl = this.players.filter((p) => p.role === 'player');
-    return this.phase === 'lobby' && pl.length >= 2 && pl.every((p) => p.id === this.hostId || (p.ready && p.connected));
+    return this.phase === 'lobby' && pl.length >= 2 && !this.tooManyForHorde(pl.length) && pl.every((p) => p.id === this.hostId || (p.ready && p.connected));
+  }
+
+  /** Horde mode keeps the sixth team index for the horde: at most HORDE_MAX_HUMANS human teams. */
+  private tooManyForHorde(players: number): boolean {
+    return this.settings.gameMode === 'horde' && players > HORDE_MAX_HUMANS;
   }
 
   private start(): void {
+    if (this.phase === 'lobby' && this.tooManyForHorde(this.players.filter((p) => p.role === 'player').length)) {
+      this.sendTo(this.hostId, { t: 'startFail', reason: 'hordeTooManyTeams' });
+      return;
+    }
     if (!this.canStart()) return;
     const pl = this.players.filter((p) => p.role === 'player');
     const teams = pl.length;

@@ -66,6 +66,7 @@ export const online: StringTable = {
     // ways a session ends (stable codes from the network layer)
     'online.reason.closed': 'Lobby closed',
     'online.reason.kicked': 'Kicked by the host',
+    'online.reason.hordeTooManyTeams': 'Horde supports at most 5 players',
     'online.reason.lost': 'Connection lost',
     'online.reason.serverLost': 'Server connection lost',
 
@@ -255,6 +256,7 @@ export const online: StringTable = {
     // ways a session ends (stable codes from the network layer)
     'online.reason.closed': 'Lobi kapandı',
     'online.reason.kicked': 'Host tarafından atıldın',
+    'online.reason.hordeTooManyTeams': 'Sürü en fazla 5 oyuncuyu destekler',
     'online.reason.lost': 'Bağlantı koptu',
     'online.reason.serverLost': 'Sunucu bağlantısı koptu',
 

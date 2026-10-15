@@ -13,7 +13,7 @@ import { HIDDEN_BODY_PX } from '../render/depthSort';
 import { MassRenderer, type MassOptions, type MassViewport } from '../render/massRenderer';
 import { DEATH_FADE, UnitView, type TeamColors } from '../render/unitView';
 import type { SimBackend } from '../sim/backend';
-import { terrainFor, type BattleConfig } from '../sim/battle';
+import { hordeTeamIndex, terrainFor, type BattleConfig } from '../sim/battle';
 import { InlineSim } from '../sim/inlineSim';
 import { KIND_COUNT, STATS, unitDisplayName } from '../sim/units';
 import { WorkerSim } from '../sim/workerSim';
@@ -460,6 +460,7 @@ export class BattleScene {
   }
 
   private teamName(ti: number): string {
+    if (hordeTeamIndex(this.opts.config) === ti) return t('mode.horde.team');
     return this.opts.online?.teamNames[ti] || t('battle.team.name', { n: ti + 1 });
   }
 
@@ -509,7 +510,7 @@ export class BattleScene {
           this.d.world.setZones(hillZoneSpecs(hud.points, this.opts.colors.map((c) => c.main), this.d.world.mapSize));
         }
       }
-      this.modeStrip.update(hud.kind === 'hill' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : hud.kind === 'vip' || hud.kind === 'ctf' || hud.kind === 'siege' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : null, this.opts.colors.length);
+      this.modeStrip.update(hud.kind === 'hill' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : hud.kind === 'vip' || hud.kind === 'ctf' || hud.kind === 'siege' || hud.kind === 'horde' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : null, this.opts.colors.length);
       const top = document.getElementById('hud-teams')?.getBoundingClientRect().bottom ?? 52;
       this.modeStrip.el.style.top = `${Math.round(top + 6)}px`;
     }
@@ -542,7 +543,8 @@ export class BattleScene {
       res.hidden = false;
       const dur = fmtTime(this.sim.time);
       const on = this.opts.online;
-      const title = w >= 0 ? t('battle.result.wins', { name: this.teamName(w) }) : t('battle.result.draw');
+      const horde = hordeTeamIndex(this.opts.config);
+      const title = horde >= 0 ? (w === horde ? t('mode.horde.defeat', { n: Math.max(...(this.sim.scores ?? [0])) }) : t('mode.horde.victory')) : w >= 0 ? t('battle.result.wins', { name: this.teamName(w) }) : t('battle.result.draw');
       const btns = on
         ? `${on.onRematch ? `<button type="button" id="res-restart" class="primary">${t('battle.result.rematch')}</button>` : `<span class="note">${t('battle.result.hostNote')}</span>`}${on.onLobby ? `<button type="button" id="res-lobby">${t('battle.result.lobby')}</button>` : ''}<button type="button" id="res-edit">${on.isHost ? t('battle.leave.host') : t('battle.leave.guest')}</button>`
         : `<button type="button" id="res-restart">${t('battle.result.replay')}</button><button type="button" id="res-edit" class="primary">${t('battle.edit')}</button>`;
@@ -595,7 +597,7 @@ export class BattleScene {
         return `<tr class="${r.ti === winner ? 'win' : ''}"><td><span class="res-dot" style="background:${r.color}"></span>${this.teamName(r.ti).replace(/[&<>]/g, '')}${r.ti === winner ? ` <em>${t('battle.result.winner')}</em>` : ''}</td>${scored ? `<td>${Math.floor(r.score ?? 0)}</td>` : ''}<td>${r.alive} / ${r.start}</td><td>${r.pct}%</td><td>${fmtDamage(r.dmg)}</td><td>${Math.round(r.kills)}</td><td>${mvp}</td></tr>`;
       })
       .join('');
-    const scoreHead = this.opts.config.rules === 'ctf' ? t('mode.result.captures') : t('mode.result.score');
+    const scoreHead = this.opts.config.rules === 'ctf' ? t('mode.result.captures') : this.opts.config.rules === 'horde' ? t('mode.result.waves') : t('mode.result.score');
     const th = (k: string): string => `<th>${t(`battle.result.col.${k}`)}</th>`;
     return `<div class="res-scroll"><table class="res-tbl"><thead><tr>${th('team')}${scored ? `<th>${scoreHead}</th>` : ''}${th('alive')}${th('health')}${th('damage')}${th('kills')}${th('mvp')}</tr></thead><tbody>${body}</tbody></table></div>`;
   }

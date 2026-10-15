@@ -208,7 +208,9 @@ export class Studio {
       onPick: (id) => {
         s.rules = id;
         if (id !== 'vip' && s.tool === 'vip') s.tool = 'place';
-        this.changed(false);
+        saveState(s);
+        this.d.onPaletteChange(); // the atlas needs the horde colour (and the structure kinds) of the new mode
+        this.render();
       },
     });
     this.$('#mode-host').appendChild(this.modePicker.el);
@@ -335,7 +337,8 @@ export class Studio {
     const s = this.d.state;
     const withUnits = new Set(s.units.map((u) => u.team)).size;
     if (s.units.length === 0) return { ok: false, reason: t('studio.reason.empty') };
-    if (withUnits < 2) return { ok: false, reason: t('studio.reason.twoTeams') };
+    if (s.rules === 'horde' && s.teamCount > 5) return { ok: false, reason: t('mode.horde.maxTeams') };
+    if (s.rules !== 'horde' && withUnits < 2) return { ok: false, reason: t('studio.reason.twoTeams') };
     return { ok: true, reason: '' };
   }
 

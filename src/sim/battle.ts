@@ -12,7 +12,7 @@ import { Mulberry } from './random';
 import { GRID_CELL, MELEE_SLACK, SEP_CELL, SEP_DECAY, SEP_GAIN, SEP_MAX_STEP, SEP_STRIDE } from './tuning';
 import { copyTyped, fnv, pasteTyped, type BattleSnapshot, type Typed } from './snapshot';
 import type { SkillId } from './data/troops';
-import { TANK_REACH, STRUCT_REACH, BAN_TIME, NO_DAMAGE_DRAW, NO_DAMAGE_DRAW_FIRST, NO_DAMAGER_DRAW, EVENT_CAP, DBG_KEYS, EXTRA_DBG, unitCapacity, projectileCapacity, mapSizeFor, terrainFor, type SimEvent, type BattleConfig, type Zone } from './battleConfig';
+import { TANK_REACH, STRUCT_REACH, BAN_TIME, NO_DAMAGE_DRAW, NO_DAMAGE_DRAW_FIRST, NO_DAMAGER_DRAW, EVENT_CAP, DBG_KEYS, EXTRA_DBG, unitCapacity, projectileCapacity, mapSizeFor, terrainFor, totalTeamCount, teamGroups, hordeTeamIndex, type SimEvent, type BattleConfig, type Zone } from './battleConfig';
 import { sp, atkRate, burst } from './battleEffects';
 import { damage, updateZones, flyStep, applyKnockback } from './battleDamage';
 import { resolveHit, periodic, arrowLanded } from './battleSkills';
@@ -22,7 +22,7 @@ import { modeFor, vipUnitsOf } from './modes';
 import type { ModeHud, ModeRules } from './modes/types';
 
 // Public API re-exported from the split modules: other code keeps importing everything from './battle'.
-export { MAP_SIZE, DBG_KEYS, EXTRA_DBG, benchLayout, unitCapacity, projectileCapacity, mapSizeFor, terrainFor } from './battleConfig';
+export { MAP_SIZE, DBG_KEYS, EXTRA_DBG, benchLayout, unitCapacity, projectileCapacity, mapSizeFor, terrainFor, humanTeamCount, hordeTeamIndex, totalTeamCount, teamGroups } from './battleConfig';
 export type { SimEvent, BattleConfig } from './battleConfig';
 
 export class Battle {
@@ -112,6 +112,10 @@ export class Battle {
   /** @internal */
   readonly enemyList: number[][] = Array.from({ length: MAX_TEAMS }, () => []);
   private readonly teamCount: number;
+  /** Alliance group per team index (teams of one group are allies, see `teamGroups`). @internal */
+  readonly group: number[];
+  /** Team index of the AI horde, -1 outside Horde mode. */
+  readonly hordeTeam: number;
   /** Whether comedy physics is on (config.comedy). @internal */
   readonly comedy: boolean;
   /** @internal */
@@ -148,15 +152,19 @@ export class Battle {
     this.units = new Units(total);
     this.mover = new Mover(this.units, this.terrain, this.mapSize, skillParams('rage').a);
     this.projectiles = new Projectiles(projectileCapacity(config));
-    this.teamCount = Math.min(MAX_TEAMS, Math.max(2, config.teamCount ?? 2));
+    this.teamCount = totalTeamCount(config);
+    this.group = teamGroups(config);
+    this.hordeTeam = hordeTeamIndex(config);
     this.comedy = config.comedy === true;
     this.mode = modeFor(config.rules);
     this.modeDrives = this.mode.drive !== undefined;
     this.modeDamages = this.mode.onDamage !== undefined;
     this.allTeams = Array.from({ length: this.teamCount }, (_, t) => t);
+    // Healing reaches every ally: a team's self list holds all teams of its group (classic: just the team itself).
+    for (let t = 0; t < this.teamCount; t++) this.selfList[t] = this.allTeams.filter((e) => this.group[e] === this.group[t]);
     this.grids = Array.from({ length: this.teamCount }, () => new Grid(this.mapSize, GRID_CELL, total));
     this.sepGrid = new Grid(this.mapSize, SEP_CELL, total);
-    this.picker = new Picker(this.units, this.terrain, this.grids, this.teamCount);
+    this.picker = new Picker(this.units, this.terrain, this.grids, this.teamCount, this.group);
     this.separator = new Separator(this.units, this.terrain, this.sepGrid, this.mapSize);
     this.reset(seed);
   }
@@ -363,7 +371,7 @@ export class Battle {
       let best = -1;
       let bestD = Infinity;
       for (let e = 0; e < this.teamCount; e++) {
-        if (e === tm || (n[e] === 0 && this.stN[e] === 0)) continue;
+        if (this.group[e] === this.group[tm] || (n[e] === 0 && this.stN[e] === 0)) continue;
         list.push(e);
         const dx = this.centroidX[e] - this.centroidX[tm];
         const dy = this.centroidY[e] - this.centroidY[tm];
@@ -419,23 +427,29 @@ export class Battle {
     this.countAlive();
     if (this.winner < 0) {
       if (this.mode.id !== 'classic') this.mode.step(this, dt);
-      // Winner: the last team with a living unit (-2: draw if all die).
-      let alive = 0;
-      let last = -1;
-      for (let tm = 0; tm < this.teamCount; tm++) {
-        if (this.alivePerTeam[tm] + this.structPerTeam[tm] > 0) {
-          alive++;
-          last = tm;
-        }
-      }
-      if (alive === 1) this.winner = last;
-      else if (alive === 0) this.winner = -2;
-      else if (this.mode.id === 'classic') this.checkDraw(alive);
-      // Mode rules decide only while several teams are alive (the draw rules above are classic-only: a hold-the-point
-      // battle may legitimately have long quiet stretches).
-      if (this.winner < 0 && this.mode.id !== 'classic') {
+      if (this.mode.lastStanding === false) {
+        // The mode owns the result (Horde: allied sides, teams that have not spawned yet).
         const w = this.mode.winner(this);
         if (w !== undefined) this.winner = w;
+      } else {
+        // Winner: the last team with a living unit (-2: draw if all die).
+        let alive = 0;
+        let last = -1;
+        for (let tm = 0; tm < this.teamCount; tm++) {
+          if (this.alivePerTeam[tm] + this.structPerTeam[tm] > 0) {
+            alive++;
+            last = tm;
+          }
+        }
+        if (alive === 1) this.winner = last;
+        else if (alive === 0) this.winner = -2;
+        else if (this.mode.id === 'classic') this.checkDraw(alive);
+        // Mode rules decide only while several teams are alive (the draw rules above are classic-only: a hold-the-point
+        // battle may legitimately have long quiet stretches).
+        if (this.winner < 0 && this.mode.id !== 'classic') {
+          const w = this.mode.winner(this);
+          if (w !== undefined) this.winner = w;
+        }
       }
     }
   }
@@ -957,8 +971,8 @@ export class Battle {
       const cx = Math.min(cols - 1, Math.max(0, (u.x[i] / g0.cell) | 0));
       const cy = Math.min(cols - 1, Math.max(0, (u.y[i] / g0.cell) | 0));
       for (let t = 0; t < this.teamCount; t++) {
-        // A tank pushes only ENEMY units: if it pushed friendly units, the same team would lock itself up.
-        if (t === u.team[i]) continue;
+        // A tank pushes only ENEMY units: if it pushed friendly units (own team or allies), the same side would lock itself up.
+        if (this.group[t] === this.group[u.team[i]]) continue;
         const grid = this.grids[t];
         for (let gy = Math.max(0, cy - 1); gy <= Math.min(cols - 1, cy + 1); gy++) {
           for (let gx = Math.max(0, cx - 1); gx <= Math.min(cols - 1, cx + 1); gx++) {

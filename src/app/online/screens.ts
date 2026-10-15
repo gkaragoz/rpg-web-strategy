@@ -401,9 +401,10 @@ export class LobbyScreen {
     const startBtn = q<HTMLButtonElement>('#l-start');
     startBtn.hidden = !host;
     const pl = st.players.filter((p) => p.role === 'player');
-    const can = pl.length >= 2 && pl.every((p) => p.id === st.hostId || (p.ready && p.connected));
+    const tooMany = s.gameMode === 'horde' && pl.length > 5;
+    const can = pl.length >= 2 && !tooMany && pl.every((p) => p.id === st.hostId || (p.ready && p.connected));
     startBtn.disabled = !can;
-    q('#l-start-note').textContent = !host ? '' : pl.length < 2 ? t('online.lobby.need2') : can ? t('online.lobby.counts', { n: pl.length }) : t('online.lobby.needReady');
+    q('#l-start-note').textContent = !host ? '' : pl.length < 2 ? t('online.lobby.need2') : tooMany ? t('mode.horde.maxTeams') : can ? t('online.lobby.counts', { n: pl.length }) : t('online.lobby.needReady');
     const ready = q<HTMLButtonElement>('#l-ready');
     const me = m.me;
     ready.hidden = host || !me || me.role !== 'player';

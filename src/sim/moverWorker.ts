@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { mapSizeFor, terrainFor } from './battle';
+import { teamGroups } from './battleConfig';
 import { Grid } from './grid';
 import {
   C_COUNT,
@@ -61,7 +62,7 @@ export function runHelper(m: HelperInit): void {
   const mapSize = mapSizeFor(m.config);
   const grids = m.grids.map((g) => Grid.view(g));
   const mover = new Mover(units, terrain, mapSize, m.rageA, new Int32Array(m.counts));
-  const picker = new Picker(units, terrain, grids.slice(0, m.teamCount), m.teamCount);
+  const picker = new Picker(units, terrain, grids.slice(0, m.teamCount), m.teamCount, teamGroups(m.config));
   const separator = new Separator(units, terrain, grids[m.teamCount], mapSize);
   // Read the generation first, then announce: a phase opened after this read wakes us, one opened before it does not count us.
   let seen = Atomics.load(ctrl, C_GEN);

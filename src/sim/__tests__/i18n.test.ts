@@ -34,6 +34,7 @@ function families(): Record<string, string[]> {
   const placeFail = unionOf('src/net/protocol.ts', 'PlaceFailReason');
   const closeReason = unionOf('src/net/protocol.ts', 'CloseReason');
   const reject = unionOf('src/net/protocol.ts', 'RejectReason');
+  const startFail = unionOf('src/net/protocol.ts', 'StartFailReason');
   const acts = new Set<string>();
   for (const f of walk('src')) {
     const src = readFileSync(f, 'utf8');
@@ -41,7 +42,7 @@ function families(): Record<string, string[]> {
     for (const m of src.matchAll(/act\.text\s*=\s*'([a-zA-Z0-9]+)'/g)) acts.add(m[1]);
   }
   return {
-    'online.reason.': [...placeFail, ...closeReason, 'kicked'],
+    'online.reason.': [...placeFail, ...closeReason, ...startFail, 'kicked'],
     'online.reject.': reject,
     'online.act.': [...acts],
     'online.via.': ['lan', 'relay', 'webrtc'],

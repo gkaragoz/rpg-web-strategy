@@ -7,6 +7,7 @@ import {
   type CloseReason,
   type LobbyState,
   type PlaceFailReason,
+  type StartFailReason,
   type PlacedItem,
   type RejectReason,
   type ServerMsg,
@@ -58,6 +59,8 @@ export class OnlineModel {
   closedReason: CloseReason | null = null;
   rejected: RejectReason | null = null;
   lastFail: { cids: number[]; reason: PlaceFailReason } | null = null;
+  /** Why the host's last 'start' was refused (null: not refused). */
+  startFailed: StartFailReason | null = null;
   pendingResync: { step: number; data: string } | null = null;
   /** UI subscription: called after every server message. */
   listeners: Array<(msg: ServerMsg) => void> = [];
@@ -118,6 +121,9 @@ export class OnlineModel {
         break;
       case 'placeFail':
         this.lastFail = { cids: msg.cids, reason: msg.reason };
+        break;
+      case 'startFail':
+        this.startFailed = msg.reason;
         break;
       case 'chat':
         this.chat.push({ n: ++this.chatN, id: msg.id, name: msg.name, text: msg.text, ts: msg.ts });

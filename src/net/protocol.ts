@@ -3,8 +3,8 @@ import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
 import type { GameModeId } from '../sim/modes/types';
 
-/** Protocol version: a client with a different version cannot join the lobby. Bumped for wire changes and also when simulation or map generation results change (v11: valley gates, path costs, chase watchdog; v12: game modes, result scores; v13: VIP mode, vip/vipSet messages, BattleStart.vips; v14: Siege mode, siegeDefender setting / GameInit field, structure unit kind), because lockstep needs identical results. */
-export const PROTOCOL = 14;
+/** Protocol version: a client with a different version cannot join the lobby. Bumped for wire changes and also when simulation or map generation results change (v11: valley gates, path costs, chase watchdog; v12: game modes, result scores; v13: VIP mode, vip/vipSet messages, BattleStart.vips; v14: Siege mode, siegeDefender setting / GameInit field, structure unit kind; v15: Horde mode with allied teams, startFail message), because lockstep needs identical results. */
+export const PROTOCOL = 15;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;
@@ -143,6 +143,12 @@ export type ClientMsg =
  */
 export type PlaceFailReason = 'busy' | 'invalid' | 'unbuyable' | 'banned' | 'zone' | 'gold' | 'cap' | 'close' | 'unreachable';
 
+/**
+ * Why the host's 'start' was refused (stable codes, translated by the UI as `online.reason.<code>`).
+ * hordeTooManyTeams: Horde mode needs a team index for the horde, so at most HORDE_MAX_HUMANS (5) players can start it.
+ */
+export type StartFailReason = 'hordeTooManyTeams';
+
 /** Why a session ended (stable codes, translated by the UI as `online.reason.<code>`). */
 export type CloseReason = 'closed' | 'kicked' | 'lost' | 'serverLost';
 
@@ -156,6 +162,8 @@ export type ServerMsg =
   | { t: 'presence'; id: string; x: number; y: number; ctx: 'world' | 'page'; act?: string }
   | { t: 'placed'; owner: string; items: PlacedItem[] }
   | { t: 'placeFail'; cids: number[]; reason: PlaceFailReason }
+  /** The host's own 'start' was refused (sent to the host only; the room stays in the lobby). */
+  | { t: 'startFail'; reason: StartFailReason }
   | { t: 'unplaced'; owner: string; ids: number[] }
   /** The host refused to remove these units (the player is ready or placement is over): the client restores them. */
   | { t: 'unplaceFail'; ids: number[] }

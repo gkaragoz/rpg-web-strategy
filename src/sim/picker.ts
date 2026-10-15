@@ -37,9 +37,11 @@ export class Picker {
     private readonly t: Terrain | null,
     private readonly grids: Grid[],
     private readonly teamCount: number,
+    /** Alliance group per team (default: every team its own group): teams of one group are never enemies. */
+    private readonly group: ArrayLike<number> = Array.from({ length: teamCount }, (_, t) => t),
   ) {
     this.enemies = Array.from({ length: teamCount }, () => []);
-    this.selves = Array.from({ length: teamCount }, (_, t) => [t]);
+    this.selves = Array.from({ length: teamCount }, (_, t) => Array.from({ length: teamCount }, (_, e) => e).filter((e) => group[e] === group[t]));
   }
 
   /** Builds the enemy lists of the teams that are alive (call once per phase, after setting `aliveMask`). */
@@ -47,7 +49,7 @@ export class Picker {
     for (let tm = 0; tm < this.teamCount; tm++) {
       const list = this.enemies[tm];
       list.length = 0;
-      for (let e = 0; e < this.teamCount; e++) if (e !== tm && (this.aliveMask & (1 << e)) !== 0) list.push(e);
+      for (let e = 0; e < this.teamCount; e++) if (this.group[e] !== this.group[tm] && (this.aliveMask & (1 << e)) !== 0) list.push(e);
     }
   }
 

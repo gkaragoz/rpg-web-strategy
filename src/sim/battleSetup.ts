@@ -90,7 +90,7 @@ export function setupSkills(b: Battle): void {
       b.pools.set(i, pool);
     } else if (skill === 'destinyBond') {
       const foes: number[] = [];
-      for (let j = 0; j < n; j++) if (u.alive[j] && u.team[j] !== u.team[i] && STATS[u.kind[j]].skill !== 'destinyBond') foes.push(j);
+      for (let j = 0; j < n; j++) if (u.alive[j] && b.group[u.team[j]] !== b.group[u.team[i]] && STATS[u.kind[j]].skill !== 'destinyBond') foes.push(j);
       const pick: number[] = [];
       const want = Math.min(sp(b, 'destinyBond').count, foes.length);
       while (pick.length < want) {

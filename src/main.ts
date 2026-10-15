@@ -10,7 +10,7 @@ import { Nav, screenOfState, type NavScreen, type NavVerdict } from './app/nav';
 import { OnlineApp, canRejoin } from './app/online/online';
 import { resumeAction, resumeScreenFor, saveResume, takeResume } from './app/resume';
 import type { Battle3D, CameraBackend, WorldBackend } from './contracts/backend';
-import { loadState, saveState, saveStateNow, teamColors } from './app/state';
+import { loadState, saveState, saveStateNow, teamColors, withHorde } from './app/state';
 import { Studio } from './app/studio';
 import { WorldView } from './app/world';
 import { Camera } from './camera';
@@ -166,6 +166,11 @@ const banner = document.getElementById('banner')!;
 const studioRoot = document.getElementById('studio')!;
 const hudRoot = document.getElementById('hud')!;
 
+/** Colours of the studio battle: the teams of the palette, plus the horde's colour in Horde mode. */
+function studioColors(): TeamColors[] {
+  return withHorde(teamColors(state.palette, state.teamCount), state.rules);
+}
+
 /** Types that need a texture in the atlas: the classics, placed ones, the selected type and its dependencies (Bone Caller -> Bone Soldier). */
 function neededKinds(): Set<number> {
   const set = new Set<number>(Array.from({ length: LEGACY_COUNT }, (_, i) => i));
@@ -177,7 +182,7 @@ function neededKinds(): Set<number> {
 }
 
 let atlasBiome = state.map.biome;
-let atlas: Atlas = bakeAtlas(app.renderer, teamColors(state.palette, state.teamCount), atlasBiome, neededKinds());
+let atlas: Atlas = bakeAtlas(app.renderer, studioColors(), atlasBiome, neededKinds());
 const getAtlas = (): Atlas => atlas;
 if (debugEnabled()) Object.defineProperty(window, '__atlas', { get: () => atlas, configurable: true }); // always the current atlas (tests)
 
@@ -309,7 +314,7 @@ function disposeLater(a: Atlas): void {
 function rebakeAtlas(): void {
   const old = atlas;
   atlasBiome = state.map.biome;
-  atlas = bakeAtlas(app.renderer, teamColors(state.palette, state.teamCount), atlasBiome, neededKinds());
+  atlas = bakeAtlas(app.renderer, studioColors(), atlasBiome, neededKinds());
   world.setAtlas(atlas, true);
   editor.refreshSprites();
   disposeLater(old);
@@ -338,7 +343,7 @@ function clearIcons(): void {
  * one frame per `step()` so the gallery never blocks the main thread.
  */
 function beginFrameJob(kind: number, team: number, frames: number): FrameJob {
-  const colors = iconColors ?? teamColors(state.palette, state.teamCount);
+  const colors = iconColors ?? studioColors();
   const W = 120;
   const H = 150;
   const res = matchMedia('(pointer: coarse)').matches ? 1 : 1.25;
@@ -382,7 +387,7 @@ function beginFrameJob(kind: number, team: number, frames: number): FrameJob {
 const preview = new UnitPreview({ begin: beginFrameJob });
 /** Unit icon: drawn once from UnitView and cached; a copy is returned on every call. */
 function renderIcon(kind: number, team: number): HTMLCanvasElement {
-  const colors = iconColors ?? teamColors(state.palette, state.teamCount);
+  const colors = iconColors ?? studioColors();
   const key = `${kind}:${team}:${iconColors ? iconColors.map((c) => c.main).join('.') : state.palette}`;
   let src = iconCache.get(key);
   if (!src) {
@@ -434,7 +439,7 @@ studio = new Studio(studioRoot, {
 });
 
 function battleOptions(): BattleOptions {
-  const colors = teamColors(state.palette, state.teamCount);
+  const colors = studioColors();
   return {
     config: { ...studioConfig(), layout: layoutArray() },
     colors,

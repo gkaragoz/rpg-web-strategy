@@ -3,12 +3,12 @@ import { MAX_TEAMS } from '../units';
 
 /**
  * Game modes: extra win conditions and goals on top of the normal fight. All modes are autonomous (no player orders during
- * a battle). 'classic', 'hill', 'vip', 'ctf' and 'siege' have rules.
+ * a battle). 'classic', 'hill', 'vip', 'ctf', 'siege' and 'horde' have rules.
  */
-export type GameModeId = 'classic' | 'hill' | 'vip' | 'ctf' | 'siege';
+export type GameModeId = 'classic' | 'hill' | 'vip' | 'ctf' | 'siege' | 'horde';
 
 /** Every mode id the lobby accepts (host-side validation uses this list). */
-export const GAME_MODE_IDS: readonly GameModeId[] = ['classic', 'hill', 'vip', 'ctf', 'siege'];
+export const GAME_MODE_IDS: readonly GameModeId[] = ['classic', 'hill', 'vip', 'ctf', 'siege', 'horde'];
 
 export function isGameModeId(v: unknown): v is GameModeId {
   return typeof v === 'string' && (GAME_MODE_IDS as readonly string[]).includes(v);
@@ -77,6 +77,21 @@ export type ModeHud =
       y: number;
       /** Seconds of sim time left before the defender wins. */
       timeLeft: number;
+    }
+  | {
+      kind: 'horde';
+      /** Waves spawned so far (0 before the first). */
+      wave: number;
+      /** Waves in the battle (12). */
+      waves: number;
+      /** Seconds of sim time until the next wave (0 when every wave has spawned). */
+      nextIn: number;
+      /** Living horde units. */
+      hordeAlive: number;
+      /** Team index of the horde (= the number of human teams); every team below it is a human ally. */
+      hordeTeam: number;
+      /** Seconds of sim time left before the time limit makes the humans lose. */
+      timeLeft: number;
     };
 
 /** One flag: `team` owns it; at home x/y is the base and carrier/carrierTeam are -1, in transit x/y is the carrier's position. */
@@ -100,6 +115,11 @@ export function vipUnitsOf(hud: ModeHud): Int32Array {
  */
 export interface ModeRules {
   readonly id: GameModeId;
+  /**
+   * false: the mode decides the winner alone (`winner()` is called every step even when only one team is alive, and the
+   * built-in "last team standing" rule is off). Default (undefined): last team standing applies.
+   */
+  readonly lastStanding?: boolean;
   /** Called at the end of Battle.reset (units are spawned, terrain exists). */
   init(b: Battle): void;
   /** Once per sim step, after the normal step logic and while the battle is undecided. */
