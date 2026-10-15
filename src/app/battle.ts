@@ -23,6 +23,7 @@ import { hex } from './state';
 import type { WorldView } from './world';
 import { clearDebug, setDebug } from '../debug';
 import { Scope } from './scope';
+import { ModeStrip, hillZoneSpecs } from './modeHud';
 
 /** Outline colour of the focused team's soldiers (team colours would vanish against their own units). */
 const FOCUS_OUTLINE = 0xffffff;
@@ -105,6 +106,10 @@ export class BattleScene {
   private tip: HTMLElement | null = null;
   private docDown: ((e: PointerEvent) => void) | null = null;
   private meterUi: DpsMeter | null = null;
+  /** Objective strip of a scoring mode (null in classic). */
+  private modeStrip: ModeStrip | null = null;
+  /** Owners of the control points currently drawn on the map (redraw only when they change). */
+  private zoneSig = '';
   private speed = 1;
   private paused = false;
   private resetting = false;
@@ -289,6 +294,9 @@ export class BattleScene {
     this.segs = [];
     this.hoverTeam = this.pinnedTeam = -1;
     this.meterUi = null;
+    if (this.modeStrip) this.d.world.setZones(null);
+    this.modeStrip = null;
+    this.zoneSig = '';
     this.d.hudRoot.innerHTML = '';
     this.d.hudRoot.hidden = true;
     this.d.banner.style.display = 'none';
@@ -321,6 +329,12 @@ export class BattleScene {
 </div>
 <div class="hud-hint">${window.matchMedia('(pointer: coarse)').matches ? t(this.d.battle3d ? 'battle.hint.touch3d' : 'battle.hint.touch') : ''}${window.matchMedia('(pointer: coarse)').matches ? '' : this.opts.online ? (this.opts.online.isHost ? t('battle.hint.host') : t('battle.hint.guest')) + t(this.d.battle3d ? 'battle.hint.online3d' : 'battle.hint.online') : t(this.d.battle3d ? 'battle.hint.solo3d' : 'battle.hint.solo')}</div>
 <div class="result" id="hud-result" hidden></div>`;
+    this.modeStrip = null;
+    this.zoneSig = '';
+    if ((this.opts.config.rules ?? 'classic') !== 'classic') {
+      this.modeStrip = new ModeStrip(this.opts.colors.map((c) => hex(c.main)));
+      root.appendChild(this.modeStrip.el);
+    }
     const q = (s: string) => root.querySelector(s) as HTMLElement;
     q('#hud-pause').addEventListener('click', () => this.togglePause());
     q('#hud-zin').addEventListener('click', () => this.d.camera.zoomBy(1.35));
@@ -483,6 +497,19 @@ export class BattleScene {
     const now = performance.now();
     if (!force && now - this.lastHud < 200) return;
     this.lastHud = now;
+    if (this.modeStrip) {
+      const hud = this.sim.modeHud;
+      if (hud.kind === 'hill') {
+        const sig = hud.points.map((p) => p.owner).join(',');
+        if (sig !== this.zoneSig) {
+          this.zoneSig = sig;
+          this.d.world.setZones(hillZoneSpecs(hud.points, this.opts.colors.map((c) => c.main), this.d.world.mapSize));
+        }
+      }
+      this.modeStrip.update(hud.kind === 'hill' ? { ...hud, timeLeft: Math.max(0, hud.timeLeft) } : null, this.opts.colors.length);
+      const top = document.getElementById('hud-teams')?.getBoundingClientRect().bottom ?? 52;
+      this.modeStrip.el.style.top = `${Math.round(top + 6)}px`;
+    }
     if (this.segs.length > 0) {
       const u = this.sim.units;
       const hp = new Array(6).fill(0);
@@ -547,9 +574,10 @@ export class BattleScene {
           best = k;
         }
       }
-      return { ti, color: hex(c.main), alive: this.sim.alivePerTeam[ti], start: this.initialAlive[ti], pct: Math.round(Math.min(1, hp[ti] / Math.max(1, this.initialHp[ti])) * 100), dmg, kills: this.sim.meter.kills[ti], best, bestDmg };
+      return { ti, score: this.sim.scores?.[ti], color: hex(c.main), alive: this.sim.alivePerTeam[ti], start: this.initialAlive[ti], pct: Math.round(Math.min(1, hp[ti] / Math.max(1, this.initialHp[ti])) * 100), dmg, kills: this.sim.meter.kills[ti], best, bestDmg };
     });
-    rows.sort((x, y) => Number(y.ti === winner) - Number(x.ti === winner) || y.alive - x.alive || y.dmg - x.dmg);
+    const scored = this.sim.scores !== undefined;
+    rows.sort((x, y) => Number(y.ti === winner) - Number(x.ti === winner) || (scored ? (y.score ?? 0) - (x.score ?? 0) : 0) || y.alive - x.alive || y.dmg - x.dmg);
     const body = rows
       .map((r) => {
         let thumb = '';
@@ -561,11 +589,11 @@ export class BattleScene {
           }
         }
         const mvp = r.best >= 0 ? `<span class="res-mvp">${thumb}<span>${unitDisplayName(r.best)}<small>${fmtDamage(r.bestDmg)}</small></span></span>` : '–';
-        return `<tr class="${r.ti === winner ? 'win' : ''}"><td><span class="res-dot" style="background:${r.color}"></span>${this.teamName(r.ti).replace(/[&<>]/g, '')}${r.ti === winner ? ` <em>${t('battle.result.winner')}</em>` : ''}</td><td>${r.alive} / ${r.start}</td><td>${r.pct}%</td><td>${fmtDamage(r.dmg)}</td><td>${Math.round(r.kills)}</td><td>${mvp}</td></tr>`;
+        return `<tr class="${r.ti === winner ? 'win' : ''}"><td><span class="res-dot" style="background:${r.color}"></span>${this.teamName(r.ti).replace(/[&<>]/g, '')}${r.ti === winner ? ` <em>${t('battle.result.winner')}</em>` : ''}</td>${scored ? `<td>${Math.floor(r.score ?? 0)}</td>` : ''}<td>${r.alive} / ${r.start}</td><td>${r.pct}%</td><td>${fmtDamage(r.dmg)}</td><td>${Math.round(r.kills)}</td><td>${mvp}</td></tr>`;
       })
       .join('');
     const th = (k: string): string => `<th>${t(`battle.result.col.${k}`)}</th>`;
-    return `<div class="res-scroll"><table class="res-tbl"><thead><tr>${th('team')}${th('alive')}${th('health')}${th('damage')}${th('kills')}${th('mvp')}</tr></thead><tbody>${body}</tbody></table></div>`;
+    return `<div class="res-scroll"><table class="res-tbl"><thead><tr>${th('team')}${scored ? `<th>${t('mode.result.score')}</th>` : ''}${th('alive')}${th('health')}${th('damage')}${th('kills')}${th('mvp')}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
 
   /** Per-team breakdown by unit type (hidden until the Details button is pressed). */

@@ -2,6 +2,7 @@ import type { FrameInfo, MeterView, ProjView, SimBackend, SimStats, UnitsView } 
 import { DBG_KEYS, mapSizeFor, projectileCapacity, unitCapacity, type BattleConfig, type SimEvent } from './battle';
 import { THREADS_MIN_UNITS, armySize, simDtFor } from './constants';
 import { quitHelpers } from './movePool';
+import type { ModeHud } from './modes';
 import {
   F_ALIVE_BASE,
   F_DBG,
@@ -13,6 +14,7 @@ import {
   F_STEPS,
   F_TOTAL_MS,
   F_WINNER,
+  readModeHud,
   I_COUNT,
   I_LATEST,
   I_PCOUNT,
@@ -62,6 +64,12 @@ export class WorkerSim implements SimBackend {
   readonly units: UnitsView;
   readonly projectiles: ProjView;
   readonly meter: MeterView;
+  /** Display data of the game mode (hill scores and control points), refreshed with every frame(). */
+  modeHud: ModeHud = { kind: 'classic' };
+  /** Points per team of the mode, or undefined for classic. */
+  get scores(): number[] | undefined {
+    return this.modeHud.kind === 'hill' ? this.modeHud.scores.slice(0, this.alivePerTeam.length) : undefined;
+  }
   protected readonly worker: Worker;
   protected readonly sh: Shared;
   private pendingReset: ((count: number) => void) | null = null;
@@ -217,6 +225,7 @@ export class WorkerSim implements SimBackend {
     this.winner = f[F_WINNER];
     this.time = f[F_SIM_TIME];
     for (let tm = 0; tm < this.alivePerTeam.length; tm++) this.alivePerTeam[tm] = f[F_ALIVE_BASE + tm];
+    this.modeHud = readModeHud(f);
 
     // Interpolate using the real interval between the last two publishes: one step behind but smooth.
     const interval = Math.max(1, f[F_PUBLISH] - f[F_PREV_PUBLISH]);

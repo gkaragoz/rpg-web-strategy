@@ -1,5 +1,6 @@
 /** Layout of the SharedArrayBuffer shared between the worker and the main thread. */
 import { KIND_COUNT, MAX_TEAMS } from './units';
+import { HILL_TARGET, type HillPointHud, type ModeHud } from './modes';
 export const SNAP_SLOTS = 4;
 
 export interface SnapSlot {
@@ -59,7 +60,38 @@ export const F_LAST_MS = 9;
 export const F_PROF = 10; // prep, grid, units, pick, separate, arrows, steps (7 values)
 export const F_DBG = 17; // in DBG_KEYS order (7 values)
 export const F_ALIVE_BASE = 24; // alive count per team (6 values)
-export const F_LEN = 32;
+/** Game mode display data (hill): on flag, scores per team, owner per control point, x/y/radius per point, seconds left. */
+export const F_MODE_ON = 30;
+export const F_TIME_LEFT = 31;
+export const F_SCORE_BASE = 32; // MAX_TEAMS values
+export const F_OWNER_BASE = 38; // 3 values
+export const F_POINT_BASE = 41; // 3 x (x, y, radius)
+export const F_LEN = 56;
+
+/** Writes the mode HUD into the control block (worker side; classic: switches it off). */
+export function writeModeHud(f: Float64Array, hud: ModeHud): void {
+  if (hud.kind !== 'hill') {
+    f[F_MODE_ON] = 0;
+    return;
+  }
+  f[F_MODE_ON] = 1;
+  f[F_TIME_LEFT] = hud.timeLeft;
+  for (let t = 0; t < MAX_TEAMS; t++) f[F_SCORE_BASE + t] = hud.scores[t] ?? 0;
+  for (let p = 0; p < 3; p++) {
+    f[F_OWNER_BASE + p] = hud.points[p].owner;
+    f[F_POINT_BASE + p * 3] = hud.points[p].x;
+    f[F_POINT_BASE + p * 3 + 1] = hud.points[p].y;
+    f[F_POINT_BASE + p * 3 + 2] = hud.points[p].radius;
+  }
+}
+
+/** Reads the mode HUD back (main thread side). */
+export function readModeHud(f: Float64Array): ModeHud {
+  if (f[F_MODE_ON] !== 1) return { kind: 'classic' };
+  const points: HillPointHud[] = [];
+  for (let p = 0; p < 3; p++) points.push({ x: f[F_POINT_BASE + p * 3], y: f[F_POINT_BASE + p * 3 + 1], radius: f[F_POINT_BASE + p * 3 + 2], owner: f[F_OWNER_BASE + p] });
+  return { kind: 'hill', scores: Array.from(f.subarray(F_SCORE_BASE, F_SCORE_BASE + MAX_TEAMS)), target: HILL_TARGET, points, timeLeft: f[F_TIME_LEFT] };
+}
 
 export const PROF_KEYS = ['prep', 'grid', 'units', 'pick', 'separate', 'arrows', 'steps'] as const;
 

@@ -144,6 +144,26 @@ const tests = [
     },
   },
   {
+    name: 'mode-hill-studio',
+    async run({ stack }) {
+      const page = await stack.page({ width: 1280, height: 800 });
+      await page.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await page.clickSel('#m-own');
+      await page.waitFor(`!!document.querySelector('#start')`, 'studio');
+      assert(await page.eval(`document.querySelectorAll('.mode-card').length >= 2`), 'mode cards missing in the studio');
+      await page.clickSel('.mode-card[data-mode="hill"]');
+      await page.waitFor(`document.querySelector('.mode-card[data-mode="hill"]').getAttribute('aria-checked') === 'true'`, 'hill selected');
+      assert(await page.eval(`document.querySelector('.mode-rule').textContent.includes('100')`), 'rule text should mention the goal');
+      await page.clickSel('#start');
+      await page.waitFor(`!!document.querySelector('.hud-mode') && !document.querySelector('.hud-mode').hidden`, 'objective strip', 30000);
+      await sleep(4000);
+      const strip = await page.eval(`document.querySelector('.hud-mode').textContent`);
+      assert(/100/.test(strip) && /3/.test(strip), 'strip should show the goal and the three points: ' + strip);
+      assert((await page.eval(`window.__sim.modeHud.kind`)) === 'hill', 'sim should run hill rules');
+      noErrors(page, 'hill');
+    },
+  },
+  {
     name: 'battle-3d',
     async run({ stack }) {
       const page = await stack.page({ width: 1280, height: 800 });
@@ -194,6 +214,49 @@ const tests = [
       await host.clickSel('#l-start');
       await host.waitFor(`!!document.querySelector('.on-dock')`, 'host placement screen', 30000);
       await guest.waitFor(`!!document.querySelector('.on-dock')`, 'guest placement screen', 30000);
+      noErrors(host, 'host');
+      noErrors(guest, 'guest');
+    },
+  },
+  {
+    name: 'mode-hill-online',
+    async run({ stack }) {
+      const host = await stack.page({ width: 1280, height: 800 });
+      const guest = await stack.page({ width: 1280, height: 800 });
+      await host.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await host.eval(`(() => { const lan = [...document.querySelectorAll('#m-tp button')].find((b) => /lan/i.test(b.textContent)); lan?.click(); })()`);
+      await host.clickSel('#m-host');
+      const code = await host.waitFor(`document.querySelector('#l-code')?.textContent?.trim()`, 'lobby code', 20000);
+      await host.clickSel('#l-mode .mode-card[data-mode="hill"]');
+      await guest.nav(`${stack.base}?lang=en&view=2d&debug=1&tour=off`);
+      await guest.eval(`(() => { const i = document.querySelector('#m-code'); i.value = ${JSON.stringify(code)}; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+      await guest.clickSel('#m-join');
+      await guest.waitFor(`!!document.querySelector('#l-mode')`, 'guest in lobby', 20000);
+      await guest.waitFor(`document.querySelector('#l-mode .mode-card[data-mode="hill"]')?.getAttribute('aria-checked') === 'true'`, 'guest sees hill');
+      assert(await guest.eval(`document.querySelector('#l-mode .mode-card[data-mode="classic"]').disabled`), 'guests must not change the mode');
+      await guest.clickSel('#l-ready');
+      await host.waitFor(`document.querySelectorAll('#l-players li').length >= 2`, 'two players');
+      await host.clickSel('#l-start');
+      for (const p of [host, guest]) await p.waitFor(`!!window.__placement && !!document.querySelector('.on-dock')`, 'placement', 30000);
+      // One soldier group per player inside its own team zone (found through the debug handle), then READY on both.
+      for (const p of [host, guest]) {
+        const n = await p.eval(`(() => {
+          const pl = window.__placement;
+          const z = pl.zones.find((q) => q.team === pl.myTeam);
+          const t = pl.env.world.terrain;
+          const items = [];
+          for (let y = 0; y < pl.init.size && items.length < 6; y++) for (let x = 0; x < pl.init.size && items.length < 6; x++) {
+            const px = x + 0.5, py = y + 0.5;
+            if (z.contains(px, py) && (!t || (t.walkable(px, py) && t.reachable(px, py))) && items.every((o) => Math.hypot(o.x - px, o.y - py) > 2)) items.push({ cid: 9000 + items.length, kind: 0, x: px, y: py });
+          }
+          window.__session.send({ t: 'place', items });
+          return items.length;
+        })()`);
+        assert(n >= 3, 'found no place to put soldiers');
+      }
+      await sleep(1500);
+      for (const p of [host, guest]) await p.clickSel('#pg-ready');
+      for (const p of [host, guest]) await p.waitFor(`!!window.__sim && window.__sim.modeHud.kind === 'hill' && !!document.querySelector('.hud-mode') && !document.querySelector('.hud-mode').hidden`, 'hill battle with the objective strip', 60000);
       noErrors(host, 'host');
       noErrors(guest, 'guest');
     },

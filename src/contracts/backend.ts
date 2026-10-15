@@ -44,6 +44,8 @@ export interface ZoneSpec {
   color: number;
   /** The player's own zone (stronger tint). */
   mine: boolean;
+  /** An objective area (control point): drawn more clearly than a placement zone. */
+  strong?: boolean;
   tiles: Array<[number, number]>;
 }
 

@@ -9,6 +9,8 @@ import { MapPicker, drawMinimapCached } from '../mapPicker';
 import { PALETTES, defaultState, type AppState } from '../state';
 import { hex } from '../state';
 import { playerColor } from './cursors';
+import { ModePicker } from '../modePicker';
+import { isSelectableMode } from '../modeIds';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const COLORS = PALETTES[0].colors;
@@ -203,6 +205,7 @@ export class LobbyScreen {
     <div class="on-field"><span>${t('online.lobby.map')}</span>
       <div class="on-map"><canvas id="l-prev" width="160" height="82"></canvas><div class="on-map-info"><b id="l-map-name"></b><div class="on-btnrow"><button type="button" id="l-map-pick">${t('online.lobby.pick')}</button><button type="button" id="l-map-rand">${t('online.lobby.random')}</button></div></div></div>
     </div>
+    <div class="on-field stack"><span>${t('mode.label')}</span><div id="l-mode"></div></div>
     <div class="on-field"><span>${t('online.lobby.gold')}</span><div class="seg" id="l-gold"></div><input id="l-gold-n" type="number" min="100" max="10000000" step="100" aria-label="${esc(t('online.lobby.goldCustom'))}" /></div>
     <div class="on-field"><span>${t('online.lobby.placeTime')}</span><select id="l-time"></select></div>
     <div class="on-field"><span>${t('online.lobby.mapSize')}</span><select id="l-size"></select></div>
@@ -254,12 +257,16 @@ export class LobbyScreen {
     return this.el.querySelector(s) as T;
   }
 
+  private modePicker!: ModePicker;
+
   private get host(): boolean {
     return this.session.model.isHost;
   }
 
   private build(): void {
     const q = this.q.bind(this);
+    this.modePicker = new ModePicker({ value: 'classic', onPick: (id) => this.patch({ gameMode: id }) });
+    q('#l-mode').appendChild(this.modePicker.el);
     q('#l-gold').innerHTML = GOLDS.map((g) => `<button type="button" data-g="${g}">${goldLabel(g)}</button>`).join('');
     q('#l-gold').querySelectorAll('button').forEach((b) =>
       b.addEventListener('click', () => this.patch({ gold: Number((b as HTMLElement).dataset.g) })),
@@ -352,6 +359,7 @@ export class LobbyScreen {
         (b as HTMLButtonElement).disabled = !host;
         b.setAttribute('aria-pressed', String(Number((b as HTMLElement).dataset.g) === s.gold));
       });
+      this.modePicker.set(isSelectableMode(s.gameMode) ? s.gameMode : 'classic', !host);
       const gn = q<HTMLInputElement>('#l-gold-n');
       if (document.activeElement !== gn) gn.value = String(s.gold);
       gn.disabled = !host;

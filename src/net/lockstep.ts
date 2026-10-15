@@ -14,6 +14,8 @@ export interface SimLike {
   restore(s: BattleSnapshot): void;
   readonly winner: number;
   readonly alivePerTeam: number[];
+  /** Game mode points per team (hill), sent with the result; undefined for classic. */
+  readonly scores?: number[];
   /** Worker-backed sims: steps handed to the worker that it has not finished yet (the runner stops queuing when it falls behind). */
   readonly pending?: number;
   /** Worker-backed sims report the checkpoint hashes asynchronously through this callback (instead of hash()). */
@@ -142,7 +144,7 @@ export class LockstepRunner {
       }
       if (this.sim.winner !== -1 && !this.finished) {
         this.finished = true;
-        host.finish(this.sim.winner, this.sim.alivePerTeam.slice(0, 6));
+        host.finish(this.sim.winner, this.sim.alivePerTeam.slice(0, 6), this.sim.scores?.slice(0, 6));
       }
     }
     return ran;

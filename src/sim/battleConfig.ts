@@ -1,5 +1,6 @@
 import { Terrain } from './terrain';
 import type { MapSpec } from './mapSpec';
+import type { GameModeId } from './modes/types';
 import { KIND_OF_TROOP, type StatOverrides } from './units';
 
 // Battle configuration, shared constants and the pure setup helpers (capacities, map size, spawn area, terrain).
@@ -84,6 +85,8 @@ export interface BattleConfig {
   terrainSeed?: number;
   /** false: archer/priest kiting and the line limit are off (old behavior, for comparison). */
   kite?: boolean;
+  /** Game mode rules (default 'classic'). Not the launch kind: that is `mode`. */
+  rules?: GameModeId;
 }
 
 export const DBG_KEYS = ['kites', 'kiteSteps', 'snapShots', 'archerDeaths', 'archerDeathsKiting', 'stuck', 'cornered'] as const;

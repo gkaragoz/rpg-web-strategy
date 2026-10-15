@@ -2,6 +2,7 @@ import { t } from '../i18n';
 import { KIND_COUNT, MAX_TEAMS, TUNABLE, type StatOverrides } from '../sim/units';
 import type { TeamColors } from '../render/unitView';
 import { DEFAULT_MAP, PRESETS, sanitizeSpec, type MapSpec } from '../sim/mapSpec';
+import { isSelectableMode, type SelectableMode } from './modeIds';
 
 export interface PaletteSet {
   id: string;
@@ -74,6 +75,8 @@ export interface AppState {
   /** Selected preset map: preset id, 'random' (last drawn) or 'custom'. */
   mapPreset: string;
   kite: boolean;
+  /** Game mode of the studio battle (classic = last team standing). */
+  rules: SelectableMode;
   seed: number;
   teamCount: number;
   palette: string;
@@ -110,6 +113,7 @@ export function defaultState(): AppState {
     map: { ...DEFAULT_MAP },
     mapPreset: 'pine-valley',
     kite: true,
+    rules: 'classic',
     seed: 1,
     teamCount: 2,
     palette: 'classic',
@@ -176,6 +180,7 @@ export function loadState(): AppState {
       map: sanitizeSpec(o.map),
       mapPreset: o.mapPreset === 'random' || o.mapPreset === 'custom' || PRESETS.some((p) => p.id === o.mapPreset) ? (o.mapPreset as string) : 'custom',
       kite: typeof o.kite === 'boolean' ? o.kite : d.kite,
+      rules: isSelectableMode(o.rules) ? o.rules : d.rules,
       seed: Math.floor(num(o.seed, 1, 999999, d.seed)),
       teamCount: Math.floor(num(o.teamCount, 2, MAX_TEAMS, d.teamCount)),
       palette: PALETTES.some((p) => p.id === o.palette) ? (o.palette as string) : d.palette,

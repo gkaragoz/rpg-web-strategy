@@ -1,6 +1,7 @@
 import { getLang, t } from '../i18n';
 import { isPlainShortcut, langKeys } from './hotkeys';
 import { Tour, shouldStartTour } from './tutorial';
+import { ModePicker } from './modePicker';
 import type { UnitPreview } from './unitPreview';
 import { initSheet } from './sheet';
 import { LEGACY_COUNT, MAX_TEAMS, unitDisplayName } from '../sim/units';
@@ -41,6 +42,7 @@ export class Studio {
   private readonly root: HTMLElement;
   private readonly $: (sel: string) => HTMLElement;
   private visible = false;
+  private modePicker!: ModePicker;
   private readonly units: UnitSettings;
   private readonly maps: MapPicker;
   private readonly gallery: UnitGallery;
@@ -117,6 +119,7 @@ export class Studio {
   </section>
   <section>
     <h2>${t('studio.battle.h')}</h2>
+    <div class="row stack"><span>${t('mode.label')}</span><div id="mode-host"></div></div>
     <label class="row"><span>${t('studio.kite')} <small>${t('studio.kite.hint')}</small></span><input type="checkbox" id="kite" role="switch" /></label>
     <div class="row"><span>${t('studio.speed')}</span><div class="seg" id="speed" role="group" aria-label="${t('studio.speed.aria')}"></div></div>
   </section>
@@ -199,6 +202,14 @@ export class Studio {
     const s = this.d.state;
     const $in = (id: string) => this.$(id) as HTMLInputElement;
 
+    this.modePicker = new ModePicker({
+      value: s.rules,
+      onPick: (id) => {
+        s.rules = id;
+        this.changed(false);
+      },
+    });
+    this.$('#mode-host').appendChild(this.modePicker.el);
     $in('#env').addEventListener('change', (e) => {
       s.env = (e.target as HTMLInputElement).checked;
       this.changed(true);
@@ -330,6 +341,7 @@ export class Studio {
   render(): void {
     if (!this.visible) return;
     const s = this.d.state;
+    this.modePicker.set(s.rules);
     const colors = teamColors(s.palette, s.teamCount);
     const counts = this.d.editor.counts();
     const $in = (id: string) => this.$(id) as HTMLInputElement;

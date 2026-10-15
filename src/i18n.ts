@@ -5,6 +5,7 @@
  */
 import { battle } from './i18n/battle';
 import { maps } from './i18n/maps';
+import { modes } from './i18n/modes';
 import { online } from './i18n/online';
 import { studio } from './i18n/studio';
 import { system } from './i18n/system';
@@ -60,7 +61,7 @@ export function onLang(f: (l: Lang) => void): () => void {
 /** Picks the current-language variant of a localized text. */
 export const loc = (l: Localized): string => l[lang];
 
-const TABLES = [studio, battle, maps, units, online, system, tutorial];
+const TABLES = [studio, battle, maps, units, online, system, tutorial, modes];
 const EN: Strings = Object.assign({}, ...TABLES.map((x) => x.en));
 const TR: Strings = Object.assign({}, ...TABLES.map((x) => x.tr));
 

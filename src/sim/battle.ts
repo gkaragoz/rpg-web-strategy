@@ -18,6 +18,8 @@ import { damage, updateZones, flyStep, applyKnockback } from './battleDamage';
 import { resolveHit, periodic, arrowLanded } from './battleSkills';
 import { beyondLeash, canShoot, updateThreat, tryKite, chaseWatchdog, leashHold, pickNow, marchToEnemy, followArmy } from './battleAi';
 import { spawnLayout, spawnArmy, spawnBenchArmy, setupSkills } from './battleSetup';
+import { modeFor } from './modes';
+import type { ModeHud, ModeRules } from './modes/types';
 
 // Public API re-exported from the split modules: other code keeps importing everything from './battle'.
 export { MAP_SIZE, DBG_KEYS, EXTRA_DBG, benchLayout, unitCapacity, projectileCapacity, mapSizeFor, terrainFor } from './battleConfig';
@@ -113,6 +115,14 @@ export class Battle {
   readonly grids: Grid[];
   private readonly sepGrid: Grid;
   private sepTick = 0;
+  /** Rules of the game mode (classic: none; vip/ctf play as classic until implemented). */
+  readonly mode: ModeRules;
+  /** Optional per-team goal set by the mode: units without a target march there instead of toward the nearest enemy. @internal */
+  readonly teamGoalX = new Float32Array(MAX_TEAMS);
+  /** @internal */
+  readonly teamGoalY = new Float32Array(MAX_TEAMS);
+  /** @internal */
+  readonly teamHasGoal = new Uint8Array(MAX_TEAMS);
 
   constructor(seed = 1, config: BattleConfig = { mode: 'demo', perTeam: 10 }) {
     this.config = config;
@@ -125,6 +135,7 @@ export class Battle {
     this.projectiles = new Projectiles(projectileCapacity(config));
     this.teamCount = Math.min(MAX_TEAMS, Math.max(2, config.teamCount ?? 2));
     this.comedy = config.comedy === true;
+    this.mode = modeFor(config.rules);
     this.allTeams = Array.from({ length: this.teamCount }, (_, t) => t);
     this.grids = Array.from({ length: this.teamCount }, () => new Grid(this.mapSize, GRID_CELL, total));
     this.sepGrid = new Grid(this.mapSize, SEP_CELL, total);
@@ -193,6 +204,25 @@ export class Battle {
       spawnArmy(this, 1, 1);
     }
     this.countAlive();
+    this.teamGoalX.fill(0);
+    this.teamGoalY.fill(0);
+    this.teamHasGoal.fill(0);
+    this.mode.init(this);
+  }
+
+  /** Display data of the running game mode (the UI draws it). */
+  modeHud(): ModeHud {
+    return this.mode.hud(this);
+  }
+
+  /** Same as modeScores(): the surface the lockstep runner reads when the battle ends. */
+  get scores(): number[] | undefined {
+    return this.modeScores();
+  }
+
+  /** Points per team of the mode (undefined for classic). */
+  modeScores(): number[] | undefined {
+    return this.mode.scores()?.slice(0, this.allTeams.length);
   }
 
   private countAlive(): void {
@@ -328,6 +358,7 @@ export class Battle {
     pf.steps++;
     this.countAlive();
     if (this.winner < 0) {
+      if (this.mode.id !== 'classic') this.mode.step(this, dt);
       // Winner: the last team with a living unit (-2: draw if all die).
       let alive = 0;
       let last = -1;
@@ -339,7 +370,13 @@ export class Battle {
       }
       if (alive === 1) this.winner = last;
       else if (alive === 0) this.winner = -2;
-      else this.checkDraw(alive);
+      else if (this.mode.id === 'classic') this.checkDraw(alive);
+      // Mode rules decide only while several teams are alive (the draw rules above are classic-only: a hold-the-point
+      // battle may legitimately have long quiet stretches).
+      if (this.winner < 0 && this.mode.id !== 'classic') {
+        const w = this.mode.winner(this);
+        if (w !== undefined) this.winner = w;
+      }
     }
   }
 
@@ -662,6 +699,7 @@ export class Battle {
         links: [...this.links.entries()].map(([k, v]) => [k, v.slice()]),
         pools: [...this.pools.entries()].map(([k, v]) => [k, v.slice()]),
         meter: { dmg: Array.from(this.meter.dmg), kills: Array.from(this.meter.kills) },
+        ...(this.mode.id === 'classic' ? {} : { mode: { id: this.mode.id, state: this.mode.serialize(), goals: Array.from(this.teamGoalX).concat(Array.from(this.teamGoalY), Array.from(this.teamHasGoal)) } }),
       },
     };
   }
@@ -693,6 +731,18 @@ export class Battle {
       this.meter.dmg.set(s.extra.meter.dmg.slice(0, this.meter.dmg.length));
       this.meter.kills.set(s.extra.meter.kills.slice(0, this.meter.kills.length));
     }
+    this.teamGoalX.fill(0);
+    this.teamGoalY.fill(0);
+    this.teamHasGoal.fill(0);
+    if (s.extra.mode && s.extra.mode.id === this.mode.id) {
+      this.mode.restore(s.extra.mode.state);
+      const g = s.extra.mode.goals;
+      for (let t = 0; t < MAX_TEAMS; t++) {
+        this.teamGoalX[t] = g[t] ?? 0;
+        this.teamGoalY[t] = g[MAX_TEAMS + t] ?? 0;
+        this.teamHasGoal[t] = g[2 * MAX_TEAMS + t] ?? 0;
+      }
+    }
     for (const k of Object.keys(this.dbg)) (this.dbg as Record<string, number>)[k] = sc[k] ?? 0;
     this.zones.length = 0;
     for (const z of s.extra.zones) this.zones.push({ ...(z as Zone) });
@@ -714,6 +764,14 @@ export class Battle {
     for (const arr of [u.x, u.y, u.hp, u.cooldown, u.stunT, u.lift, u.swing, u.retarget, u.kbVx, u.kbVy, u.spd, u.hx, u.hy, u.slowT, u.burnT, u.shieldT, u.fearT, u.weakT, u.invulnT, u.tauntT] as Typed[]) h = fnv(h, arr, n, 4);
     for (const arr of [u.alive, u.team, u.kind, u.stacks] as Typed[]) h = fnv(h, arr, n, 1);
     h = fnv(h, u.target, n, 4);
+    if (this.mode.id !== 'classic') {
+      // Mode state and goals join the checksum (classic battles keep their old hash byte for byte).
+      const st = Float64Array.from(this.mode.serialize());
+      h = fnv(h, st, st.length, 8);
+      h = fnv(h, this.teamGoalX, MAX_TEAMS, 4);
+      h = fnv(h, this.teamGoalY, MAX_TEAMS, 4);
+      h = fnv(h, this.teamHasGoal, MAX_TEAMS, 1);
+    }
     h ^= this.rngObj.a;
     h = Math.imul(h, 16777619) >>> 0;
     h ^= this.stepNo;

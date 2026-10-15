@@ -262,9 +262,15 @@ export function applyPick(b: Battle, i: number, best: number): void {
 
 export function marchToEnemy(b: Battle, i: number, dt: number): void {
   const u = b.units;
-  const en = b.nearestEnemy[u.team[i]];
+  const tm = u.team[i];
+  const en = b.nearestEnemy[tm];
   if (en < 0) return;
   if (!isMelee(u.kind[i]) && leashHold(b, i, dt)) return;
+  // A mode goal (e.g. a control point) replaces the nearest enemy as the destination.
+  if (b.teamHasGoal[tm]) {
+    b.queueMove(i, b.teamGoalX[tm], b.teamGoalY[tm], STATS[u.kind[i]].speed);
+    return;
+  }
   b.queueMove(i, b.centroidX[en], b.centroidY[en], STATS[u.kind[i]].speed);
 }
 

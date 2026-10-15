@@ -242,7 +242,7 @@ let online: OnlineApp | null = null;
 let iconColors: TeamColors[] | null = null;
 
 function studioConfig(): BattleConfig {
-  return { mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, terrainSeed: state.seed, map: state.map, comedy: comedyPhysicsOn(), stats: state.stats };
+  return { mode: 'custom', perTeam: 0, teamCount: state.teamCount, mapSize: state.mapSize, env: state.env, kite: state.kite, rules: state.rules, terrainSeed: state.seed, map: state.map, comedy: comedyPhysicsOn(), stats: state.stats };
 }
 
 function layoutArray(): Float32Array {

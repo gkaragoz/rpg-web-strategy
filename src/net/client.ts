@@ -43,7 +43,7 @@ export class OnlineModel {
   presence = new Map<string, PresenceInfo>();
   chat: ChatLine[] = [];
   private chatN = 0;
-  result: { winner: number; alive: number[] } | null = null;
+  result: { winner: number; alive: number[]; scores?: number[] } | null = null;
   /** Comedy look chosen by the host during the battle (null: still the lobby value). */
   comedyVisual: boolean | null = null;
   /** Latest speed/pause info from the host. */
@@ -137,7 +137,7 @@ export class OnlineModel {
         if (this.state && (this.state.phase === 'battle' || this.state.phase === 'result')) this.pendingResync = { step: msg.step, data: msg.data };
         break;
       case 'result':
-        this.result = { winner: msg.winner, alive: msg.alive };
+        this.result = { winner: msg.winner, alive: msg.alive, scores: msg.scores };
         break;
       case 'comedyView':
         this.comedyVisual = msg.on;

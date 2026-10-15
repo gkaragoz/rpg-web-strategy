@@ -1,6 +1,7 @@
 import type { FrameInfo, SimBackend, SimStats } from './backend';
 import { Battle, DBG_KEYS, type BattleConfig, type SimEvent } from './battle';
 import { simDtFor } from './constants';
+import type { ModeHud } from './modes';
 
 const MAX_STEPS_PER_FRAME = 5;
 /** Per-frame sim budget in bench mode: if exceeded, the sim slows down while rendering stays smooth. */
@@ -28,6 +29,12 @@ export class InlineSim implements SimBackend {
     this.stepDt = simDtFor(config);
   }
 
+  get modeHud(): ModeHud {
+    return this.battle.modeHud();
+  }
+  get scores(): number[] | undefined {
+    return this.battle.modeScores();
+  }
   get mapSize(): number {
     return this.battle.mapSize;
   }

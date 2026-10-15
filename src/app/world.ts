@@ -182,7 +182,7 @@ export class WorldView implements WorldBackend {
         const b = p(tx + 1, ty);
         const c = p(tx + 1, ty + 1);
         const d = p(tx, ty + 1);
-        g.poly([a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]]).fill({ color: z.color, alpha: z.mine ? 0.26 : 0.1 });
+        g.poly([a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]]).fill({ color: z.color, alpha: z.strong ? 0.5 : z.mine ? 0.26 : 0.1 });
       }
     }
   }

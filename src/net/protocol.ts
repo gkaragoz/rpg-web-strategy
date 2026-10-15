@@ -1,9 +1,10 @@
 import type { BattleConfig } from '../sim/battle';
 import type { MapSpec } from '../sim/mapSpec';
 import type { Rarity } from '../sim/data/troops';
+import type { GameModeId } from '../sim/modes/types';
 
-/** Protocol version: a client with a different version cannot join the lobby. Bumped for wire changes and also when simulation or map generation results change (v11: valley gates, path costs, chase watchdog), because lockstep needs identical results. */
-export const PROTOCOL = 11;
+/** Protocol version: a client with a different version cannot join the lobby. Bumped for wire changes and also when simulation or map generation results change (v11: valley gates, path costs, chase watchdog; v12: game modes, result scores), because lockstep needs identical results. */
+export const PROTOCOL = 12;
 export const MAX_PLAYERS = 6;
 export const NAME_MAX = 16;
 export const CHAT_MAX = 200;
@@ -45,6 +46,8 @@ export interface LobbySettings {
   comedyVisual: boolean;
   /** Rarities that cannot be bought (disabled by the host). */
   banned: Rarity[];
+  /** Game mode rules ('classic' by default). */
+  gameMode: GameModeId;
 }
 
 export interface GameInit {
@@ -57,6 +60,8 @@ export interface GameInit {
   comedyPhysics: boolean;
   comedyVisual: boolean;
   banned: Rarity[];
+  /** Game mode rules of this battle. */
+  gameMode: GameModeId;
   /** Gold cost per unit kind (computed by the host; everyone uses the same table). */
   costs: number[];
   /** Player ids in team order (team = index). */
@@ -148,7 +153,7 @@ export type ServerMsg =
   /** The host switched the comedy look during the battle (look only; every client follows). */
   | { t: 'comedyView'; on: boolean }
   | { t: 'resync'; step: number; data: string }
-  | { t: 'result'; winner: number; alive: number[] }
+  | { t: 'result'; winner: number; alive: number[]; /** Points per team of the game mode (hill); absent for classic. */ scores?: number[] }
   | { t: 'closed' };
 
 export type Msg = ClientMsg | ServerMsg;
@@ -165,6 +170,7 @@ export function battleConfig(s: BattleStart): BattleConfig {
     terrainSeed: s.init.seed,
     map: s.init.spec,
     comedy: s.init.comedyPhysics,
+    rules: s.init.gameMode,
     layout: layoutOf(s),
   };
 }

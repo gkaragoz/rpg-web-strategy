@@ -60,6 +60,9 @@ export class LockstepWorkerSim extends WorkerSim {
       get alivePerTeam() {
         return me.alivePerTeam;
       },
+      get scores() {
+        return me.scores;
+      },
       onHash: (cb) => {
         me.hashCb = cb;
       },

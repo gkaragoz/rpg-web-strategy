@@ -1,6 +1,7 @@
 import type { FrameInfo, SimBackend, SimStats } from '../sim/backend';
 import { Battle, DBG_KEYS, type BattleConfig, type SimEvent } from '../sim/battle';
 import { SIM_DT, simDtFor } from '../sim/constants';
+import type { ModeHud } from '../sim/modes';
 import type { OnlineModel } from './client';
 import type { HostLobby } from './host';
 import { LockstepRunner } from './lockstep';
@@ -47,6 +48,13 @@ export class LockstepSim implements SimBackend {
   }
   get alivePerTeam(): number[] {
     return this.battle.alivePerTeam;
+  }
+  /** Display data of the game mode (hill scores and control points). */
+  get modeHud(): ModeHud {
+    return this.battle.modeHud();
+  }
+  get scores(): number[] | undefined {
+    return this.battle.modeScores();
   }
   get winner(): number {
     return this.battle.winner;

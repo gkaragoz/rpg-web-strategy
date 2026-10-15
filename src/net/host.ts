@@ -1,6 +1,7 @@
 import { randomSpec, sanitizeSpec, DEFAULT_MAP } from '../sim/mapSpec';
 import { mulberry32 } from '../sim/random';
 import { Terrain } from '../sim/terrain';
+import { isGameModeId } from '../sim/modes/types';
 import { STATS, KIND_COUNT } from '../sim/units';
 import { TROOP_BY_ID } from '../sim/data/troops';
 import { PlaceIndex } from './placeIndex';
@@ -42,6 +43,7 @@ export const DEFAULT_SETTINGS: LobbySettings = {
   comedyPhysics: false,
   comedyVisual: false,
   banned: [],
+  gameMode: 'classic',
 };
 
 /** Most units a player may place (performance cap). */
@@ -94,7 +96,7 @@ export class HostLobby {
   private placeEndsAt = Infinity;
   private battleStart: BattleStart | null = null;
   /** Outcome of the finished battle (kept for late joiners and rejoiners of the result phase). */
-  private lastResult: { winner: number; alive: number[] } | null = null;
+  private lastResult: { winner: number; alive: number[]; scores?: number[] } | null = null;
   private dirtyState = false;
   private lastState = 0;
   private readonly hashes = new Map<number, number>();
@@ -369,7 +371,7 @@ export class HostLobby {
       // The snapshot carries the winner too, so a joiner of the result phase lands on the result screen without re-simulating the battle.
       this.sendSnapshot(to);
     }
-    if (this.phase === 'result' && this.lastResult) this.sendTo(to, { t: 'result', winner: this.lastResult.winner, alive: this.lastResult.alive });
+    if (this.phase === 'result' && this.lastResult) this.sendTo(to, { t: 'result', winner: this.lastResult.winner, alive: this.lastResult.alive, scores: this.lastResult.scores });
     if (this.phase === 'placing') {
       // Send the existing placements (all of them with open placement, otherwise only the player's own).
       const items = this.visibleUnits(this.player(to));
@@ -418,6 +420,7 @@ export class HostLobby {
     if (typeof patch.openPlacement === 'boolean') s.openPlacement = patch.openPlacement;
     if (typeof patch.comedyPhysics === 'boolean') s.comedyPhysics = patch.comedyPhysics;
     if (typeof patch.comedyVisual === 'boolean') s.comedyVisual = patch.comedyVisual;
+    if (isGameModeId(patch.gameMode)) s.gameMode = patch.gameMode;
     if (Array.isArray(patch.banned)) s.banned = patch.banned.filter((r) => ['common', 'rare', 'epic', 'legendary'].includes(r));
     if (password !== undefined) {
       const next = password ? passHash(password) : null;
@@ -523,6 +526,7 @@ export class HostLobby {
       comedyPhysics: this.settings.comedyPhysics,
       comedyVisual: this.settings.comedyVisual,
       banned: [...this.settings.banned],
+      gameMode: this.settings.gameMode,
       costs: costTable(),
       teamPlayers: pl.map((p) => p.id),
     };
@@ -689,11 +693,12 @@ export class HostLobby {
   }
 
   /** The battle is over: announces the result to everyone. */
-  finish(winner: number, alive: number[]): void {
+  finish(winner: number, alive: number[], scores?: number[]): void {
     if (this.phase !== 'battle') return;
     this.phase = 'result';
-    this.lastResult = { winner, alive: [...alive] };
-    this.emit({ t: 'result', winner, alive });
+    const sc = scores && scores.every((v) => Number.isFinite(v)) ? [...scores] : undefined;
+    this.lastResult = { winner, alive: [...alive], scores: sc };
+    this.emit({ t: 'result', winner, alive, scores: sc });
     this.pushState();
   }
 

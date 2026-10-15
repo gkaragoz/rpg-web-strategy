@@ -1,5 +1,6 @@
 import type { BattleConfig, SimEvent } from './battle';
 import type { Units } from './units';
+import type { ModeHud } from './modes';
 
 /** Unit fields read by the renderer (Units and the worker snapshot share the same shape). */
 export type UnitsView = Pick<
@@ -52,6 +53,10 @@ export interface SimBackend {
   readonly meter: MeterView;
   winner: number;
   time: number;
+  /** Display data of the game mode (objective strip); `{ kind: 'classic' }` for the classic rules. */
+  readonly modeHud: ModeHud;
+  /** Points per team of a scoring mode (undefined in classic). */
+  readonly scores: number[] | undefined;
   /** Called every render frame: advances the sim inline, binds the latest snapshot with a worker. */
   frame(dt: number): FrameInfo;
   reset(seed: number): Promise<void>;

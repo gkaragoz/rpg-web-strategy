@@ -248,3 +248,100 @@ body:has(.result:not([hidden])) #stats {
     min-width: 40px;
   }
 }
+
+/* ---- Game mode picker (lobby and studio) ---- */
+.mode-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mode-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mode-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  min-height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  cursor: pointer;
+}
+.mode-card[aria-checked='true'] {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.16);
+}
+.mode-card:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+.mode-rule {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* ---- Objective strip under the team bar (battle) ---- */
+.hud-mode {
+  position: absolute;
+  left: 50%;
+  top: 60px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  min-width: 230px;
+  max-width: calc(100vw - 16px);
+  padding: 5px 10px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  font-size: 12px;
+  pointer-events: none;
+}
+.hm-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hm-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.hm-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.hm-bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  transition: width 0.25s linear;
+}
+.hm-score {
+  min-width: 28px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.hm-held {
+  min-width: 32px;
+  letter-spacing: 1px;
+  font-size: 10px;
+}
+.hm-meta {
+  color: var(--muted);
+  text-align: center;
+}

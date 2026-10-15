@@ -12,6 +12,8 @@ export interface BattleSnapshot {
     paths?: Array<[number, { pts: number[]; k: number; gx: number; gy: number; t: number }]>;
     /** Damage meter (display only): damage per team x kind and kills per team. */
     meter?: { dmg: number[]; kills: number[] };
+    /** Game mode state (absent for classic): the mode's numbers and the per-team goals (x, y, has-goal blocks). */
+    mode?: { id: string; state: number[]; goals: number[] };
   };
 }
 

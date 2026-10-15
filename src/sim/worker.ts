@@ -23,6 +23,7 @@ import {
   PROF_KEYS,
   SNAP_SLOTS,
   bindShared,
+  writeModeHud,
   type Shared,
 } from './shared';
 
@@ -130,6 +131,8 @@ function publish(): void {
   f[F_SIM_TIME] = battle.time;
   f[F_WINNER] = battle.winner;
   for (let tm = 0; tm < battle.alivePerTeam.length; tm++) f[F_ALIVE_BASE + tm] = battle.alivePerTeam[tm];
+  // Mode display data changes at most once per second: refresh it every 10 steps (and at the start).
+  if (battle.mode.id !== 'classic' && (step % 10 === 0 || step <= 1 || battle.winner !== -1)) writeModeHud(f, battle.modeHud());
   Atomics.store(sh.ctrlI, I_LATEST, step);
 }
 
